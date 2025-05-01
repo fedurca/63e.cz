@@ -16,9 +16,34 @@
             height: 100%;
             border: none;
         }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+        }
     </style>
+    <script>
+        let refreshInterval;
+        
+        function startAutoRefresh() {
+            refreshInterval = setInterval(() => {
+                document.getElementById('sheetFrame').src += '';
+            }, 30000);
+        }
+
+        function stopAutoRefresh() {
+            clearInterval(refreshInterval);
+        }
+
+        window.onload = startAutoRefresh;
+    </script>
 </head>
 <body>
-    <iframe src="https://docs.google.com/spreadsheets/d/e/2PACX-1vR8IQ9Molz6E5ZZWuxTX3ptTkmAtwbPwTyrrLxYLDuFWiPxRXJYOwHRd-FMeLHhoA/pubhtml?gid=1913683982&amp;single=true&amp;widget=true&amp;headers=false"></iframe>
+    <div id="controls">
+        <button onclick="startAutoRefresh()">Run Refresh</button>
+        <button onclick="stopAutoRefresh()">Pause Refresh</button>
+    </div>
+    <iframe id="sheetFrame" src="https://docs.google.com/spreadsheets/d/e/2PACX-1vR8IQ9Molz6E5ZZWuxTX3ptTkmAtwbPwTyrrLxYLDuFWiPxRXJYOwHRd-FMeLHhoA/pubhtml?gid=1913683982&amp;single=true&amp;widget=true&amp;headers=false"></iframe>
 </body>
 </html>
