@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="screen-orientation" content="landscape">
+    <title>Stickman Skákačka</title>
+    <style>
+        /* Odstranění okrajů a zamezení posouvání stránky */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #222;
+            touch-action: none; /* Zabrání defaultním mobilním gestům (např. pull-to-refresh) */
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <script type="module">
+        // Import Kaboom.js z CDN (verze 3.0)
+        import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
+
+        // Inicializace hry: Fixní rozlišení s "letterbox" efektem zaručí responzivitu zachováním poměru stran
+        kaboom({
+            background: [135, 206, 235], // Světle modrá obloha
+            width: 800,
+            height: 400,
+            letterbox: true,
+            crisp: true
+        });
+
+        // --- INLINE SVG GRAFIKA ---
+        // Stickman (hráč)
+        const svgStickman = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="6" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="26" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="8" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="24" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/></svg>`;
+        
+        // Blok (země) - %23 je zakódovaný znak #
+        const svgBlock = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%238b4513"/><rect width="40" height="10" fill="%2332cd32"/></svg>`;
+        
+        // Mince
+        const svgCoin = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="%23ffd700" stroke="%23daa520" stroke-width="2"/><text x="12" y="16" font-family="Arial" font-size="12" font-weight="bold" fill="%23daa520" text-anchor="middle">$</text></svg>`;
+
+        // Bodák (nebezpečí)
+        const svgSpike = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><polygon points="20,10 40,40 0,40" fill="%23696969"/></svg>`;
+
+        // Cíl (vlajka)
+        const svgFlag = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="80"><rect x="18" y="10" width="4" height="70" fill="%23fff"/><polygon points="22,10 40,20 22,30" fill="%23ff0000"/></svg>`;
+
+        // Nahrání spritů z SVG dat
+        loadSprite("player", svgStickman);
+        loadSprite("block", svgBlock);
+        loadSprite("coin", svgCoin);
+        loadSprite("spike", svgSpike);
+        loadSprite("flag", svgFlag);
+
+        // --- HERNÍ SCÉNA ---
+        scene("game", () => {
+            setGravity(1800);
+
+            // Značky pro mapu
+            const mapLayout = [
+                "                                                  ",
+                "                                                  ",
+                "                                                  ",
+                "                                                  ",
+                "           $$                         $           ",
+                "       ====           $$          =====           ",
+                "                  ======                          ",
+                "                                                  ",
+                "  @          ^^              ^                  F ",
+                "==================  =============================="
+            ];
+
+            // Konfigurace mapy
+            const levelConf = {
+                tileWidth: 40,
+                tileHeight: 40,
+                tiles: {
+                    "=": () => [sprite("block"), area(), body({ isStatic: true }), anchor("center")],
+                    "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
+                    "^": () => [sprite("spike"), area({ shape: new Polygon([vec2(0, 15), vec2(20, -15), vec2(-20, -15)]) }), body({ isStatic: true }), anchor("center"), "danger"],
+                    "@": () => [sprite("player"), area(), body(), anchor("center"), "player"],
+                    "F": () => [sprite("flag"), area(), anchor("center"), "finish"]
+                }
+            };
+
+            addLevel(mapLayout, levelConf);
+
+            const player = get("player")[0];
+            let score = 0;
+            const SPEED = 300;
+            const JUMP_FORCE = 700;
+
+            // UI Skóre
+            const scoreLabel = add([
+                text("Skóre: 0", { size: 24 }),
+                pos(24, 24),
+                fixed(),
+                z(100)
+            ]);
+
+            // --- DOTYKOVÉ OVLÁDÁNÍ (MOBILNÍ UI) ---
+            // Tlačítko VLEVO
+            add([ rect(80, 80, { radius: 10 }), pos(20, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
+            add([ text("<", { size: 40 }), pos(45, height() - 80), fixed() ]);
+
+            // Tlačítko VPRAVO
+            add([ rect(80, 80, { radius: 10 }), pos(120, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
+            add([ text(">", { size: 40 }), pos(145, height() - 80), fixed() ]);
+
+            // Tlačítko SKOK
+            add([ rect(80, 80, { radius: 40 }), pos(width() - 100, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
+            add([ text("^", { size: 40 }), pos(width() - 75, height() - 80), fixed() ]);
+
+            let moveDirection = 0;
+
+            // Logika dotyku
+            onTouchStart((id, pos) => {
+                // Tlačítko Skok (pravá strana obrazovky dole)
+                if (pos.x > width() - 120 && pos.y > height() - 120) {
+                    if (player.isGrounded()) player.jump(JUMP_FORCE);
+                }
+                // Tlačítko Vlevo
+                else if (pos.x > 10 && pos.x < 110 && pos.y > height() - 120) {
+                    moveDirection = -1;
+                }
+                // Tlačítko Vpravo
+                else if (pos.x > 110 && pos.x < 210 && pos.y > height() - 120) {
+                    moveDirection = 1;
+                }
+            });
+
+            // Při zvednutí prstu zastavíme pohyb
+            onTouchEnd((id, pos) => {
+                moveDirection = 0;
+            });
+
+            // Logika klávesnice pro případné hraní na PC
+            onKeyDown("left", () => moveDirection = -1);
+            onKeyDown("right", () => moveDirection = 1);
+            onKeyRelease(["left", "right"], () => moveDirection = 0);
+            onKeyPress(["space", "up"], () => { if (player.isGrounded()) player.jump(JUMP_FORCE); });
+
+            // --- HERNÍ SMYČKA ---
+            onUpdate(() => {
+                // Pohyb hráče
+                if (moveDirection < 0) player.move(-SPEED, 0);
+                if (moveDirection > 0) player.move(SPEED, 0);
+
+                // Kamera sleduje hráče (zastaví se na začátku mapy)
+                let camX = Math.max(width() / 2, player.pos.x);
+                camPos(camX, height() / 2);
+
+                // Pád z mapy = restart
+                if (player.pos.y > height() + 100) {
+                    go("game");
+                }
+            });
+
+            // Kolize s mincí
+            player.onCollide("coin", (c) => {
+                destroy(c);
+                score++;
+                scoreLabel.text = `Skóre: ${score}`;
+            });
+
+            // Kolize s bodákem (smrt)
+            player.onCollide("danger", () => {
+                go("game");
+            });
+
+            // Kolize s cílem
+            player.onCollide("finish", () => {
+                go("win", score);
+            });
+        });
+
+        // --- VÍTĚZNÁ SCÉNA ---
+        scene("win", (score) => {
+            add([
+                text(`VYHRÁL JSI!\n\nSkóre: ${score}\n\nDotkni se pro restart`, { align: "center" }),
+                pos(width() / 2, height() / 2),
+                anchor("center"),
+            ]);
+
+            onTouchStart(() => go("game"));
+            onKeyPress("space", () => go("game"));
+        });
+
+        // Spuštění první scény
+        go("game");
+    </script>
+</body>
+</html>
