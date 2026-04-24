@@ -4,66 +4,48 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>v5.1.0 - Stickman Multiverse FINAL</title>
+    <title>v5.5.0 - Stickman Ultimate Multiverse</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: monospace; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: sans-serif; }
         canvas { display: block; }
-        #debug-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0000aa; color: #fff; padding: 20px; box-sizing: border-box; z-index: 9999; overflow: auto; }
-        button { background: #fff; border: none; padding: 10px 20px; cursor: pointer; font-family: monospace; font-weight: bold; }
+        #crash-screen { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: #00a; color: #fff; padding: 20px; z-index: 9999; overflow: auto; }
     </style>
 </head>
 <body>
-    <div id="debug-overlay">
-        <h1>❌ GAME CRASH</h1>
-        <p id="error-msg"></p>
-        <pre id="error-stack"></pre>
-        <button onclick="copyError()">KOPÍROVAT CHYBU PRO OPRAVU</button>
-        <button onclick="location.reload()">RESTARTOVAT HRU</button>
+    <div id="crash-screen">
+        <h1>❌ CHYBA HRY</h1>
+        <p id="err-desc"></p>
+        <pre id="err-stack"></pre>
+        <button onclick="location.reload()" style="padding: 10px; cursor:pointer;">Restartovat hru</button>
     </div>
 
     <script type="module">
         import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
-        // --- DEBUG SYSTÉM ---
         window.addEventListener("error", (e) => {
-            const overlay = document.getElementById("debug-overlay");
-            const msg = document.getElementById("error-msg");
-            const stack = document.getElementById("error-stack");
-            overlay.style.display = "block";
-            msg.innerText = "Message: " + e.message;
-            stack.innerText = "Stack: " + e.error?.stack + "\n\nUserAgent: " + navigator.userAgent;
+            document.getElementById("crash-screen").style.display = "block";
+            document.getElementById("err-desc").innerText = e.message;
+            document.getElementById("err-stack").innerText = e.error?.stack;
         });
 
-        window.copyError = () => {
-            const text = document.getElementById("error-msg").innerText + "\n" + document.getElementById("error-stack").innerText;
-            navigator.clipboard.writeText(text);
-            alert("Chyba zkopírována!");
-        };
+        kaboom({ width: 800, height: 400, letterbox: true, crisp: true, background: [0, 0, 0] });
 
-        const k = kaboom({ 
-            width: 800, 
-            height: 400, 
-            letterbox: true, 
-            crisp: true, 
-            background: [0, 0, 0] 
-        });
-
-        // --- 1. GRAFIKA (FIXED SVG) ---
-        const svgP = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><g transform="translate(0,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g><g transform="translate(32,0)"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18v11M16 19l-5 6-1 6M16 19l5 6 1 6M16 29l-5 7v8M16 29l5 7v8"/></g><g transform="translate(64,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l2 12M17 18l-7 2-2-4M17 18l7 4 4-4M18 28l-8 6-2 8M18 28l6 6 2 8"/></g><g transform="translate(96,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9-2 8M16 27l2 6 6 5"/></g><g transform="translate(128,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l-2 12M15 18l7 2 2-4M15 18l-7 4-4-4M14 28l8 6 2 8M14 28l-6 6-2 8"/></g><g transform="translate(160,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9 2 8M16 27l-2 6-6 5"/></g><g transform="translate(192,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-6-3-4-6M16 17l6-3 4-6M16 27l-6 0-2 9M16 27l6 0 2 9"/></g></g></svg>`;
+        // --- 1. GRAFIKA (SVG DATA) ---
+        const svgP = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><g transform="translate(0,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g><g transform="translate(32,0)"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18v11M16 19l-5 6-1 6M16 19l5 6 1 6M16 29l-5 7v8M16 29l5 7v8"/></g><g transform="translate(64,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l2 12M17 18l-7 2-2-4M17 18l7 4 4-4M18 28l-8 6-2 8M18 28l6 6 2 8"/></g><g transform="translate(96,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9-2 8M16 27l2 6 6 5"/></g><g transform="translate(128,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l-2 12M15 18l7 2-2-4M15 18l-7 4-4-4M14 28l8 6 2 8M14 28l-6 6-2 8"/></g><g transform="translate(160,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9 2 8M16 27l-2 6-6 5"/></g><g transform="translate(192,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-6-3-4-6M16 17l6-3 4-6M16 27l-6 0-2 9M16 27l6 0 2 9"/></g></g></svg>`;
         const sNrm = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="white"/><circle cx="11" cy="12" r="3" fill="black"/><circle cx="21" cy="12" r="3" fill="black"/></svg>`;
         const sBnc = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23ddd"/><circle cx="16" cy="16" r="10" fill="white"/><circle cx="11" cy="12" r="2" fill="black"/><circle cx="21" cy="12" r="2" fill="black"/></svg>`;
         const sJmp = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M 4 28 C 4 10, 28 10, 28 28 Z" fill="white"/><circle cx="16" cy="14" r="6" fill="black"/><circle cx="16" cy="14" r="2" fill="white"/></svg>`;
-        const sFly = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="10" fill="white"/><polygon points="0,10 10,16 0,22" fill="%23ccc"/><polygon points="32,10 22,16 32,22" fill="%23ccc"/><circle cx="13" cy="14" r="2" fill="black"/><circle cx="19" cy="14" r="2" fill="black"/></svg>`;
+        const sFly = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="10" fill="white"/><path d="M0 10l10 6L0 22M32 10l-10 6 10 6" fill="%23ccc"/><circle cx="13" cy="14" r="2" fill="black"/><circle cx="19" cy="14" r="2" fill="black"/></svg>`;
         const sBlk = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="white"/><rect width="40" height="10" fill="%23ddd"/></svg>`;
-        const sSpk = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><polygon points="20,10 40,40 0,40" fill="%23f33"/></svg>`;
+        const sSpk = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><path d="M20 10L40 40H0z" fill="%23f33"/></svg>`;
         const sBul = `data:image/svg+xml;utf8,<svg width="16" height="8" xmlns="http://www.w3.org/2000/svg"><rect width="16" height="8" rx="4" fill="%230f0"/></svg>`;
         const sCoin= `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="%23fd0"/></svg>`;
         const sGun = `data:image/svg+xml;utf8,<svg width="24" height="16" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="6" fill="%23aaa"/></svg>`;
         const sHrt = `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.3l-1.4-1.3C5.4 15.3 2 12.3 2 8.5 2 5.4 4.4 3 7.5 3c1.7 0 3.4.8 4.5 2.1C13.1 3.8 14.7 3 16.5 3 19.6 3 22 5.4 22 8.5c0 3.8-3.4 6.8-8.5 11.5L12 21.3z" fill="red"/></svg>`;
-        const sFlg = `data:image/svg+xml;utf8,<svg width="40" height="80" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="10" width="4" height="70" fill="white"/><polygon points="22,10 40,20 22,30" fill="%230f0"/></svg>`;
-        const sMsk = `data:image/svg+xml;utf8,<svg width="2000" height="2000" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="black" stop-opacity="0"/><stop offset="30%" stop-color="black" stop-opacity="0.95"/><stop offset="100%" stop-color="black" stop-opacity="1"/></radialGradient></defs><rect width="2000" height="2000" fill="url(%23g)"/></svg>`;
-        const sPrx = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 L200,50 L400,200 Z" fill="white" opacity="0.2"/></svg>`;
-        const sDth = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="12" fill="%23aaa"/><line x1="10" y1="10" x2="22" y2="22" stroke="black" stroke-width="3"/><line x1="22" y1="10" x2="10" y2="22" stroke="black" stroke-width="3"/></svg>`;
+        const sFlg = `data:image/svg+xml;utf8,<svg width="40" height="80" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="10" width="4" height="70" fill="white"/><path d="M22 10l18 10-18 10z" fill="%230f0"/></svg>`;
+        const sMsk = `data:image/svg+xml;utf8,<svg width="2000" height="2000" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="g"><stop offset="0%" stop-color="black" stop-opacity="0"/><stop offset="30%" stop-color="black" stop-opacity="0.95"/><stop offset="100%" stop-color="black" stop-opacity="1"/></radialGradient></defs><rect width="2000" height="2000" fill="url(%23g)"/></svg>`;
+        const sPrx = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0 200l200-150 200 150z" fill="white" opacity="0.1"/></svg>`;
+        const sDth = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="12" fill="%23aaa"/><path d="M10 10l12 12M22 10L10 22" stroke="black" stroke-width="3"/></svg>`;
 
         loadSprite("player", svgP, { sliceX: 7, anims: { idle: { from: 0, to: 1, loop: true, speed: 2 }, run: { from: 2, to: 5, loop: true, speed: 12 }, jump: 6 } });
         loadSprite("e_nrm", sNrm); loadSprite("e_bnc", sBnc); loadSprite("e_jmp", sJmp); loadSprite("e_fly", sFly);
@@ -71,46 +53,44 @@
         loadSprite("pistol", sGun); loadSprite("heart", sHrt); loadSprite("flag", sFlg); loadSprite("mask", sMsk); 
         loadSprite("prx", sPrx); loadSprite("death", sDth);
 
-        // --- 2. MAPY ---
-        const L = [
-            { bg:[80,150,200], bCol:[139,69,19], tCol:[50,205,50], g:1800, f:15, eCol:[100,200,100], m:[
-                "                                                                                                    ",
-                "                                                                                                  F ",
-                "         $$              B        $$   P                 ==            $$              B          ==",
-                "       ======   1     ======      =========              ==          ======   1     ======      ==",
-                "                 ===               !    ^^               ==                    ===                ==",
-                "                                   !   ===               ==                                       ==",
-                "                      3            !1     1              ==         1            2                ==",
-                "======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ============"] },
-            { bg:[180,70,30], bCol:[80,30,10], tCol:[255,69,0], g:1800, f:15, eCol:[255,150,0], m:[
-                "                                                                                                    ",
-                "                                                                                                  F ",
-                "         H       3                W       $$      P      ==         H       3                W      ==",
-                "       ======   ===               W      ====    ===     ==       ======   ===               W      ==",
-                "                            1     W   1          ^^      ==                            1     W      ==",
-                "           ^^             =====   W =====       ===      ==           ^^             =====   W      ==",
-                "======    ====    ====            W                      == ======    ====    ====            W     ==",
-                "===================================================================================================="] }
+        // --- 2. MAPY (9 LEVELŮ S EASTER EGGY A NIŽŠÍM CÍLEM) ---
+        const LEVELS = [
+            { bg:[80,150,200], theme:[139,69,19], top:[50,205,50], g:1800, f:15, eCol:[100,200,100], 
+              m:["                                                            ", "                                              F             ", "         $$              B        $$   P      ==            ", "       ======   1     ======      =========   ==            ", "                 ===               !    ^^    ==            ", "                                   !   ===    ==            ", "                      3            !1     1   ==            ", "======  ^^  =======  ===   ======  =============  =========="] },
+            { bg:[180,70,30], theme:[80,30,10], top:[255,69,0], g:1800, f:15, eCol:[255,150,0], 
+              m:["                                                            ", "                                           F                ", "         H       3                W       $$      P      == ", "       ======   ===               W      ====    ===     == ", "                            1     W   1          ^^      == ", "           ^^             =====   W =====       ===      == ", "======    ====    ====            W                      == ", "==========================================================="] },
+            { bg:[60,60,90], theme:[80,80,80], top:[120,120,120], g:1800, f:15, eCol:[180,180,180], 
+              m:["                               $$$                          ", "                               ===           F              ", "                                             ==             ", "                 1     B                 1   ==             ", "       ======   ===   ===               ===     P        == ", "           ^^             3     ^^        !   ====       == ", "======    ====          =====  ====       !              == ", "==========================================================="] },
+            { bg:[220,180,80], theme:[210,180,100], top:[230,200,120], g:1800, f:15, eCol:[200,100,50], 
+              m:["                                                            ", "                                            F               ", "             B                            $$ ==             ", "       ===            H            ===   ==== ==             ", "                 ===      ===               !    3       == ", "            W                     1         !  =====     == ", "   @   ===  W ^^          1        =====    !            == ", "======      ================================================"] },
+            { bg:[10,80,150], theme:[40,120,100], top:[60,160,120], g:500, f:3, eCol:[0,255,255], 
+              m:["                                                            ", "                                            F               ", "             3                            $$ ==             ", "       ===            B            ===   ==== ==             ", "          W      ===      ===               !    B       == ", "          W                       1         !  =====     == ", "   @      W ^^         3        =====       !            == ", "======    ====    ====    ====    ====    ====    ====   =="] },
+            { bg:[120,150,180], theme:[100,80,60], top:[120,100,80], g:1800, f:15, eCol:[150,50,50], 
+              m:["                                                            ", "                                             F              ", "                                  1          ==  1       == ", "       ===          3      ==========        == ======   == ", "          W      ======                  === !           == ", "          W                     B            !           == ", "   @      W ^^                               !           == ", "======    ====                                           =="] },
+            { bg:[150,180,200], theme:[150,200,255], top:[255,255,255], g:1800, f:2, eCol:[50,50,255], 
+              m:["                                                            ", "                                             F              ", "                                          $$ ==   H      == ", "       ======         B                   ====   ===     == ", "          W                1          1      !   ^^      == ", "          W  ^^            =====      =====  !  ===      == ", "======    ====   ====                        !           == ", "==========================================================="] },
+            { bg:[20,20,20], theme:[60,40,40], top:[80,60,60], g:1800, f:15, isD:true, eCol:[255,0,255], 
+              m:["                                                            ", "                                             F              ", "                                          $$ ==   P      == ", "       ======         1                   ====   ===     == ", "          W      B         1          3      !   ^^      == ", "          W  ^^            =====      =====  !  ===      == ", "======    ====   ====                        !           == ", "==========================================================="] },
+            { bg:[10,0,30], theme:[100,100,150], top:[150,150,200], g:600, f:5, eCol:[0,255,0], isSpc:true, 
+              m:["                                                            ", "                                             F              ", "                 B       3                   ==  P       == ", "       ======   ===     ===               $$ == ===      == ", "          W                  1           ==== !          == ", "          W              === ====   3         !  ^^      == ", "======                                 ====== !  ===     == ", "==========================================================="] }
         ];
-        // Přidání dalších prázdných šablon pro demo, aby cheat fungoval na 1-9
-        while(L.length < 9) L.push(JSON.parse(JSON.stringify(L[0])));
 
-        // --- 3. CHEAT SYSTÉM ---
-        const cheatMap = { "+":0,"1":0,"ě":1,"2":1,"š":2,"3":2,"č":3,"4":3,"ř":4,"5":4,"ž":5,"6":5,"ý":6,"7":6,"á":7,"8":7,"í":8,"9":8,"é":"win","0":"win" };
+        // --- 3. CHEATY ---
+        const cheatKeys = { "+":0,"1":0,"ě":1,"2":1,"š":2,"3":2,"č":3,"4":3,"ř":4,"5":4,"ž":5,"6":5,"ý":6,"7":6,"á":7,"8":7,"í":8,"9":8,"é":"v","0":"v" };
         let cheatSeq = [];
         onKeyPress((k) => {
-            if (k in cheatMap) {
+            if (k in cheatKeys) {
                 cheatSeq.push(k); if(cheatSeq.length > 6) cheatSeq.shift();
                 if(cheatSeq.length === 6 && cheatSeq.every(v => v === k)) {
-                    let t = cheatMap[k]; cheatSeq = [];
-                    t === "win" ? go("victory", 9999) : go("game", t, 3, 5, 0);
+                    let target = cheatKeys[k]; cheatSeq = [];
+                    target === "v" ? go("victory", 999) : go("game", target, 3, 5, 0);
                 }
             } else cheatSeq = [];
         });
 
-        // --- 4. HERNÍ SCÉNA ---
+        // --- 4. SCÉNA HRY ---
         scene("game", (lIdx = 0, stHp = 3, stAm = 5, stSc = 0) => {
-            const cl = L[lIdx];
+            const cl = LEVELS[lIdx];
             setBackground(cl.bg);
             setGravity(cl.g);
 
@@ -118,16 +98,14 @@
 
             // Paralaxa
             const bgL = add([ fixed(), pos(0,0), z(-10) ]);
-            for(let i=0; i<10; i++) bgL.add([ sprite("prx"), pos(i*400, height()-200), color(cl.bCol) ]);
+            for(let i=0; i<10; i++) bgL.add([ sprite("prx"), pos(i*400, height()-200), color(cl.theme[0], cl.theme[1], cl.theme[2]) ]);
             
-            onUpdate(() => { if(bgL && bgL.pos) bgL.pos.x = -((camPos().x - 400) * 0.4) % 800; });
-
             // Mapa
             const cCol = cl.eCol;
             addLevel(cl.m, {
                 tileWidth: 40, tileHeight: 40,
                 tiles: {
-                    "=": () => [sprite("block"), color(cl.bCol), area(), body({isStatic:true}), anchor("center"), "ground", { update(){ this.color = this.isGrounded ? cl.tCol : cl.bCol; } }],
+                    "=": () => [sprite("block"), color(cl.theme[0], cl.theme[1], cl.theme[2]), area(), body({isStatic:true}), anchor("center"), "ground", { update(){ this.color = this.isGrounded ? rgb(cl.top[0], cl.top[1], cl.top[2]) : rgb(cl.theme[0], cl.theme[1], cl.theme[2]); } }],
                     "^": () => [sprite("spike"), area({shape: new Polygon([vec2(0,15),vec2(20,-15),vec2(-20,-15)])}), body({isStatic:true}), anchor("center"), "danger"],
                     "F": () => [sprite("flag"), area(), anchor("center"), "finish"],
                     "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
@@ -135,10 +113,9 @@
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
                     "1": () => [sprite("e_nrm"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), body(), anchor("center"), "enemy", "danger", { hp:1, t:"nrm", speed:80 }],
                     "3": () => [sprite("e_jmp"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), body(), anchor("center"), "enemy", "danger", { hp:1, t:"jmp", speed:100, jTmr:0 }],
-                    "2": () => [sprite("e_bnc"), color(cCol[0],cCol[1],cCol[2]), scale(1.2), area(), body(), anchor("center"), "enemy", "pusher", { hp:2, t:"bnc", speed:120, sTmr:0 }],
                     "B": () => [sprite("e_fly"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), anchor("center"), "enemy", "danger", { hp:1, t:"fly", speed:70, dir:1, sY:0 }],
                     "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake"],
-                    "W": () => [sprite("block"), color(cl.tCol), area(), body({isStatic:true}), anchor("center"), "breakable"]
+                    "W": () => [sprite("block"), color(cl.top[0], cl.top[1], cl.top[2]), area(), body({isStatic:true}), anchor("center"), "breakable"]
                 }
             });
 
@@ -147,9 +124,10 @@
             ]);
             player.play("idle");
 
-            if(cl.isD) add([sprite("mask"), pos(0,0), anchor("center"), z(90), { update(){ this.pos = player.pos || vec2(0); } }]);
+            get("enemy").forEach(e => { if(e.t==="fly" && e.pos) e.sY = e.pos.y; });
+            if(cl.isD) add([sprite("mask"), pos(0,0), anchor("center"), z(90), { update(){ if(player.pos) this.pos = player.pos; } }]);
 
-            // UI
+            // --- UI ---
             const ui = add([fixed(), z(100)]);
             ui.add([sprite("coin"), pos(20,22)]);
             const sl = ui.add([text(`Skore: ${score}`, {size:22}), pos(50, 20)]);
@@ -163,21 +141,21 @@
             };
             updHP();
 
-            // Mobile Cheat Area (2. srdce zprava)
+            // --- MULTITOUCH CHEAT & OVLÁDÁNÍ ---
+            let hClicks = 0, lastC = 0;
             add([fixed(), area(), pos(width()-75, 10), rect(35,35), opacity(0), z(105), "mCheat"]);
-            let mCCount = 0;
             onClick("mCheat", () => {
-                mCCount++; if(mCCount >= 6) { mCCount=0; lIdx+1 < L.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score); }
+                if(time()-lastC > 1) hClicks = 0; hClicks++; lastC = time();
+                if(hClicks>=6) { hClicks=0; lIdx+1 < LEVELS.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score); }
             });
 
-            // Ovládání
-            const uiC = add([fixed(), z(99)]);
-            const btn = (p, t, a) => {
-                uiC.add([rect(80,80,{radius:10}), pos(p), color(0,0,0), opacity(0.3), area(), a]);
-                uiC.add([text(t, {size:40}), pos(p.x+20, p.y+20)]);
+            const activeTouches = {};
+            const zones = {
+                left: (p) => p.x < 125 && p.y > height() - 150,
+                right: (p) => p.x > 125 && p.x < 250 && p.y > height() - 150,
+                shoot: (p) => p.x > width() - 250 && p.x < width() - 125 && p.y > height() - 150,
+                jump: (p) => p.x > width() - 125 && p.y > height() - 150
             };
-            btn(vec2(20, 300), "<", "bL"); btn(vec2(110, 300), ">", "bR");
-            btn(vec2(600, 300), "O", "bS"); btn(vec2(700, 300), "^", "bJ");
 
             const jmp = () => {
                 if(!player.exists() || player.stun) return;
@@ -190,38 +168,63 @@
                 add([sprite("bullet"), pos(player.pos.x+(player.flipX?-20:20), player.pos.y), area(), anchor("center"), move(player.flipX?LEFT:RIGHT, 1000), "bullet"]);
             };
 
+            onTouchStart((id, p) => { activeTouches[id] = p; if(zones.jump(p)) jmp(); if(zones.shoot(p)) sht(); });
+            onTouchMove((id, p) => { activeTouches[id] = p; });
+            onTouchEnd((id) => { delete activeTouches[id]; });
+            onMousePress(() => { const p = mousePos(); if(zones.jump(p)) jmp(); if(zones.shoot(p)) sht(); });
             onKeyPress("up", jmp); onKeyPress("space", sht);
-            onClick("bJ", jmp); onClick("bS", sht);
 
+            // Vizuální tlačítka
+            const uiC = add([fixed(), z(99)]);
+            const drawBtn = (p, t) => {
+                uiC.add([rect(90,90,{radius:10}), pos(p), color(0,0,0), opacity(0.3)]);
+                uiC.add([text(t, {size:50}), pos(p.x+25, p.y+20)]);
+            };
+            drawBtn(vec2(20, height()-110), "<");
+            drawBtn(vec2(130, height()-110), ">");
+            uiC.add([rect(90,90,{radius:45}), pos(width()-220, height()-110), color(200,50,50), opacity(0.5)]);
+            uiC.add([sprite("pistol"), pos(width()-195, height()-95), scale(1.5)]);
+            drawBtn(vec2(width()-110, height()-110), "^");
+
+            // --- SMYČKA ---
             onUpdate(() => {
-                if(!player.exists()) return;
-                player.scale.x = lerp(player.scale.x, 1, 0.1);
-                player.scale.y = lerp(player.scale.y, 1, 0.1);
-                
-                if(!player.stun) {
-                    let dir = 0;
-                    if(isKeyDown("left") || isMouseDown() && mousePos().x < 110 && mousePos().y > 300) dir = -1;
-                    if(isKeyDown("right") || isMouseDown() && mousePos().x > 110 && mousePos().x < 200 && mousePos().y > 300) dir = 1;
-                    
-                    player.cVel = lerp(player.cVel, dir * 300, dt() * cl.f);
-                    player.move(player.cVel, 0);
+                const p = get("player")[0];
+                if(!p || !p.pos) return;
+                if(bgL && bgL.pos) bgL.pos.x = -((camPos().x - 400) * 0.4) % 800;
 
+                p.scale.x = lerp(p.scale.x, 1, 0.1);
+                p.scale.y = lerp(p.scale.y, 1, 0.1);
+
+                if(!p.stun) {
+                    let dir = 0;
+                    if(isKeyDown("left")) dir = -1;
+                    if(isKeyDown("right")) dir = 1;
+                    for(let id in activeTouches) {
+                        const t = activeTouches[id];
+                        if(zones.left(t)) dir = -1;
+                        if(zones.right(t)) dir = 1;
+                    }
+                    p.cVel = lerp(p.cVel, dir * 300, dt() * cl.f);
+                    p.move(p.cVel, 0);
                     if(dir !== 0) {
-                        player.flipX = dir < 0;
-                        if(player.isGrounded()) player.play("run");
-                    } else if(player.isGrounded()) player.play("idle");
+                        p.flipX = dir < 0;
+                        if(p.isGrounded()) p.play("run");
+                    } else if(p.isGrounded()) p.play("idle");
                 }
                 
-                camPos(Math.max(400, player.pos.x), 200);
-                if(player.pos.y > 500) go("game", lIdx, 3, 5, score);
+                if(p.isGrounded() && p.curAnim() === "jump") p.scale = vec2(1.3, 0.7);
+                if(!p.isGrounded() && p.curAnim() !== "jump") p.play("jump");
+
+                camPos(Math.max(400, p.pos.x), 200);
+                if(p.pos.y > 500) go("game", lIdx, 3, 5, score);
             });
 
-            onCollide("player", "danger", (p, d) => {
+            // --- KOLIZE ---
+            onCollide("player", "danger", (p) => {
                 hp--; updHP(); if(hp<=0) go("game", lIdx, 3, 5, score);
                 p.stun = true; p.color = rgb(255,0,0); p.jump(400);
-                wait(0.5, () => { p.stun = false; p.color = rgb(255,255,255); });
+                wait(0.5, () => { if(p.exists()) { p.stun = false; p.color = rgb(255,255,255); } });
             });
-
             onCollide("bullet", "enemy", (b, e) => {
                 destroy(b); e.hp--; 
                 if(e.hp<=0){ 
@@ -230,23 +233,33 @@
                     wait(0.5, () => destroy(d));
                 }
             });
-
+            onCollide("enemy", "ground", (e, b, col) => { if(col.isLeft()||col.isRight()) e.speed *= -1; });
+            onUpdate("enemy", (e) => {
+                if(e.t === "fly") e.pos.y = e.sY + Math.sin(time()*4)*60;
+                e.move(e.speed, 0);
+                if(e.t === "jmp" && e.isGrounded()) { e.jTmr -= dt(); if(e.jTmr<=0){ e.jump(500); e.jTmr=rand(1,2); } }
+            });
+            onCollide("bullet", "breakable", (b, w) => { destroy(b); destroy(w); score+=10; sl.text=`Skore: ${score}`; });
             onCollide("player", "coin", (p, c) => { destroy(c); score++; sl.text=`Skore: ${score}`; });
-            onCollide("player", "pistol", (p, wp) => { destroy(wp); ammo+=3; al.text=`x ${ammo}`; });
+            onCollide("player", "pistol", (p, w) => { destroy(w); ammo+=3; al.text=`x ${ammo}`; });
             onCollide("player", "heal", (p, h) => { destroy(h); hp++; if(hp>maxHp) maxHp=hp; updHP(); });
-            onCollide("player", "finish", () => lIdx+1 < L.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score));
+            onCollide("player", "finish", () => { lIdx+1 < LEVELS.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score); });
         });
 
+        // --- 5. VÍTĚZSTVÍ ---
         scene("victory", (sc) => {
             setBackground(100, 150, 255);
-            add([text("VÍTĚZSTVÍ!", {size:48}), pos(400, 100), anchor("center")]);
-            add([sprite("player"), pos(400, 300), anchor("center"), scale(2)]);
-            const et = ["e_nrm", "e_jmp", "e_fly", "e_bnc"];
-            for(let i=0; i<8; i++) {
-                add([sprite(et[i%4]), pos(100+i*80, 320), anchor("bot"), "bow"]);
-            }
-            onUpdate("bow", (e) => e.scale.y = 1 + Math.sin(time()*3)*0.2);
-            onKeyPress(() => go("game", 0));
+            add([ text("VÍTĚZSTVÍ!", {size:48}), pos(400, 80), anchor("center") ]);
+            add([ text(`Finalni Skore: ${sc}`, {size:20}), pos(400, 130), anchor("center") ]);
+            add([ rect(width(), 40), color(50,200,50), pos(0, height()-40), area(), body({isStatic:true}), anchor("botleft") ]);
+            const p = add([ sprite("player"), pos(400, height()-40), scale(1.5), anchor("bot") ]);
+            p.play("idle");
+            LEVELS.forEach((level, i) => {
+                const xPos = i < 4 ? 60 + i*70 : 520 + (i-5)*70;
+                add([ sprite("e_nrm"), color(level.eCol[0], level.eCol[1], level.eCol[2]), pos(xPos, height()-40), anchor("bot"), "bow" ]);
+            });
+            onUpdate("bow", (e) => { e.scale.y = 1 + Math.sin(time()*3)*0.2; });
+            onMousePress(() => go("game", 0)); onTouchStart(() => go("game", 0));
         });
 
         go("game", 0);
