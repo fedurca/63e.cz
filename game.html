@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>v3.0.0 - Stickman 9 Svetu</title>
+    <title>v3.1.0 - Stickman Multiverse (Parallax & Fixed Controls)</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -20,46 +20,59 @@
 
         kaboom({ width: 800, height: 400, letterbox: true, crisp: true, background: [0, 0, 0] });
 
-        // --- 1. GRAFIKA (HRÁČ, NEPŘÁTELÉ, UI) ---
-        const svgPlayerAdvanced = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48" viewBox="0 0 224 48"><g transform="translate(0,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17 L16 28"/><path d="M16 18 L12 24 L10 30"/><path d="M16 18 L20 24 L22 30"/><path d="M16 28 L12 36 L12 44"/><path d="M16 28 L20 36 L20 44"/></g><g transform="translate(32,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18 L16 29"/><path d="M16 19 L11 25 L10 31"/><path d="M16 19 L21 25 L22 31"/><path d="M16 29 L11 36 L11 44"/><path d="M16 29 L21 36 L21 44"/></g><g transform="translate(64,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L18 28"/><path d="M17 18 L10 20 L8 16"/><path d="M17 18 L24 22 L28 18"/><path d="M18 28 L10 34 L8 42"/><path d="M18 28 L24 34 L26 42"/></g><g transform="translate(96,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L14 44"/><path d="M16 27 L18 33 L24 38"/></g><g transform="translate(128,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L14 28"/><path d="M15 18 L22 20 L24 16"/><path d="M15 18 L8 22 L4 18"/><path d="M14 28 L22 34 L24 42"/><path d="M14 28 L8 34 L6 42"/></g><g transform="translate(160,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L18 44"/><path d="M16 27 L14 33 L8 38"/></g><g transform="translate(192,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L10 14 L6 8"/><path d="M16 17 L22 14 L26 8"/><path d="M16 27 L10 27 L8 36"/><path d="M16 27 L22 27 L24 36"/></g></svg>`;
+        // --- 1. UNIVERZÁLNÍ GRAFIKA ---
+        const svgPlayer = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48" viewBox="0 0 224 48"><g transform="translate(0,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17 L16 28"/><path d="M16 18 L12 24 L10 30"/><path d="M16 18 L20 24 L22 30"/><path d="M16 28 L12 36 L12 44"/><path d="M16 28 L20 36 L20 44"/></g><g transform="translate(32,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18 L16 29"/><path d="M16 19 L11 25 L10 31"/><path d="M16 19 L21 25 L22 31"/><path d="M16 29 L11 36 L11 44"/><path d="M16 29 L21 36 L21 44"/></g><g transform="translate(64,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L18 28"/><path d="M17 18 L10 20 L8 16"/><path d="M17 18 L24 22 L28 18"/><path d="M18 28 L10 34 L8 42"/><path d="M18 28 L24 34 L26 42"/></g><g transform="translate(96,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L14 44"/><path d="M16 27 L18 33 L24 38"/></g><g transform="translate(128,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L14 28"/><path d="M15 18 L22 20 L24 16"/><path d="M15 18 L8 22 L4 18"/><path d="M14 28 L22 34 L24 42"/><path d="M14 28 L8 34 L6 42"/></g><g transform="translate(160,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L18 44"/><path d="M16 27 L14 33 L8 38"/></g><g transform="translate(192,0)" stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L10 14 L6 8"/><path d="M16 17 L22 14 L26 8"/><path d="M16 27 L10 27 L8 36"/><path d="M16 27 L22 27 L24 36"/></g></svg>`;
         
-        const svgEnemyPurple = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23800080"/><circle cx="11" cy="12" r="3" fill="white"/><circle cx="21" cy="12" r="3" fill="white"/><circle cx="11" cy="12" r="1" fill="black"/><circle cx="21" cy="12" r="1" fill="black"/></svg>`;
-        const svgEnemyRed    = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23cc0000"/><circle cx="11" cy="12" r="3" fill="white"/><circle cx="21" cy="12" r="3" fill="white"/><circle cx="11" cy="12" r="1" fill="black"/><circle cx="21" cy="12" r="1" fill="black"/></svg>`;
-        const svgEnemyGreen  = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%2300aa00"/><circle cx="16" cy="12" r="6" fill="white"/><circle cx="16" cy="12" r="2" fill="black"/></svg>`;
-        const svgFlyer       = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="10" fill="%230055dd"/><polygon points="0,10 10,16 0,22" fill="%2355aaff"/><polygon points="32,10 22,16 32,22" fill="%2355aaff"/><circle cx="13" cy="14" r="2" fill="white"/><circle cx="19" cy="14" r="2" fill="white"/></svg>`;
+        const svgNormal = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23ffffff"/><circle cx="11" cy="12" r="3" fill="black"/><circle cx="21" cy="12" r="3" fill="black"/></svg>`;
+        const svgBouncer = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23dddddd"/><circle cx="16" cy="16" r="10" fill="%23ffffff"/><circle cx="11" cy="12" r="2" fill="black"/><circle cx="21" cy="12" r="2" fill="black"/></svg>`;
+        const svgJumper = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M 4 28 C 4 10, 28 10, 28 28 Z" fill="%23ffffff"/><circle cx="16" cy="14" r="6" fill="black"/><circle cx="16" cy="14" r="2" fill="white"/></svg>`;
+        const svgFlyer = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="10" fill="%23ffffff"/><polygon points="0,10 10,16 0,22" fill="%23cccccc"/><polygon points="32,10 22,16 32,22" fill="%23cccccc"/><circle cx="13" cy="14" r="2" fill="black"/><circle cx="19" cy="14" r="2" fill="black"/></svg>`;
         
-        // Prostředí a bloky pro 9 levelů
-        const svgBlock  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23555"/><rect width="40" height="10" fill="%23228B22"/></svg>`;
+        // Zemské bloky a specifické bloky
+        const svgEarth  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%238b5a2b"/><rect width="40" height="10" fill="%23228B22"/></svg>`;
         const svgStone  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23444"/><rect y="36" width="40" height="4" fill="%23ff4400"/></svg>`;
-        const svgCastle = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23777"/><path d="M0,10 L40,10 M0,20 L40,20 M0,30 L40,30 M10,0 L10,10 M30,10 L30,20 M15,20 L15,30 M25,30 L25,40" stroke="%23555" stroke-width="2"/></svg>`;
-        const svgSand   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23eedd82"/><circle cx="10" cy="10" r="2" fill="%23ddcc70"/><circle cx="30" cy="30" r="2" fill="%23ddcc70"/></svg>`;
-        const svgCoral  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%232e8b57"/><circle cx="20" cy="10" r="5" fill="%23ff7f50"/><circle cx="30" cy="25" r="4" fill="%23ff7f50"/></svg>`;
-        const svgRock   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%238b7355"/><path d="M0,0 L10,10 L20,0 L30,15 L40,0 L40,40 L0,40 Z" fill="%236b5335"/></svg>`;
+        const svgCastle = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23666"/><path d="M0,10 L40,10 M0,20 L40,20 M0,30 L40,30 M10,0 L10,10 M30,10 L30,20 M15,20 L15,30 M25,30 L25,40" stroke="%23444" stroke-width="2"/></svg>`;
+        const svgSand   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23dcb850"/><circle cx="10" cy="10" r="2" fill="%23cba740"/><circle cx="30" cy="30" r="2" fill="%23cba740"/></svg>`;
+        const svgCoral  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%231e7b47"/><circle cx="20" cy="10" r="5" fill="%23ff7f50"/><circle cx="30" cy="25" r="4" fill="%23ff7f50"/></svg>`;
+        const svgRock   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%237b6345"/><path d="M0,0 L10,10 L20,0 L30,15 L40,0 L40,40 L0,40 Z" fill="%235b4325"/></svg>`;
         const svgIce    = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%2388ccff"/><rect width="40" height="10" fill="%23ffffff"/></svg>`;
-        const svgMine   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%233b2f2f"/><rect x="10" y="10" width="5" height="5" fill="%23ffd700"/><rect x="25" y="25" width="4" height="4" fill="%23ffd700"/></svg>`;
-        const svgMoon   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23888"/><circle cx="10" cy="10" r="5" fill="%23666"/><circle cx="30" cy="25" r="8" fill="%23666"/></svg>`;
+        const svgMine   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%232b1f1f"/><rect x="10" y="10" width="5" height="5" fill="%23ffd700"/><rect x="25" y="25" width="4" height="4" fill="%23ffd700"/></svg>`;
+        const svgMoon   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23666"/><circle cx="10" cy="10" r="5" fill="%23444"/><circle cx="30" cy="25" r="8" fill="%23444"/></svg>`;
         
-        const svgSpike = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><polygon points="20,10 40,40 0,40" fill="%23ff3333"/></svg>`;
-        const svgLightMask = `data:image/svg+xml;utf8,<svg width="1600" height="1600" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="black" stop-opacity="0"/><stop offset="10%" stop-color="black" stop-opacity="0"/><stop offset="30%" stop-color="black" stop-opacity="0.95"/><stop offset="100%" stop-color="black" stop-opacity="1"/></radialGradient></defs><rect width="1600" height="1600" fill="url(%23g)"/></svg>`;
+        // PARALAXNÍ POZADÍ
+        const svgBgHills = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 L200,50 L400,200 Z" fill="%23226622" opacity="0.6"/><path d="M100,200 L250,100 L400,200 Z" fill="%23115511" opacity="0.5"/></svg>`;
+        const svgBgVolcano = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 L200,50 L400,200 Z" fill="%23662222" opacity="0.6"/><path d="M180,50 L220,50 L200,80 Z" fill="%23ffaa00" opacity="0.8"/></svg>`;
+        const svgBgMountains = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 L200,20 L400,200 Z" fill="%23444444" opacity="0.6"/><path d="M100,200 L250,60 L400,200 Z" fill="%23333333" opacity="0.5"/></svg>`;
+        const svgBgDunes = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 Q200,100 400,200 Z" fill="%23cca300" opacity="0.5"/></svg>`;
+        const svgBgWater = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><circle cx="100" cy="150" r="80" fill="%23005588" opacity="0.4"/><circle cx="300" cy="100" r="120" fill="%23004477" opacity="0.4"/></svg>`;
+        const svgBgIce = `data:image/svg+xml;utf8,<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg"><path d="M0,200 L200,40 L400,200 Z" fill="%23aaddff" opacity="0.5"/><path d="M100,200 L250,80 L400,200 Z" fill="%2388ccff" opacity="0.4"/></svg>`;
+        const svgBgCave = `data:image/svg+xml;utf8,<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg"><rect x="50" y="0" width="100" height="400" fill="%23111111" opacity="0.7"/><rect x="250" y="0" width="80" height="400" fill="%230a0a0a" opacity="0.8"/></svg>`;
+        const svgBgSpace = `data:image/svg+xml;utf8,<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg"><circle cx="200" cy="100" r="60" fill="%23442266" opacity="0.8"/><circle cx="180" cy="80" r="10" fill="%23331155"/><circle cx="350" cy="250" r="30" fill="%23224466"/></svg>`;
 
+        const svgSpike = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><polygon points="20,10 40,40 0,40" fill="%23ff3333"/></svg>`;
+        const svgLightMask = `data:image/svg+xml;utf8,<svg width="2000" height="2000" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="black" stop-opacity="0"/><stop offset="10%" stop-color="black" stop-opacity="0"/><stop offset="30%" stop-color="black" stop-opacity="0.95"/><stop offset="100%" stop-color="black" stop-opacity="1"/></radialGradient></defs><rect width="2000" height="2000" fill="url(%23g)"/></svg>`;
+        const svgDeath = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23aaa"/><line x1="10" y1="10" x2="22" y2="22" stroke="black" stroke-width="2"/><line x1="22" y1="10" x2="10" y2="22" stroke="black" stroke-width="2"/></svg>`;
         const svgBullet = `data:image/svg+xml;utf8,<svg width="16" height="8" xmlns="http://www.w3.org/2000/svg"><rect width="16" height="8" rx="4" fill="%2300ff00"/></svg>`;
         const svgCoin = `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="%23ffd700"/></svg>`;
         const svgPistol = `data:image/svg+xml;utf8,<svg width="24" height="16" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="6" fill="%23aaa"/></svg>`;
         const svgHeart = `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="red"/></svg>`;
         const svgFlag = `data:image/svg+xml;utf8,<svg width="40" height="80" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="10" width="4" height="70" fill="white"/><polygon points="22,10 40,20 22,30" fill="%2300ff00"/></svg>`;
 
-        // Načtení do paměti
-        loadSprite("player", svgPlayerAdvanced, { sliceX: 7, anims: { idle: { from: 0, to: 1, loop: true, speed: 2 }, run: { from: 2, to: 5, loop: true, speed: 12 }, jump: 6 } });
-        loadSprite("enemy1", svgEnemyPurple); loadSprite("enemy2", svgEnemyRed); loadSprite("enemy3", svgEnemyGreen); loadSprite("flyer", svgFlyer);
-        loadSprite("block", svgBlock); loadSprite("stone", svgStone); loadSprite("castle", svgCastle); loadSprite("sand", svgSand); loadSprite("coral", svgCoral);
+        loadSprite("player", svgPlayer, { sliceX: 7, anims: { idle: { from: 0, to: 1, loop: true, speed: 2 }, run: { from: 2, to: 5, loop: true, speed: 12 }, jump: 6 } });
+        loadSprite("e_norm", svgNormal); loadSprite("e_bnce", svgBouncer); loadSprite("e_jump", svgJumper); loadSprite("e_fly", svgFlyer);
+        loadSprite("earth", svgEarth); loadSprite("stone", svgStone); loadSprite("castle", svgCastle); loadSprite("sand", svgSand); loadSprite("coral", svgCoral);
         loadSprite("rock", svgRock); loadSprite("ice", svgIce); loadSprite("mine", svgMine); loadSprite("moon", svgMoon);
-        loadSprite("spike", svgSpike); loadSprite("lightmask", svgLightMask);
+        
+        loadSprite("bg_1", svgBgHills); loadSprite("bg_2", svgBgVolcano); loadSprite("bg_3", svgBgMountains); loadSprite("bg_4", svgBgDunes); 
+        loadSprite("bg_5", svgBgWater); loadSprite("bg_6", svgBgMountains); loadSprite("bg_7", svgBgIce); loadSprite("bg_8", svgBgCave); loadSprite("bg_9", svgBgSpace);
+
+        loadSprite("spike", svgSpike); loadSprite("lightmask", svgLightMask); loadSprite("death", svgDeath);
         loadSprite("bullet", svgBullet); loadSprite("coin", svgCoin); loadSprite("pistol", svgPistol); loadSprite("heart", svgHeart); loadSprite("flag", svgFlag);
 
-        // --- 2. DATA 9 LEVELŮ ---
+        // --- 2. 9 TEMATICKÝCH LEVELŮ ---
         const LEVELS = [
-            { // 1: Les (Klasika, propadliště s fake bodáky)
-                bg: [80, 160, 210], gravity: 1800, friction: 15, theme: "block", startX: 80, startY: 250,
+            { // 1: Les (Earth Blocky, Pozadí lesa)
+                bg: [80, 150, 200], gravity: 1800, friction: 15, theme: "earth", eCol: [50, 200, 50], bgSprite: "bg_1",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
@@ -67,38 +80,38 @@
                     "       ======   1     ======      =========              == ",
                     "                 ===               !    ^^               == ",
                     "                                   !   ===               == ",
-                    "                      2            !1     2              == ",
+                    "   @                  2            !1     2              == ",
                     "======  ^^  =======  ===   ======  ========================",
                 ]
             },
-            { // 2: Pravěk (Sopky a Láva, rozbitná zeď W)
-                bg: [180, 70, 30], gravity: 1800, friction: 15, theme: "stone", startX: 80, startY: 250,
+            { // 2: Pravěk
+                bg: [150, 60, 20], gravity: 1800, friction: 15, theme: "stone", eCol: [255, 100, 0], bgSprite: "bg_2",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
                     "         H       3                W       $$      P      == ",
                     "       ======   ===               W      ====    ===     == ",
                     "                            2     W   1          ^^      == ",
-                    "           ^^             =====   W =====       ===      == ",
+                    "   @       ^^             =====   W =====       ===      == ",
                     "======    ====    ====            W                      == ",
                     "===========================================================",
                 ]
             },
-            { // 3: Středověk (Tajná horní cesta)
-                bg: [60, 60, 90], gravity: 1800, friction: 15, theme: "castle", startX: 80, startY: 250,
+            { // 3: Středověk
+                bg: [50, 50, 70], gravity: 1800, friction: 15, theme: "castle", eCol: [150, 150, 150], bgSprite: "bg_3",
                 layout: [
                     "                               $$$                          ",
                     "                               ===                        F ",
                     "                                                         == ",
                     "                 1     B                 1               == ",
                     "       ======   ===   ===               ===     P        == ",
-                    "           ^^             2     ^^            ====       == ",
+                    "   @       ^^             2     ^^            ====       == ",
                     "======    ====          =====  ====                      == ",
                     "===========================================================",
                 ] 
             },
-            { // 4: V poušti (Dlouhé skoky)
-                bg: [220, 180, 80], gravity: 1800, friction: 15, theme: "sand", startX: 80, startY: 250,
+            { // 4: Poušť
+                bg: [200, 150, 50], gravity: 1800, friction: 15, theme: "sand", eCol: [200, 180, 20], bgSprite: "bg_4",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
@@ -106,12 +119,12 @@
                     "       ===            H            ===   ====            == ",
                     "                 ===      ===                    2       == ",
                     "                                  1            =====     == ",
-                    "======     ^^          1        =====                    == ",
-                    "===========================================================",
+                    "   @   === ^^          1        =====                    == ",
+                    "======     ================================================",
                 ]
             },
-            { // 5: Pod vodou (Slabá gravitace, silné tření - plavání)
-                bg: [10, 80, 150], gravity: 400, friction: 3, theme: "coral", startX: 80, startY: 250,
+            { // 5: Pod vodou
+                bg: [10, 60, 120], gravity: 400, friction: 3, theme: "coral", eCol: [50, 100, 255], bgSprite: "bg_5",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
@@ -119,12 +132,12 @@
                     "       ===            B            ===   ====            == ",
                     "                 ===      ===                    B       == ",
                     "                                  1            =====     == ",
-                    "======     ^^          3        =====                    == ",
-                    "===========================================================",
+                    "   @       ^^          3        =====                    == ",
+                    "======    ====    ====    ====    ====    ====    ====   ==",
                 ]
             },
-            { // 6: Ve skalách (Horolezectví nahoru a dolů)
-                bg: [120, 150, 180], gravity: 1800, friction: 15, theme: "rock", startX: 80, startY: 250,
+            { // 6: Skály
+                bg: [100, 120, 140], gravity: 1800, friction: 15, theme: "rock", eCol: [130, 80, 50], bgSprite: "bg_6",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
@@ -132,38 +145,38 @@
                     "       ===          3      ==========          ======    == ",
                     "                 ======                  ===             == ",
                     "                                B                        == ",
-                    "======     ^^                                            == ",
-                    "===========================================================",
+                    "   @       ^^                                            == ",
+                    "======    ====                                           ==",
                 ]
             },
-            { // 7: Zima (Kluzký povrch)
-                bg: [150, 180, 200], gravity: 1800, friction: 2, theme: "ice", startX: 80, startY: 250,
+            { // 7: Zima
+                bg: [100, 150, 180], gravity: 1800, friction: 2, theme: "ice", eCol: [180, 230, 255], bgSprite: "bg_7",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
                     "                                          $$      H      == ",
                     "       ======         B                   ====   ===     == ",
                     "                           2          1          ^^      == ",
-                    "           ^^            =====      =====       ===      == ",
+                    "   @       ^^            =====      =====       ===      == ",
                     "======    ====   ====                                    == ",
                     "===========================================================",
                 ]
             },
-            { // 8: Důl / Tma (Baterka)
-                bg: [20, 20, 20], gravity: 1800, friction: 15, theme: "mine", isDark: true, startX: 80, startY: 250,
+            { // 8: Důl / Tma
+                bg: [15, 15, 15], gravity: 1800, friction: 15, theme: "mine", isDark: true, eCol: [150, 50, 200], bgSprite: "bg_8",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
                     "                                          $$      P      == ",
                     "       ======         1                   ====   ===     == ",
                     "                 B         2          3          ^^      == ",
-                    "           ^^            =====      =====       ===      == ",
+                    "   @       ^^            =====      =====       ===      == ",
                     "======    ====   ====                                    == ",
                     "===========================================================",
                 ]
             },
-            { // 9: Vesmír (Velmi slabá gravitace, létáš)
-                bg: [10, 0, 30], gravity: 600, friction: 5, theme: "moon", startX: 80, startY: 250,
+            { // 9: Vesmír
+                bg: [5, 0, 20], gravity: 600, friction: 5, theme: "moon", eCol: [0, 255, 0], bgSprite: "bg_9",
                 layout: [
                     "                                                            ",
                     "                                                          F ",
@@ -171,8 +184,8 @@
                     "       ======   ===     ===               $$    ===      == ",
                     "                             1           ====            == ",
                     "                         === ====   2            ^^      == ",
-                    "======                                 ======   ===      == ",
-                    "===========================================================",
+                    "   @                                   ======   ===      == ",
+                    "======                                                   ==",
                 ]
             }
         ];
@@ -184,7 +197,7 @@
                 cheatBuffer.push(k);
                 if (cheatBuffer.length > 6) cheatBuffer.shift();
                 if (cheatBuffer.length === 6 && cheatBuffer.every(v => v === k)) {
-                    go("game", parseInt(k) - 1, 3, 5, 0); // Jdi do vybraného levelu s plným zdravím
+                    go("game", parseInt(k) - 1, 3, 5, 0); 
                 }
             } else { cheatBuffer = []; }
         });
@@ -201,25 +214,35 @@
             let score = startScore;
             let canDoubleJump = false;
 
-            // --- EFEKTY NA POZADÍ (Paralaxa / Sníh) ---
-            if (levelIndex === 6) { // Zima - Sníh
-                onUpdate(() => {
-                    if (chance(0.4)) {
-                        add([ rect(4, 4), color(255,255,255), pos(camPos().x + rand(-500, 500), -50), move(DOWN, rand(100, 200)), lifespan(5), z(0) ]);
-                    }
-                });
-            } else if (levelIndex === 8) { // Vesmír - Hvězdy
-                for(let i=0; i<60; i++) {
-                    add([ rect(2,2), color(255,255,255), opacity(rand(0.2, 0.8)), pos(rand(0, 3000), rand(0, 400)), z(0), "star" ]);
-                }
-            } else {
-                // Obecná paralaxa pro ostatní levely (mraky nebo struktury)
-                for(let i=0; i<15; i++) {
-                    add([ rect(rand(20,80), rand(10,30)), color(255,255,255), opacity(0.1), pos(rand(0, 3000), rand(20, 150)), z(0), "cloud" ]);
-                }
+            // --- BEZPEČNÉ OVLÁDACÍ PROMĚNNÉ ---
+            let activeTouches = {};
+
+            // --- PARALAXNÍ POZADÍ ---
+            const parallaxLayer = add([ fixed(), z(-10) ]);
+            for(let i=0; i<8; i++) {
+                parallaxLayer.add([
+                    sprite(currentLevel.bgSprite),
+                    pos(i * 400, height()), // Připevníme k dolnímu okraji obrazovky
+                    anchor("botleft"),
+                    "parallax_node",
+                    { initialX: i * 400 }
+                ]);
+            }
+            
+            // Oživí paralaxu tím, že ji posunuje v závislosti na kameře
+            onUpdate("parallax_node", (node) => {
+                node.pos.x = node.initialX - (camPos().x - width()/2) * 0.2;
+            });
+
+            // Speciální efekty počasí navíc
+            if (levelIndex === 6) { 
+                onUpdate(() => { if (chance(0.4)) add([ rect(4, 4), color(255,255,255), pos(camPos().x + rand(-500, 500), -50), move(DOWN, rand(100, 200)), lifespan(5), z(0) ]); });
+            } else if (levelIndex === 8) { 
+                for(let i=0; i<60; i++) parallaxLayer.add([ rect(2,2), color(255,255,255), opacity(rand(0.2, 0.8)), pos(rand(0, 3000), rand(0, 400)), "star" ]);
             }
 
-            // --- MAPA ---
+            // --- STAVBA MAPY ---
+            const c = currentLevel.eCol;
             const levelConf = {
                 tileWidth: 40, tileHeight: 40,
                 tiles: {
@@ -229,44 +252,31 @@
                     "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
                     "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
+                    "@": () => [sprite("player"), area({ shape: new Rect(vec2(0, 5), 20, 38) }), body(), anchor("center"), "player", { stunned: false, pushDir: 0 }],
                     
-                    "1": () => [sprite("enemy1"), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "normal", speed: 80 }],
-                    "3": () => [sprite("enemy3"), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "jumper", speed: 100, jumpTimer: 0 }],
-                    "2": () => [sprite("enemy2"), area(), body(), anchor("center"), scale(1.2), "enemy", "pusher", { hp: 2, type: "bouncer", speed: 120, stunTimer: 0 }],
-                    "B": () => [sprite("flyer"), area(), anchor("center"), "enemy", "danger", { hp: 1, type: "flyer", speed: 70, dir: 1, startY: 0 }],
+                    "1": () => [sprite("e_norm"), color(c[0], c[1], c[2]), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "normal", speed: 80 }],
+                    "3": () => [sprite("e_jump"), color(c[0], c[1], c[2]), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "jumper", speed: 100, jumpTimer: 0 }],
+                    "2": () => [sprite("e_bnce"), color(c[0], c[1], c[2]), area(), body(), anchor("center"), scale(1.2), "enemy", "pusher", { hp: 2, type: "bouncer", speed: 120, stunTimer: 0 }],
+                    "B": () => [sprite("e_fly"), color(c[0], c[1], c[2]), area(), anchor("center"), "enemy", "danger", { hp: 1, type: "flyer", speed: 70, dir: 1, startY: 0 }],
                     
-                    // Easter Eggs
-                    "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake"], // Falešný bodák
-                    "W": () => [sprite(currentLevel.theme), color(200,100,100), area(), body({ isStatic: true }), anchor("center"), "breakable", { hp: 1 }] // Prasklá zeď
+                    "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake"],
+                    "W": () => [sprite(currentLevel.theme), color(255,100,100), area(), body({ isStatic: true }), anchor("center"), "breakable", { hp: 1 }]
                 }
             };
 
             addLevel(currentLevel.layout, levelConf);
 
-            // --- HRÁČ (OPRAVENÝ BEZPEČNÝ SPAWN) ---
-            const player = add([
-                sprite("player"),
-                pos(currentLevel.startX, currentLevel.startY),
-                area({ shape: new Rect(vec2(0, 5), 20, 38) }),
-                body(), anchor("center"),
-                "player",
-                { stunned: false, pushDir: 0 }
-            ]);
-            player.play("idle");
-
             get("enemy").forEach((e) => { if (e.type === "flyer") e.startY = e.pos.y; });
 
             const SPEED = 300;
-            // Upravené skoky pro vodu (level 4) a vesmír (level 8)
             const BASE_JUMP = currentLevel.gravity < 1000 ? 450 : 650; 
 
-            // --- TMA (Level 7) ---
             let light;
             if (currentLevel.isDark) {
-                light = add([ sprite("lightmask"), pos(player.pos), anchor("center"), z(90) ]);
+                light = add([ sprite("lightmask"), pos(0,0), anchor("center"), z(90) ]);
             }
 
-            // --- UI ---
+            // --- UI A OVLÁDACÍ TLAČÍTKA ---
             const ui = add([fixed(), z(100)]);
             const scoreLabel = ui.add([ text(`Skore: ${score} | Lvl ${levelIndex+1}`, { size: 24 }), pos(20, 20) ]);
             ui.add([ sprite("pistol"), pos(width() / 2 - 40, 20), scale(1.5) ]);
@@ -279,97 +289,132 @@
             }
             updateHP();
 
-            // --- DOTYKY ---
             const btnArea = add([fixed(), z(99)]);
-            const isLeftBtn = (p) => p.x < 160 && p.y > height() - 150;
-            const isRightBtn = (p) => p.x >= 160 && p.x < 320 && p.y > height() - 150;
-            const isShootBtn = (p) => p.x > width() - 250 && p.x <= width() - 125 && p.y > height() - 150;
-            const isJumpBtn = (p) => p.x > width() - 125 && p.y > height() - 150;
-
+            
             btnArea.add([ rect(100, 100, { radius: 10 }), pos(30, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text("<", { size: 60 }), pos(60, height() - 100) ]);
             btnArea.add([ rect(100, 100, { radius: 10 }), pos(190, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text(">", { size: 60 }), pos(220, height() - 100) ]);
             btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 220, height() - 120), color(200,0,0), opacity(0.5) ]); btnArea.add([ sprite("pistol"), pos(width() - 208, height() - 105), scale(1.5) ]);
             btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 110, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text("^", { size: 60 }), pos(width() - 85, height() - 100) ]);
 
+            // Pomocná fce, pokud uživatel trefil hitbox dotyku/kliknutí
+            const isLeftBtn = (p) => p && p.x < 160 && p.y > height() - 150;
+            const isRightBtn = (p) => p && p.x >= 160 && p.x < 320 && p.y > height() - 150;
+            const isShootBtn = (p) => p && p.x > width() - 250 && p.x <= width() - 125 && p.y > height() - 150;
+            const isJumpBtn = (p) => p && p.x > width() - 125 && p.y > height() - 150;
+
+            // --- AKCE HRÁČE ---
+            function getPlayer() { return get("player")[0]; }
+
             function playerJump() {
-                if (!player || player.stunned) return;
+                const p = getPlayer();
+                if (!p || !p.pos || p.stunned) return;
                 let force = BASE_JUMP;
-                if (isKeyDown("left") || isKeyDown("right") || isMouseDown()) force += (currentLevel.gravity < 1000 ? 30 : 80); 
-                if (player.isGrounded()) { player.jump(force); canDoubleJump = true; player.scale = vec2(0.8, 1.2); } 
-                else if (canDoubleJump) { player.jump(force * 0.85); canDoubleJump = false; player.scale = vec2(0.8, 1.2); }
+                if (isKeyDown("left") || isKeyDown("right")) force += (currentLevel.gravity < 1000 ? 30 : 80); 
+                if (p.isGrounded()) { p.jump(force); canDoubleJump = true; p.scale = vec2(0.8, 1.2); } 
+                else if (canDoubleJump) { p.jump(force * 0.85); canDoubleJump = false; p.scale = vec2(0.8, 1.2); }
             }
 
             function playerShoot() {
-                if (!player || ammo <= 0 || player.stunned) return;
+                const p = getPlayer();
+                if (!p || !p.pos || ammo <= 0 || p.stunned) return;
                 ammo--; ammoLabel.text = `x ${ammo}`;
-                player.scale = vec2(1.2, 0.9);
-                const dir = player.flipX ? LEFT : RIGHT;
-                const offset = player.flipX ? -20 : 20;
-                add([ sprite("bullet"), pos(player.pos.x + offset, player.pos.y), area(), anchor("center"), move(dir, 1000), offscreen({ destroy: true }), "bullet" ]);
+                p.scale = vec2(1.2, 0.9);
+                const dir = p.flipX ? LEFT : RIGHT;
+                const offset = p.flipX ? -20 : 20;
+                add([ sprite("bullet"), pos(p.pos.x + offset, p.pos.y), area(), anchor("center"), move(dir, 1000), offscreen({ destroy: true }), "bullet" ]);
             }
 
-            onMousePress(() => { const p = mousePos(); if (isJumpBtn(p)) playerJump(); if (isShootBtn(p)) playerShoot(); });
-            const activeTouches = {};
-            onTouchStart((id, p) => { activeTouches[id] = p; if (isJumpBtn(p)) playerJump(); if (isShootBtn(p)) playerShoot(); });
-            onTouchMove((id, p) => { activeTouches[id] = p; });
-            onTouchEnd((id) => { delete activeTouches[id]; });
+            // Zachytávání vstupů (Nyní absolutně bezpečné a univerzální)
             onKeyPress("up", () => playerJump());
             onKeyPress("space", () => playerShoot());
 
-            // --- SMYČKA ---
-            onUpdate(() => {
-                if (!player) return;
-
-                if (light) light.pos = player.pos;
-
-                player.scale.x = lerp(player.scale.x, 1, 0.1);
-                player.scale.y = lerp(player.scale.y, 1, 0.1);
-                if (player.isGrounded() && player.curAnim() === "jump") player.scale = vec2(1.3, 0.7);
-
-                if (player.stunned) {
-                    player.move(player.pushDir * (currentLevel.friction===2 ? 600 : 400), 0);
-                    if (player.curAnim() !== "jump") player.play("jump");
-                } else {
-                    let moveTarget = 0;
-                    if (isKeyDown("left")) moveTarget = -SPEED;
-                    if (isKeyDown("right")) moveTarget = SPEED;
-                    if (isMouseDown()) { const p = mousePos(); if (isLeftBtn(p)) moveTarget = -SPEED; if (isRightBtn(p)) moveTarget = SPEED; }
-                    for (const id in activeTouches) { const p = activeTouches[id]; if (isLeftBtn(p)) moveTarget = -SPEED; if (isRightBtn(p)) moveTarget = SPEED; }
-
-                    player.vel.x = lerp(player.vel.x, moveTarget, dt() * currentLevel.friction);
-                    
-                    if (moveTarget < 0) player.flipX = true;
-                    else if (moveTarget > 0) player.flipX = false;
-
-                    if (!player.isGrounded()) { if (player.curAnim() !== "jump") player.play("jump"); } 
-                    else if (Math.abs(player.vel.x) > 50) { if (player.curAnim() !== "run") player.play("run"); } 
-                    else { if (player.curAnim() !== "idle") player.play("idle"); }
-                }
-
-                if (player.pos.x < 16) player.pos.x = 16;
-                let camX = Math.max(width() / 2, player.pos.x);
-                camPos(camX, height() / 2);
-
-                // Efekt Paralaxy (Pomalý posun mraků/hvězd vůči kameře)
-                get("star").forEach(s => { s.pos.x -= player.vel.x * dt() * 0.1; });
-                get("cloud").forEach(c => { c.pos.x -= player.vel.x * dt() * 0.05; });
-
-                if (player.pos.y > height() + 100) go("lose", levelIndex, score); 
+            onMousePress(() => {
+                const mp = mousePos("screen") || mousePos(); // Fail-safe
+                if (isJumpBtn(mp)) playerJump();
+                if (isShootBtn(mp)) playerShoot();
             });
 
-            // --- NEPŘÁTELÉ ---
+            onTouchStart((id, pos) => {
+                activeTouches[id] = pos;
+                if (isJumpBtn(pos)) playerJump();
+                if (isShootBtn(pos)) playerShoot();
+            });
+            onTouchMove((id, pos) => { activeTouches[id] = pos; });
+            onTouchEnd((id) => { delete activeTouches[id]; });
+
+            // --- HLAVNÍ SMYČKA ---
+            onUpdate(() => {
+                const p = getPlayer();
+                if (!p || !p.pos) return;
+
+                if (light) light.pos = p.pos;
+
+                // Animace pro Squash & Stretch
+                p.scale.x = lerp(p.scale.x, 1, 0.1);
+                p.scale.y = lerp(p.scale.y, 1, 0.1);
+                if (p.isGrounded() && p.curAnim() === "jump") p.scale = vec2(1.3, 0.7);
+
+                if (p.stunned) {
+                    p.move(p.pushDir * (currentLevel.friction===2 ? 600 : 400), 0);
+                    if (p.curAnim() !== "jump") p.play("jump");
+                } else {
+                    let moveTarget = 0;
+                    
+                    // Bezpečné sledování pohybu napříč všemi zařízeními
+                    if (isKeyDown("left")) moveTarget = -SPEED;
+                    if (isKeyDown("right")) moveTarget = SPEED;
+                    
+                    if (isMouseDown()) { 
+                        const mp = mousePos("screen") || mousePos(); 
+                        if (isLeftBtn(mp)) moveTarget = -SPEED; 
+                        if (isRightBtn(mp)) moveTarget = SPEED; 
+                    }
+                    
+                    for (const id in activeTouches) { 
+                        const tPos = activeTouches[id]; 
+                        if (isLeftBtn(tPos)) moveTarget = -SPEED; 
+                        if (isRightBtn(tPos)) moveTarget = SPEED; 
+                    }
+
+                    // Aplikace tření a pohybu. Abychom nepřepsali gravitaci a zároveň 100% zafixovali pohyb:
+                    if (currentLevel.friction < 10) {
+                        p.vel.x = lerp(p.vel.x || 0, moveTarget, dt() * currentLevel.friction);
+                    } else {
+                        p.vel.x = moveTarget; // Na běžném povrchu rovnou assignujeme cílovou rychlost
+                    }
+                    
+                    if (moveTarget < 0) p.flipX = true;
+                    else if (moveTarget > 0) p.flipX = false;
+
+                    if (!p.isGrounded()) { if (p.curAnim() !== "jump") p.play("jump"); } 
+                    else if (Math.abs(p.vel.x) > 50) { if (p.curAnim() !== "run") p.play("run"); } 
+                    else { if (p.curAnim() !== "idle") p.play("idle"); }
+                }
+
+                if (p.pos.x < 16) p.pos.x = 16;
+                let camX = Math.max(width() / 2, p.pos.x);
+                camPos(camX, height() / 2);
+
+                if (p.pos.y > height() + 100) go("lose", levelIndex, score); 
+            });
+
+            // --- NEPŘÁTELÉ BEZPEČNĚ ---
             onUpdate("enemy", (e) => {
+                if (!e || !e.pos) return;
+                const p = getPlayer();
+
                 if (e.stunTimer > 0) {
                     e.stunTimer -= dt();
-                    if (e.stunTimer <= 0) e.color = rgb(255, 255, 255);
+                    if (e.stunTimer <= 0) e.color = rgb(c[0], c[1], c[2]);
                     return;
                 }
+                
                 let baseScale = e.type === "bouncer" ? 1.2 : 1;
                 e.scale = vec2(baseScale + Math.sin(time() * 5) * 0.05, baseScale - Math.sin(time() * 5) * 0.05);
 
                 if (e.type === "jumper") { e.move(e.speed, 0); e.jumpTimer -= dt(); if (e.jumpTimer <= 0 && e.isGrounded()) { e.jump(500); e.jumpTimer = rand(1, 2.5); } }
                 if (e.type === "bouncer") {
-                    if (player.exists() && Math.abs(player.pos.x - e.pos.x) < 400) { e.speed = lerp(e.speed, (player.pos.x < e.pos.x ? -1 : 1) * 180, 0.05); }
+                    if (p && p.pos && Math.abs(p.pos.x - e.pos.x) < 400) { e.speed = lerp(e.speed, (p.pos.x < e.pos.x ? -1 : 1) * 180, 0.05); }
                     e.move(e.speed, 0);
                     if (e.isGrounded()) { e.jump(650); e.scale = vec2(1.4, 0.9); }
                 }
@@ -379,46 +424,42 @@
 
             onCollide("enemy", "ground", (e, b, col) => { if (e.type !== "bouncer" && col && (col.isLeft() || col.isRight())) { if (e.type === "flyer") e.dir = -e.dir; else e.speed = -e.speed; } });
 
-            // --- KOLIZE ---
+            // --- KOLIZE BEZPEČNĚ ---
             onCollide("bullet", "breakable", (b, w) => { destroy(b); destroy(w); score+=5; scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; });
             
             onCollide("bullet", "enemy", (b, e) => {
                 destroy(b);
                 if (e.type === "bouncer") { e.stunTimer = 3; e.color = rgb(100, 100, 100); return; }
                 e.hp--; e.scale = vec2(0.5);
-                if (e.hp <= 0) { const p = e.pos; score += 5; destroy(e); scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; wait(0.4, () => destroy(add([ sprite("death"), pos(p), anchor("center"), move(UP, 100) ]))); }
+                if (e.hp <= 0) { const ePos = e.pos; score += 5; destroy(e); scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; wait(0.4, () => destroy(add([ sprite("death"), pos(ePos), anchor("center"), move(UP, 100) ]))); }
             });
 
-            player.onCollide("pusher", (p) => {
-                if (player.stunned || p.stunTimer > 0) return; 
-                player.pushDir = player.pos.x < p.pos.x ? -1 : 1; player.stunned = true; player.jump(currentLevel.gravity < 1000 ? 300 : 500); player.color = rgb(150, 150, 150);
-                wait(0.5, () => { if (player) { player.stunned = false; player.pushDir = 0; player.color = rgb(255, 255, 255); } });
+            onCollide("player", "pusher", (p, en) => {
+                if (!p.pos || !en.pos || p.stunned || en.stunTimer > 0) return; 
+                p.pushDir = p.pos.x < en.pos.x ? -1 : 1; p.stunned = true; p.jump(currentLevel.gravity < 1000 ? 300 : 500); p.color = rgb(150, 150, 150);
+                wait(0.5, () => { if (p && p.exists) { p.stunned = false; p.pushDir = 0; p.color = rgb(255, 255, 255); } });
             });
 
-            player.onCollide("danger", (d) => {
-                if (player.stunned) return; 
+            onCollide("player", "danger", (p, d) => {
+                if (!p.pos || p.stunned) return; 
                 hp--; updateHP();
                 if (hp <= 0) go("lose", levelIndex, score);
                 else {
-                    player.jump(BASE_JUMP * 0.7); player.stunned = true; player.pushDir = player.pos.x < d.pos.x ? -1 : 1; player.color = rgb(255, 50, 50); d.paused = true; 
-                    wait(0.5, () => { if (player) { player.color = rgb(255, 255, 255); player.stunned = false; player.pushDir = 0; } if (d.exists()) d.paused = false; });
+                    p.jump(BASE_JUMP * 0.7); p.stunned = true; p.pushDir = p.pos.x < d.pos.x ? -1 : 1; p.color = rgb(255, 50, 50); d.paused = true; 
+                    wait(0.5, () => { if (p && p.exists) { p.color = rgb(255, 255, 255); p.stunned = false; p.pushDir = 0; } if (d.exists && d.exists()) d.paused = false; });
                 }
             });
 
-            player.onCollide("coin", (c) => { destroy(c); score += 1; scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; add([ text("+1", { size: 16 }), pos(c.pos), move(UP, 50), opacity(0.8), lifespan(0.5, { fade: 0.5 }) ]); });
-            player.onCollide("pistol", (p) => { destroy(p); ammo += 3; ammoLabel.text = `x ${ammo}`; });
-            player.onCollide("heal", (h) => { destroy(h); hp++; if (hp > maxHp) maxHp = hp; updateHP(); });
+            onCollide("player", "coin", (p, c) => { destroy(c); score += 1; scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; add([ text("+1", { size: 16 }), pos(c.pos), move(UP, 50), opacity(0.8), lifespan(0.5, { fade: 0.5 }) ]); });
+            onCollide("player", "pistol", (p, wp) => { destroy(wp); ammo += 3; ammoLabel.text = `x ${ammo}`; });
+            onCollide("player", "heal", (p, h) => { destroy(h); hp++; if (hp > maxHp) maxHp = hp; updateHP(); });
             
-            player.onCollide("finish", () => {
-                if (levelIndex + 1 < LEVELS.length) {
-                    go("win", levelIndex, hp, ammo, score, false); 
-                } else {
-                    go("win", levelIndex, hp, ammo, score, true); 
-                }
+            onCollide("player", "finish", () => {
+                if (levelIndex + 1 < LEVELS.length) go("win", levelIndex, hp, ammo, score, false); 
+                else go("win", levelIndex, hp, ammo, score, true); 
             });
         });
 
-        // --- KONCOVÉ SCÉNY ---
         scene("lose", (levelIndex, score) => {
             add([ text(`ZEMŘEL JSI V LEVELU ${levelIndex+1}\n\nSkore: ${score}\n\nKlepni pro restart levelu`, { align: "center", size: 32 }), pos(width() / 2, height() / 2), anchor("center") ]);
             onTouchStart(() => go("game", levelIndex, 3, 5, score)); onMousePress(() => go("game", levelIndex, 3, 5, score)); onKeyPress(() => go("game", levelIndex, 3, 5, score));
@@ -434,7 +475,7 @@
             }
         });
 
-        go("game", 0, 3, 5, 0); // Start
+        go("game", 0, 3, 5, 0);
     </script>
 </body>
 </html>
