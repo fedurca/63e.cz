@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>v5.5.0 - Stickman Ultimate Multiverse</title>
+    <title>v6.0.0 - Stickman Multiverse FINAL</title>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: sans-serif; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; touch-action: none; -webkit-user-select: none; user-select: none; font-family: monospace; }
         canvas { display: block; }
-        #crash-screen { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: #00a; color: #fff; padding: 20px; z-index: 9999; overflow: auto; }
+        #crash-screen { display: none; position: absolute; top:0; left:0; width:100%; height:100%; background: #0000aa; color: #fff; padding: 20px; box-sizing: border-box; z-index: 9999; overflow: auto; }
+        button { background: #fff; border: none; padding: 10px 20px; cursor: pointer; font-family: monospace; font-weight: bold; margin-top: 20px; }
     </style>
 </head>
 <body>
@@ -16,22 +17,23 @@
         <h1>❌ CHYBA HRY</h1>
         <p id="err-desc"></p>
         <pre id="err-stack"></pre>
-        <button onclick="location.reload()" style="padding: 10px; cursor:pointer;">Restartovat hru</button>
+        <button onclick="location.reload()">Restartovat hru</button>
     </div>
 
     <script type="module">
         import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
+        // Záchranná brzda proti pádu
         window.addEventListener("error", (e) => {
             document.getElementById("crash-screen").style.display = "block";
-            document.getElementById("err-desc").innerText = e.message;
-            document.getElementById("err-stack").innerText = e.error?.stack;
+            document.getElementById("err-desc").innerText = "Message: " + e.message;
+            document.getElementById("err-stack").innerText = "Stack: " + e.error?.stack;
         });
 
         kaboom({ width: 800, height: 400, letterbox: true, crisp: true, background: [0, 0, 0] });
 
-        // --- 1. GRAFIKA (SVG DATA) ---
-        const svgP = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><g transform="translate(0,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g><g transform="translate(32,0)"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18v11M16 19l-5 6-1 6M16 19l5 6 1 6M16 29l-5 7v8M16 29l5 7v8"/></g><g transform="translate(64,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l2 12M17 18l-7 2-2-4M17 18l7 4 4-4M18 28l-8 6-2 8M18 28l6 6 2 8"/></g><g transform="translate(96,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9-2 8M16 27l2 6 6 5"/></g><g transform="translate(128,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l-2 12M15 18l7 2-2-4M15 18l-7 4-4-4M14 28l8 6 2 8M14 28l-6 6-2 8"/></g><g transform="translate(160,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9 2 8M16 27l-2 6-6 5"/></g><g transform="translate(192,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-6-3-4-6M16 17l6-3 4-6M16 27l-6 0-2 9M16 27l6 0 2 9"/></g></g></svg>`;
+        // --- 1. KOMPAKTNÍ SVG GRAFIKA ---
+        const svgP = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none"><g transform="translate(0,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g><g transform="translate(32,0)"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18v11M16 19l-5 6-1 6M16 19l5 6 1 6M16 29l-5 7v8M16 29l5 7v8"/></g><g transform="translate(64,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l2 12M17 18l-7 2-2-4M17 18l7 4 4-4M18 28l-8 6-2 8M18 28l6 6 2 8"/></g><g transform="translate(96,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9-2 8M16 27l2 6 6 5"/></g><g transform="translate(128,0)"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16l-2 12M15 18l7 2 2-4M15 18l-7 4-4-4M14 28l8 6 2 8M14 28l-6 6-2 8"/></g><g transform="translate(160,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-2 7v6M16 17l2 7v6M16 27l0 9 2 8M16 27l-2 6-6 5"/></g><g transform="translate(192,0)"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15v12M16 17l-6-3-4-6M16 17l6-3 4-6M16 27l-6 0-2 9M16 27l6 0 2 9"/></g></g></svg>`;
         const sNrm = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="white"/><circle cx="11" cy="12" r="3" fill="black"/><circle cx="21" cy="12" r="3" fill="black"/></svg>`;
         const sBnc = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23ddd"/><circle cx="16" cy="16" r="10" fill="white"/><circle cx="11" cy="12" r="2" fill="black"/><circle cx="21" cy="12" r="2" fill="black"/></svg>`;
         const sJmp = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M 4 28 C 4 10, 28 10, 28 28 Z" fill="white"/><circle cx="16" cy="14" r="6" fill="black"/><circle cx="16" cy="14" r="2" fill="white"/></svg>`;
@@ -53,20 +55,20 @@
         loadSprite("pistol", sGun); loadSprite("heart", sHrt); loadSprite("flag", sFlg); loadSprite("mask", sMsk); 
         loadSprite("prx", sPrx); loadSprite("death", sDth);
 
-        // --- 2. MAPY (9 LEVELŮ S EASTER EGGY A NIŽŠÍM CÍLEM) ---
+        // --- 2. MAPY PRO 9 LEVELŮ ---
         const LEVELS = [
             { bg:[80,150,200], theme:[139,69,19], top:[50,205,50], g:1800, f:15, eCol:[100,200,100], 
-              m:["                                                            ", "                                              F             ", "         $$              B        $$   P      ==            ", "       ======   1     ======      =========   ==            ", "                 ===               !    ^^    ==            ", "                                   !   ===    ==            ", "                      3            !1     1   ==            ", "======  ^^  =======  ===   ======  =============  =========="] },
+              m:["                                                                                                    ", "                                                                                                  F ", "         $$              B        $$   P                 ==            $$              B          ==", "       ======   1     ======      =========              ==          ======   1     ======      ==", "                 ===               !    ^^               ==                    ===                ==", "                                   !   ===               ==                                       ==", "                      3            !1     1              ==         1            2                ==", "======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ============"] },
             { bg:[180,70,30], theme:[80,30,10], top:[255,69,0], g:1800, f:15, eCol:[255,150,0], 
-              m:["                                                            ", "                                           F                ", "         H       3                W       $$      P      == ", "       ======   ===               W      ====    ===     == ", "                            1     W   1          ^^      == ", "           ^^             =====   W =====       ===      == ", "======    ====    ====            W                      == ", "==========================================================="] },
+              m:["                                                                                                    ", "                                                                                                  F ", "         H       3                W       $$      P      ==         H       3                W      ==", "       ======   ===               W      ====    ===     ==       ======   ===               W      ==", "                            1     W   1          ^^      ==                            1     W      ==", "           ^^             =====   W =====       ===      ==           ^^             =====   W      ==", "======    ====    ====            W                      == ======    ====    ====            W     ==", "===================================================================================================="] },
             { bg:[60,60,90], theme:[80,80,80], top:[120,120,120], g:1800, f:15, eCol:[180,180,180], 
               m:["                               $$$                          ", "                               ===           F              ", "                                             ==             ", "                 1     B                 1   ==             ", "       ======   ===   ===               ===     P        == ", "           ^^             3     ^^        !   ====       == ", "======    ====          =====  ====       !              == ", "==========================================================="] },
             { bg:[220,180,80], theme:[210,180,100], top:[230,200,120], g:1800, f:15, eCol:[200,100,50], 
-              m:["                                                            ", "                                            F               ", "             B                            $$ ==             ", "       ===            H            ===   ==== ==             ", "                 ===      ===               !    3       == ", "            W                     1         !  =====     == ", "   @   ===  W ^^          1        =====    !            == ", "======      ================================================"] },
+              m:["                                                            ", "                                            F               ", "             B                            $$ ==             ", "       ===            H            ===   ==== ==             ", "                 ===      ===               !    3       == ", "            W                     1         !  =====     == ", "       ===  W ^^          1        =====    !            == ", "======      ================================================"] },
             { bg:[10,80,150], theme:[40,120,100], top:[60,160,120], g:500, f:3, eCol:[0,255,255], 
-              m:["                                                            ", "                                            F               ", "             3                            $$ ==             ", "       ===            B            ===   ==== ==             ", "          W      ===      ===               !    B       == ", "          W                       1         !  =====     == ", "   @      W ^^         3        =====       !            == ", "======    ====    ====    ====    ====    ====    ====   =="] },
+              m:["                                                            ", "                                            F               ", "             3                            $$ ==             ", "       ===            B            ===   ==== ==             ", "          W      ===      ===               !    B       == ", "          W                       1         !  =====     == ", "          W ^^         3        =====       !            == ", "======    ====    ====    ====    ====    ====    ====   =="] },
             { bg:[120,150,180], theme:[100,80,60], top:[120,100,80], g:1800, f:15, eCol:[150,50,50], 
-              m:["                                                            ", "                                             F              ", "                                  1          ==  1       == ", "       ===          3      ==========        == ======   == ", "          W      ======                  === !           == ", "          W                     B            !           == ", "   @      W ^^                               !           == ", "======    ====                                           =="] },
+              m:["                                                            ", "                                             F              ", "                                  1          ==  1       == ", "       ===          3      ==========        == ======   == ", "          W      ======                  === !           == ", "          W                     B            !           == ", "          W ^^                               !           == ", "======    ====                                           =="] },
             { bg:[150,180,200], theme:[150,200,255], top:[255,255,255], g:1800, f:2, eCol:[50,50,255], 
               m:["                                                            ", "                                             F              ", "                                          $$ ==   H      == ", "       ======         B                   ====   ===     == ", "          W                1          1      !   ^^      == ", "          W  ^^            =====      =====  !  ===      == ", "======    ====   ====                        !           == ", "==========================================================="] },
             { bg:[20,20,20], theme:[60,40,40], top:[80,60,60], g:1800, f:15, isD:true, eCol:[255,0,255], 
@@ -75,20 +77,23 @@
               m:["                                                            ", "                                             F              ", "                 B       3                   ==  P       == ", "       ======   ===     ===               $$ == ===      == ", "          W                  1           ==== !          == ", "          W              === ====   3         !  ^^      == ", "======                                 ====== !  ===     == ", "==========================================================="] }
         ];
 
-        // --- 3. CHEATY ---
+        // --- 3. KLÁVESNICOVÉ CHEATY ---
         const cheatKeys = { "+":0,"1":0,"ě":1,"2":1,"š":2,"3":2,"č":3,"4":3,"ř":4,"5":4,"ž":5,"6":5,"ý":6,"7":6,"á":7,"8":7,"í":8,"9":8,"é":"v","0":"v" };
-        let cheatSeq = [];
-        onKeyPress((k) => {
+        let cheatBuffer = [];
+        const processCheat = (k) => {
             if (k in cheatKeys) {
-                cheatSeq.push(k); if(cheatSeq.length > 6) cheatSeq.shift();
-                if(cheatSeq.length === 6 && cheatSeq.every(v => v === k)) {
-                    let target = cheatKeys[k]; cheatSeq = [];
-                    target === "v" ? go("victory", 999) : go("game", target, 3, 5, 0);
+                cheatBuffer.push(k);
+                if(cheatBuffer.length > 6) cheatBuffer.shift();
+                if(cheatBuffer.length === 6 && cheatBuffer.every(v => v === k)) {
+                    let target = cheatKeys[k]; cheatBuffer = [];
+                    target === "v" ? go("victory", 9999) : go("game", target, 3, 5, 0);
                 }
-            } else cheatSeq = [];
-        });
+            } else { cheatBuffer = []; }
+        };
+        onKeyPress(processCheat);
+        onCharInput(processCheat);
 
-        // --- 4. SCÉNA HRY ---
+        // --- 4. HERNÍ SCÉNA ---
         scene("game", (lIdx = 0, stHp = 3, stAm = 5, stSc = 0) => {
             const cl = LEVELS[lIdx];
             setBackground(cl.bg);
@@ -96,11 +101,18 @@
 
             let hp = stHp, maxHp = Math.max(3, stHp), ammo = stAm, score = stSc, canDbl = false;
 
-            // Paralaxa
+            // Paralaxa a Počasí
             const bgL = add([ fixed(), pos(0,0), z(-10) ]);
-            for(let i=0; i<10; i++) bgL.add([ sprite("prx"), pos(i*400, height()-200), color(cl.theme[0], cl.theme[1], cl.theme[2]) ]);
-            
-            // Mapa
+            if (cl.isSpc) {
+                for(let i=0; i<80; i++) bgL.add([ rect(2,2), color(255,255,255), opacity(rand(0.2, 0.8)), pos(rand(0, 3000), rand(0, 400)), "star" ]);
+                onUpdate(() => { get("star").forEach(s => { if(s.pos) s.pos.x -= dt()*5; }); });
+            } else {
+                for(let i=0; i<10; i++) bgL.add([ sprite("prx"), pos(i*400, height()-200), color(cl.theme[0], cl.theme[1], cl.theme[2]) ]);
+                onUpdate(() => { if(bgL && bgL.pos) bgL.pos.x = -((camPos().x - 400) * 0.4) % 800; });
+            }
+            if (lIdx === 6) onUpdate(() => { if(chance(0.3)) add([rect(4,4), color(255,255,255), pos(camPos().x+rand(-500,500), -50), move(DOWN,rand(100,200)), lifespan(5)]); });
+
+            // Stavba mapy
             const cCol = cl.eCol;
             addLevel(cl.m, {
                 tileWidth: 40, tileHeight: 40,
@@ -113,19 +125,22 @@
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
                     "1": () => [sprite("e_nrm"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), body(), anchor("center"), "enemy", "danger", { hp:1, t:"nrm", speed:80 }],
                     "3": () => [sprite("e_jmp"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), body(), anchor("center"), "enemy", "danger", { hp:1, t:"jmp", speed:100, jTmr:0 }],
-                    "B": () => [sprite("e_fly"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), anchor("center"), "enemy", "danger", { hp:1, t:"fly", speed:70, dir:1, sY:0 }],
+                    "2": () => [sprite("e_bnc"), color(cCol[0],cCol[1],cCol[2]), scale(1.2), area(), body(), anchor("center"), "enemy", "pusher", { hp:2, t:"bnc", speed:120, sTmr:0 }],
+                    "B": () => [sprite("e_fly"), color(cCol[0],cCol[1],cCol[2]), scale(1), area(), anchor("center"), "enemy", "danger", { hp:1, t:"fly", speed:70, dir:1, sY:null }],
                     "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake"],
                     "W": () => [sprite("block"), color(cl.top[0], cl.top[1], cl.top[2]), area(), body({isStatic:true}), anchor("center"), "breakable"]
                 }
             });
 
+            // Hráč
             const player = add([
                 sprite("player"), pos(80, 200), scale(1), area({shape: new Rect(vec2(0,5), 20, 38)}), body(), anchor("center"), "player", { stun:false, cVel:0 }
             ]);
             player.play("idle");
-
+            
             get("enemy").forEach(e => { if(e.t==="fly" && e.pos) e.sY = e.pos.y; });
-            if(cl.isD) add([sprite("mask"), pos(0,0), anchor("center"), z(90), { update(){ if(player.pos) this.pos = player.pos; } }]);
+
+            let light; if(cl.isD) light = add([sprite("mask"), pos(0,0), anchor("center"), z(90)]);
 
             // --- UI ---
             const ui = add([fixed(), z(100)]);
@@ -141,124 +156,170 @@
             };
             updHP();
 
-            // --- MULTITOUCH CHEAT & OVLÁDÁNÍ ---
+            // Dotykový Cheat
             let hClicks = 0, lastC = 0;
-            add([fixed(), area(), pos(width()-75, 10), rect(35,35), opacity(0), z(105), "mCheat"]);
+            add([fixed(), area(), pos(width()-85, 10), rect(40,40), opacity(0), z(105), "mCheat"]);
             onClick("mCheat", () => {
                 if(time()-lastC > 1) hClicks = 0; hClicks++; lastC = time();
                 if(hClicks>=6) { hClicks=0; lIdx+1 < LEVELS.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score); }
             });
 
-            const activeTouches = {};
-            const zones = {
-                left: (p) => p.x < 125 && p.y > height() - 150,
-                right: (p) => p.x > 125 && p.x < 250 && p.y > height() - 150,
-                shoot: (p) => p.x > width() - 250 && p.x < width() - 125 && p.y > height() - 150,
-                jump: (p) => p.x > width() - 125 && p.y > height() - 150
-            };
-
-            const jmp = () => {
-                if(!player.exists() || player.stun) return;
-                if(player.isGrounded()) { player.jump(650); canDbl = true; player.scale = vec2(0.8, 1.2); }
-                else if(canDbl) { player.jump(550); canDbl = false; player.scale = vec2(0.8, 1.2); }
-            };
-            const sht = () => {
-                if(!player.exists() || player.stun || ammo <= 0) return;
-                ammo--; al.text = `x ${ammo}`;
-                add([sprite("bullet"), pos(player.pos.x+(player.flipX?-20:20), player.pos.y), area(), anchor("center"), move(player.flipX?LEFT:RIGHT, 1000), "bullet"]);
-            };
-
-            onTouchStart((id, p) => { activeTouches[id] = p; if(zones.jump(p)) jmp(); if(zones.shoot(p)) sht(); });
-            onTouchMove((id, p) => { activeTouches[id] = p; });
-            onTouchEnd((id) => { delete activeTouches[id]; });
-            onMousePress(() => { const p = mousePos(); if(zones.jump(p)) jmp(); if(zones.shoot(p)) sht(); });
-            onKeyPress("up", jmp); onKeyPress("space", sht);
-
-            // Vizuální tlačítka
+            // --- OVLÁDÁNÍ (NEPRŮSTŘELNÝ MULTITOUCH) ---
             const uiC = add([fixed(), z(99)]);
-            const drawBtn = (p, t) => {
-                uiC.add([rect(90,90,{radius:10}), pos(p), color(0,0,0), opacity(0.3)]);
-                uiC.add([text(t, {size:50}), pos(p.x+25, p.y+20)]);
-            };
+            const drawBtn = (p, t) => { uiC.add([rect(90,90,{radius:10}), pos(p), color(0,0,0), opacity(0.3)]); uiC.add([text(t, {size:50}), pos(p.x+25, p.y+20)]); };
             drawBtn(vec2(20, height()-110), "<");
             drawBtn(vec2(130, height()-110), ">");
             uiC.add([rect(90,90,{radius:45}), pos(width()-220, height()-110), color(200,50,50), opacity(0.5)]);
             uiC.add([sprite("pistol"), pos(width()-195, height()-95), scale(1.5)]);
             drawBtn(vec2(width()-110, height()-110), "^");
 
-            // --- SMYČKA ---
+            const zones = {
+                left: (p) => p && p.x < 125 && p.y > height() - 150,
+                right: (p) => p && p.x >= 125 && p.x < 250 && p.y > height() - 150,
+                shoot: (p) => p && p.x > width() - 250 && p.x <= width() - 125 && p.y > height() - 150,
+                jump: (p) => p && p.x > width() - 125 && p.y > height() - 150
+            };
+
+            const SPEED = 300;
+            const JUMP = cl.g < 1000 ? 400 : 650;
+
+            const jmp = () => {
+                if(!player.exists() || player.stun) return;
+                let f = JUMP + (Math.abs(player.cVel)>50 ? (cl.g<1000?30:80) : 0);
+                if(player.isGrounded()) { player.jump(f); canDbl = true; player.scale = vec2(0.8, 1.2); }
+                else if(canDbl) { player.jump(f*0.85); canDbl = false; player.scale = vec2(0.8, 1.2); }
+            };
+            const sht = () => {
+                if(!player.exists() || player.stun || ammo <= 0) return;
+                ammo--; al.text = `x ${ammo}`;
+                player.scale = vec2(1.2, 0.8);
+                add([sprite("bullet"), pos(player.pos.x+(player.flipX?-20:20), player.pos.y), area(), anchor("center"), move(player.flipX?LEFT:RIGHT, 1000), offscreen({destroy:true}), "bullet"]);
+            };
+
+            // Univerzální adaptér pro různé formáty API dotyků
+            const getSafeTouch = (a, b) => {
+                let pos, id;
+                if(typeof a === "object") { pos = a; id = b?.id ?? "def"; } 
+                else { id = a; pos = b; }
+                return { id, pos };
+            };
+
+            const activeTouches = {};
+            onTouchStart((a, b) => { const t = getSafeTouch(a,b); activeTouches[t.id] = t.pos; if(zones.jump(t.pos)) jmp(); if(zones.shoot(t.pos)) sht(); });
+            onTouchMove((a, b) => { const t = getSafeTouch(a,b); activeTouches[t.id] = t.pos; });
+            onTouchEnd((a, b) => { const t = getSafeTouch(a,b); delete activeTouches[t.id]; });
+
+            function getSafeMouse() {
+                try { let m = mousePos("screen"); if (m && typeof m.x === "number") return m; } catch(e){}
+                return mousePos();
+            }
+
+            onMousePress(() => { const mp = getSafeMouse(); if(zones.jump(mp)) jmp(); if(zones.shoot(mp)) sht(); });
+            onKeyPress("up", jmp); onKeyPress("space", sht);
+
+            // --- SMYČKA HRÁČE ---
             onUpdate(() => {
-                const p = get("player")[0];
-                if(!p || !p.pos) return;
-                if(bgL && bgL.pos) bgL.pos.x = -((camPos().x - 400) * 0.4) % 800;
+                if(!player.exists()) return;
+                if(light && player.pos) light.pos = player.pos;
 
-                p.scale.x = lerp(p.scale.x, 1, 0.1);
-                p.scale.y = lerp(p.scale.y, 1, 0.1);
+                player.scale.x = lerp(player.scale.x, 1, 0.1);
+                player.scale.y = lerp(player.scale.y, 1, 0.1);
 
-                if(!p.stun) {
+                if(player.stun) {
+                    player.move(player.cVel, 0);
+                    if(player.curAnim() !== "jump") player.play("jump");
+                } else {
                     let dir = 0;
                     if(isKeyDown("left")) dir = -1;
                     if(isKeyDown("right")) dir = 1;
-                    for(let id in activeTouches) {
-                        const t = activeTouches[id];
-                        if(zones.left(t)) dir = -1;
-                        if(zones.right(t)) dir = 1;
-                    }
-                    p.cVel = lerp(p.cVel, dir * 300, dt() * cl.f);
-                    p.move(p.cVel, 0);
-                    if(dir !== 0) {
-                        p.flipX = dir < 0;
-                        if(p.isGrounded()) p.play("run");
-                    } else if(p.isGrounded()) p.play("idle");
+                    if(isMouseDown()) { const mp = getSafeMouse(); if(zones.left(mp)) dir = -1; if(zones.right(mp)) dir = 1; }
+                    for(let id in activeTouches) { const t = activeTouches[id]; if(zones.left(t)) dir = -1; if(zones.right(t)) dir = 1; }
+
+                    player.cVel = lerp(player.cVel, dir * SPEED, dt() * cl.f);
+                    player.move(player.cVel, 0);
+
+                    if(dir !== 0) { player.flipX = dir < 0; if(player.isGrounded()) player.play("run"); } 
+                    else if(player.isGrounded()) player.play("idle");
                 }
                 
-                if(p.isGrounded() && p.curAnim() === "jump") p.scale = vec2(1.3, 0.7);
-                if(!p.isGrounded() && p.curAnim() !== "jump") p.play("jump");
+                if(player.isGrounded() && player.curAnim() === "jump") player.scale = vec2(1.3, 0.7);
+                if(!player.isGrounded() && player.curAnim() !== "jump") player.play("jump");
 
-                camPos(Math.max(400, p.pos.x), 200);
-                if(p.pos.y > 500) go("game", lIdx, 3, 5, score);
+                if(player.pos.x < 16) player.pos.x = 16;
+                camPos(Math.max(400, player.pos.x), 200);
+                if(player.pos.y > 500) go("lose", lIdx, score);
             });
 
-            // --- KOLIZE ---
-            onCollide("player", "danger", (p) => {
-                hp--; updHP(); if(hp<=0) go("game", lIdx, 3, 5, score);
-                p.stun = true; p.color = rgb(255,0,0); p.jump(400);
-                wait(0.5, () => { if(p.exists()) { p.stun = false; p.color = rgb(255,255,255); } });
-            });
-            onCollide("bullet", "enemy", (b, e) => {
-                destroy(b); e.hp--; 
-                if(e.hp<=0){ 
-                    const ep = e.pos; destroy(e); score+=5; sl.text=`Skore: ${score}`;
-                    const d = add([sprite("death"), pos(ep), anchor("center"), move(UP, 100)]);
-                    wait(0.5, () => destroy(d));
+            // --- SMYČKA NEPŘÁTEL ---
+            onUpdate("enemy", (e) => {
+                if(!e.pos) return;
+                if(e.sTmr > 0) { e.sTmr -= dt(); if(e.sTmr <= 0) e.color = rgb(cCol[0], cCol[1], cCol[2]); return; }
+                
+                let bS = e.t==="bnc" ? 1.2 : 1;
+                e.scale = vec2(bS+Math.sin(time()*5)*0.05, bS-Math.sin(time()*5)*0.05);
+
+                if(e.t === "fly") { if(e.sY !== null) e.pos.y = e.sY + Math.sin(time()*4)*60; e.move(e.speed*e.dir, 0); }
+                else e.move(e.speed, 0);
+                
+                if(e.t === "jmp" && e.isGrounded()) { e.jTmr -= dt(); if(e.jTmr<=0){ e.jump(500); e.jTmr=rand(1,2.5); } }
+                if(e.t === "bnc") {
+                    if(player.exists() && player.pos && Math.abs(player.pos.x - e.pos.x) < 400) e.speed = lerp(e.speed, (player.pos.x < e.pos.x ? -1 : 1) * 180, 0.05);
+                    if(e.isGrounded()) { e.jump(650); e.scale = vec2(1.4, 0.9); }
                 }
             });
-            onCollide("enemy", "ground", (e, b, col) => { if(col.isLeft()||col.isRight()) e.speed *= -1; });
-            onUpdate("enemy", (e) => {
-                if(e.t === "fly") e.pos.y = e.sY + Math.sin(time()*4)*60;
-                e.move(e.speed, 0);
-                if(e.t === "jmp" && e.isGrounded()) { e.jTmr -= dt(); if(e.jTmr<=0){ e.jump(500); e.jTmr=rand(1,2); } }
-            });
+
+            onCollide("enemy", "ground", (e, b, col) => { if(col && (col.isLeft()||col.isRight())) { if(e.t==="fly") e.dir=-e.dir; else e.speed*=-1; } });
+
+            // --- KOLIZE ---
             onCollide("bullet", "breakable", (b, w) => { destroy(b); destroy(w); score+=10; sl.text=`Skore: ${score}`; });
-            onCollide("player", "coin", (p, c) => { destroy(c); score++; sl.text=`Skore: ${score}`; });
+            onCollide("bullet", "enemy", (b, e) => {
+                destroy(b);
+                if(e.t === "bnc"){ e.sTmr = 3; e.color = rgb(100,100,100); return; }
+                e.hp--; 
+                if(e.hp<=0){ const ep = e.pos; destroy(e); score+=5; sl.text=`Skore: ${score}`; wait(0.4, ()=>destroy(add([sprite("death"), pos(ep), anchor("center"), move(UP,100)]))); }
+            });
+
+            onCollide("player", "pusher", (p, e) => {
+                if(!p.pos || !e.pos || p.stun || e.sTmr > 0) return;
+                p.stun = true; p.cVel = (p.pos.x < e.pos.x ? -1 : 1) * 400; p.jump(cl.g<1000?300:500); p.color = rgb(150,150,150);
+                wait(0.5, () => { if(p.exists()) { p.stun = false; p.color = rgb(255,255,255); } });
+            });
+
+            onCollide("player", "danger", (p, d) => {
+                if(!p.pos || p.stun) return;
+                hp--; updHP(); if(hp<=0) go("lose", lIdx, score);
+                p.stun = true; p.cVel = (p.pos.x < d.pos.x ? -1 : 1) * 400; p.jump(JUMP * 0.7); p.color = rgb(255,50,50);
+                wait(0.5, () => { if(p.exists()) { p.stun = false; p.color = rgb(255,255,255); } });
+            });
+
+            onCollide("player", "coin", (p, c) => { destroy(c); score++; sl.text=`Skore: ${score}`; add([text("+1",{size:16}), pos(c.pos), move(UP,50), opacity(0.8), lifespan(0.5,{fade:0.5})]); });
             onCollide("player", "pistol", (p, w) => { destroy(w); ammo+=3; al.text=`x ${ammo}`; });
             onCollide("player", "heal", (p, h) => { destroy(h); hp++; if(hp>maxHp) maxHp=hp; updHP(); });
             onCollide("player", "finish", () => { lIdx+1 < LEVELS.length ? go("game", lIdx+1, hp, ammo, score) : go("victory", score); });
         });
 
-        // --- 5. VÍTĚZSTVÍ ---
+        // --- 5. KONCOVÉ OBRAZOVKY ---
+        scene("lose", (lIdx, sc) => {
+            add([ text(`ZEMŘEL JSI V LEVELU ${lIdx+1}!\n\nSkore: ${sc}\n\nKlepni pro restart`, { align: "center", size: 32 }), pos(width() / 2, height() / 2), anchor("center") ]);
+            onMousePress(()=>go("game", lIdx, 3, 5, sc)); onTouchStart(()=>go("game", lIdx, 3, 5, sc)); onKeyPress(()=>go("game", lIdx, 3, 5, sc));
+        });
+
         scene("victory", (sc) => {
             setBackground(100, 150, 255);
             add([ text("VÍTĚZSTVÍ!", {size:48}), pos(400, 80), anchor("center") ]);
-            add([ text(`Finalni Skore: ${sc}`, {size:20}), pos(400, 130), anchor("center") ]);
+            add([ text(`Konecne Skore: ${sc}`, {size:20}), pos(400, 130), anchor("center") ]);
+            
             add([ rect(width(), 40), color(50,200,50), pos(0, height()-40), area(), body({isStatic:true}), anchor("botleft") ]);
-            const p = add([ sprite("player"), pos(400, height()-40), scale(1.5), anchor("bot") ]);
-            p.play("idle");
-            LEVELS.forEach((level, i) => {
+            add([ sprite("player"), pos(400, height()-40), scale(1.5), anchor("bot") ]).play("idle");
+
+            LEVELS.forEach((lvl, i) => {
                 const xPos = i < 4 ? 60 + i*70 : 520 + (i-5)*70;
-                add([ sprite("e_nrm"), color(level.eCol[0], level.eCol[1], level.eCol[2]), pos(xPos, height()-40), anchor("bot"), "bow" ]);
+                add([ sprite("e_nrm"), color(lvl.eCol[0], lvl.eCol[1], lvl.eCol[2]), scale(1), pos(xPos, height()-40), anchor("bot"), "bowing" ]);
             });
-            onUpdate("bow", (e) => { e.scale.y = 1 + Math.sin(time()*3)*0.2; });
+
+            onUpdate("bowing", (e) => { if(e.scale) e.scale.y = 1 + Math.sin(time()*3)*0.2; });
+            
+            add([ text("Klepni pro restart hry", {size:16}), pos(400, height()-20), anchor("center") ]);
             onMousePress(() => go("game", 0)); onTouchStart(() => go("game", 0));
         });
 
