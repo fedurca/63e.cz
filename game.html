@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>v1.0.7 - Commander Stickman (DOS Nostalgia)</title>
+    <title>v3.0.0 - Stickman 9 Svetu</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; background-color: #000; /* DOS černé pozadí mimo obrazovku */
+            overflow: hidden; background-color: #000;
             touch-action: none; -webkit-user-select: none; user-select: none;
         }
         canvas { display: block; }
@@ -18,206 +18,294 @@
     <script type="module">
         import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
-        kaboom({
-            background: [80, 160, 220], // Světlá Keen-modrá obloha
-            width: 800,
-            height: 400,
-            letterbox: true,
-            crisp: true
+        kaboom({ width: 800, height: 400, letterbox: true, crisp: true, background: [0, 0, 0] });
+
+        // --- 1. GRAFIKA (HRÁČ, NEPŘÁTELÉ, UI) ---
+        const svgPlayerAdvanced = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="224" height="48" viewBox="0 0 224 48"><g transform="translate(0,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17 L16 28"/><path d="M16 18 L12 24 L10 30"/><path d="M16 18 L20 24 L22 30"/><path d="M16 28 L12 36 L12 44"/><path d="M16 28 L20 36 L20 44"/></g><g transform="translate(32,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="13" r="5" fill="white"/><path d="M16 18 L16 29"/><path d="M16 19 L11 25 L10 31"/><path d="M16 19 L21 25 L22 31"/><path d="M16 29 L11 36 L11 44"/><path d="M16 29 L21 36 L21 44"/></g><g transform="translate(64,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L18 28"/><path d="M17 18 L10 20 L8 16"/><path d="M17 18 L24 22 L28 18"/><path d="M18 28 L10 34 L8 42"/><path d="M18 28 L24 34 L26 42"/></g><g transform="translate(96,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L14 44"/><path d="M16 27 L18 33 L24 38"/></g><g transform="translate(128,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="11" r="5" fill="white"/><path d="M16 16 L14 28"/><path d="M15 18 L22 20 L24 16"/><path d="M15 18 L8 22 L4 18"/><path d="M14 28 L22 34 L24 42"/><path d="M14 28 L8 34 L6 42"/></g><g transform="translate(160,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L14 24 L14 30"/><path d="M16 17 L18 24 L18 30"/><path d="M16 27 L16 36 L18 44"/><path d="M16 27 L14 33 L8 38"/></g><g transform="translate(192,0)" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="16" cy="10" r="5" fill="white"/><path d="M16 15 L16 27"/><path d="M16 17 L10 14 L6 8"/><path d="M16 17 L22 14 L26 8"/><path d="M16 27 L10 27 L8 36"/><path d="M16 27 L22 27 L24 36"/></g></svg>`;
+        
+        const svgEnemyPurple = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23800080"/><circle cx="11" cy="12" r="3" fill="white"/><circle cx="21" cy="12" r="3" fill="white"/><circle cx="11" cy="12" r="1" fill="black"/><circle cx="21" cy="12" r="1" fill="black"/></svg>`;
+        const svgEnemyRed    = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23cc0000"/><circle cx="11" cy="12" r="3" fill="white"/><circle cx="21" cy="12" r="3" fill="white"/><circle cx="11" cy="12" r="1" fill="black"/><circle cx="21" cy="12" r="1" fill="black"/></svg>`;
+        const svgEnemyGreen  = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%2300aa00"/><circle cx="16" cy="12" r="6" fill="white"/><circle cx="16" cy="12" r="2" fill="black"/></svg>`;
+        const svgFlyer       = `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="10" fill="%230055dd"/><polygon points="0,10 10,16 0,22" fill="%2355aaff"/><polygon points="32,10 22,16 32,22" fill="%2355aaff"/><circle cx="13" cy="14" r="2" fill="white"/><circle cx="19" cy="14" r="2" fill="white"/></svg>`;
+        
+        // Prostředí a bloky pro 9 levelů
+        const svgBlock  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23555"/><rect width="40" height="10" fill="%23228B22"/></svg>`;
+        const svgStone  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23444"/><rect y="36" width="40" height="4" fill="%23ff4400"/></svg>`;
+        const svgCastle = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23777"/><path d="M0,10 L40,10 M0,20 L40,20 M0,30 L40,30 M10,0 L10,10 M30,10 L30,20 M15,20 L15,30 M25,30 L25,40" stroke="%23555" stroke-width="2"/></svg>`;
+        const svgSand   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23eedd82"/><circle cx="10" cy="10" r="2" fill="%23ddcc70"/><circle cx="30" cy="30" r="2" fill="%23ddcc70"/></svg>`;
+        const svgCoral  = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%232e8b57"/><circle cx="20" cy="10" r="5" fill="%23ff7f50"/><circle cx="30" cy="25" r="4" fill="%23ff7f50"/></svg>`;
+        const svgRock   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%238b7355"/><path d="M0,0 L10,10 L20,0 L30,15 L40,0 L40,40 L0,40 Z" fill="%236b5335"/></svg>`;
+        const svgIce    = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%2388ccff"/><rect width="40" height="10" fill="%23ffffff"/></svg>`;
+        const svgMine   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%233b2f2f"/><rect x="10" y="10" width="5" height="5" fill="%23ffd700"/><rect x="25" y="25" width="4" height="4" fill="%23ffd700"/></svg>`;
+        const svgMoon   = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><rect width="40" height="40" fill="%23888"/><circle cx="10" cy="10" r="5" fill="%23666"/><circle cx="30" cy="25" r="8" fill="%23666"/></svg>`;
+        
+        const svgSpike = `data:image/svg+xml;utf8,<svg width="40" height="40" xmlns="http://www.w3.org/2000/svg"><polygon points="20,10 40,40 0,40" fill="%23ff3333"/></svg>`;
+        const svgLightMask = `data:image/svg+xml;utf8,<svg width="1600" height="1600" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="black" stop-opacity="0"/><stop offset="10%" stop-color="black" stop-opacity="0"/><stop offset="30%" stop-color="black" stop-opacity="0.95"/><stop offset="100%" stop-color="black" stop-opacity="1"/></radialGradient></defs><rect width="1600" height="1600" fill="url(%23g)"/></svg>`;
+
+        const svgBullet = `data:image/svg+xml;utf8,<svg width="16" height="8" xmlns="http://www.w3.org/2000/svg"><rect width="16" height="8" rx="4" fill="%2300ff00"/></svg>`;
+        const svgCoin = `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="%23ffd700"/></svg>`;
+        const svgPistol = `data:image/svg+xml;utf8,<svg width="24" height="16" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="6" fill="%23aaa"/></svg>`;
+        const svgHeart = `data:image/svg+xml;utf8,<svg width="24" height="24" xmlns="http://www.w3.org/2000/svg"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="red"/></svg>`;
+        const svgFlag = `data:image/svg+xml;utf8,<svg width="40" height="80" xmlns="http://www.w3.org/2000/svg"><rect x="18" y="10" width="4" height="70" fill="white"/><polygon points="22,10 40,20 22,30" fill="%2300ff00"/></svg>`;
+
+        // Načtení do paměti
+        loadSprite("player", svgPlayerAdvanced, { sliceX: 7, anims: { idle: { from: 0, to: 1, loop: true, speed: 2 }, run: { from: 2, to: 5, loop: true, speed: 12 }, jump: 6 } });
+        loadSprite("enemy1", svgEnemyPurple); loadSprite("enemy2", svgEnemyRed); loadSprite("enemy3", svgEnemyGreen); loadSprite("flyer", svgFlyer);
+        loadSprite("block", svgBlock); loadSprite("stone", svgStone); loadSprite("castle", svgCastle); loadSprite("sand", svgSand); loadSprite("coral", svgCoral);
+        loadSprite("rock", svgRock); loadSprite("ice", svgIce); loadSprite("mine", svgMine); loadSprite("moon", svgMoon);
+        loadSprite("spike", svgSpike); loadSprite("lightmask", svgLightMask);
+        loadSprite("bullet", svgBullet); loadSprite("coin", svgCoin); loadSprite("pistol", svgPistol); loadSprite("heart", svgHeart); loadSprite("flag", svgFlag);
+
+        // --- 2. DATA 9 LEVELŮ ---
+        const LEVELS = [
+            { // 1: Les (Klasika, propadliště s fake bodáky)
+                bg: [80, 160, 210], gravity: 1800, friction: 15, theme: "block", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "         $$              B        $$   P                 == ",
+                    "       ======   1     ======      =========              == ",
+                    "                 ===               !    ^^               == ",
+                    "                                   !   ===               == ",
+                    "                      2            !1     2              == ",
+                    "======  ^^  =======  ===   ======  ========================",
+                ]
+            },
+            { // 2: Pravěk (Sopky a Láva, rozbitná zeď W)
+                bg: [180, 70, 30], gravity: 1800, friction: 15, theme: "stone", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "         H       3                W       $$      P      == ",
+                    "       ======   ===               W      ====    ===     == ",
+                    "                            2     W   1          ^^      == ",
+                    "           ^^             =====   W =====       ===      == ",
+                    "======    ====    ====            W                      == ",
+                    "===========================================================",
+                ]
+            },
+            { // 3: Středověk (Tajná horní cesta)
+                bg: [60, 60, 90], gravity: 1800, friction: 15, theme: "castle", startX: 80, startY: 250,
+                layout: [
+                    "                               $$$                          ",
+                    "                               ===                        F ",
+                    "                                                         == ",
+                    "                 1     B                 1               == ",
+                    "       ======   ===   ===               ===     P        == ",
+                    "           ^^             2     ^^            ====       == ",
+                    "======    ====          =====  ====                      == ",
+                    "===========================================================",
+                ] 
+            },
+            { // 4: V poušti (Dlouhé skoky)
+                bg: [220, 180, 80], gravity: 1800, friction: 15, theme: "sand", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "             B                            $$             == ",
+                    "       ===            H            ===   ====            == ",
+                    "                 ===      ===                    2       == ",
+                    "                                  1            =====     == ",
+                    "======     ^^          1        =====                    == ",
+                    "===========================================================",
+                ]
+            },
+            { // 5: Pod vodou (Slabá gravitace, silné tření - plavání)
+                bg: [10, 80, 150], gravity: 400, friction: 3, theme: "coral", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "             3                            $$             == ",
+                    "       ===            B            ===   ====            == ",
+                    "                 ===      ===                    B       == ",
+                    "                                  1            =====     == ",
+                    "======     ^^          3        =====                    == ",
+                    "===========================================================",
+                ]
+            },
+            { // 6: Ve skalách (Horolezectví nahoru a dolů)
+                bg: [120, 150, 180], gravity: 1800, friction: 15, theme: "rock", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "                                  1              1       == ",
+                    "       ===          3      ==========          ======    == ",
+                    "                 ======                  ===             == ",
+                    "                                B                        == ",
+                    "======     ^^                                            == ",
+                    "===========================================================",
+                ]
+            },
+            { // 7: Zima (Kluzký povrch)
+                bg: [150, 180, 200], gravity: 1800, friction: 2, theme: "ice", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "                                          $$      H      == ",
+                    "       ======         B                   ====   ===     == ",
+                    "                           2          1          ^^      == ",
+                    "           ^^            =====      =====       ===      == ",
+                    "======    ====   ====                                    == ",
+                    "===========================================================",
+                ]
+            },
+            { // 8: Důl / Tma (Baterka)
+                bg: [20, 20, 20], gravity: 1800, friction: 15, theme: "mine", isDark: true, startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "                                          $$      P      == ",
+                    "       ======         1                   ====   ===     == ",
+                    "                 B         2          3          ^^      == ",
+                    "           ^^            =====      =====       ===      == ",
+                    "======    ====   ====                                    == ",
+                    "===========================================================",
+                ]
+            },
+            { // 9: Vesmír (Velmi slabá gravitace, létáš)
+                bg: [10, 0, 30], gravity: 600, friction: 5, theme: "moon", startX: 80, startY: 250,
+                layout: [
+                    "                                                            ",
+                    "                                                          F ",
+                    "                 B       3                       P       == ",
+                    "       ======   ===     ===               $$    ===      == ",
+                    "                             1           ====            == ",
+                    "                         === ====   2            ^^      == ",
+                    "======                                 ======   ===      == ",
+                    "===========================================================",
+                ]
+            }
+        ];
+
+        // --- 3. CHEAT KÓDY ---
+        let cheatBuffer = [];
+        onKeyPress((k) => {
+            if (["1", "2", "3", "4", "5", "6", "7", "8", "9"].includes(k)) {
+                cheatBuffer.push(k);
+                if (cheatBuffer.length > 6) cheatBuffer.shift();
+                if (cheatBuffer.length === 6 && cheatBuffer.every(v => v === k)) {
+                    go("game", parseInt(k) - 1, 3, 5, 0); // Jdi do vybraného levelu s plným zdravím
+                }
+            } else { cheatBuffer = []; }
         });
 
-        // --- 1. DOS/KEEN STYLE SVG GRAFIKA ---
-        
-        // Vylepšený panáček: 6 snímků (192x48) - 2x Idle (dýchání), 3x Běh (klouby kolen a loktů), 1x Skok
-        // Barvy: Žlutá helma, červené tělo, modré nohy.
-        const svgKeenAnim = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="192" height="48" viewBox="0 0 192 48">
-            <g transform="translate(0,0)">
-                <path d="M16 14 L16 26" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M16 25 L14 35 L12 45 M16 25 L18 35 L20 45" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 16 L12 24 L10 32 M16 16 L20 24 L22 32" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="16" cy="10" r="5" fill="%23fcc"/><path d="M10 10 A6 6 0 0 1 22 10 L24 6 L8 6 Z" fill="%23ff0"/>
-            </g>
-            <g transform="translate(32,0)">
-                <path d="M16 15 L16 27" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M16 26 L12 35 L12 45 M16 26 L20 35 L20 45" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 17 L10 24 L8 31 M16 17 L22 24 L24 31" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="16" cy="11" r="5" fill="%23fcc"/><path d="M10 11 A6 6 0 0 1 22 11 L24 7 L8 7 Z" fill="%23ff0"/>
-            </g>
-            <g transform="translate(64,0)">
-                <path d="M16 14 L18 26" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M18 25 L24 30 L22 42 M18 25 L10 35 L6 40" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 16 L10 20 L6 18 M16 16 L24 22 L28 18" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="18" cy="10" r="5" fill="%23fcc"/><path d="M12 10 A6 6 0 0 1 24 10 L26 6 L10 6 Z" fill="%23ff0"/>
-            </g>
-            <g transform="translate(96,0)">
-                <path d="M16 13 L16 25" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M16 24 L16 35 L12 45 M16 24 L18 35 L24 40" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 15 L16 25 L12 30 M16 15 L18 25 L22 30" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="16" cy="9" r="5" fill="%23fcc"/><path d="M10 9 A6 6 0 0 1 22 9 L24 5 L8 5 Z" fill="%23ff0"/>
-            </g>
-            <g transform="translate(128,0)">
-                <path d="M16 14 L14 26" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M14 25 L8 30 L10 42 M14 25 L22 35 L26 40" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 16 L22 20 L26 18 M16 16 L8 22 L4 18" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="14" cy="10" r="5" fill="%23fcc"/><path d="M8 10 A6 6 0 0 1 20 10 L22 6 L6 6 Z" fill="%23ff0"/>
-            </g>
-            <g transform="translate(160,0)">
-                <path d="M16 14 L16 26" stroke="%23ff0000" stroke-width="6" stroke-linecap="round"/>
-                <path d="M16 25 L10 25 L8 35 M16 25 L22 25 L24 35" stroke="%230000ff" stroke-width="4" fill="none" stroke-linejoin="round"/>
-                <path d="M16 16 L10 12 L4 8 M16 16 L22 12 L28 8" stroke="%23ffe" stroke-width="3" fill="none" stroke-linejoin="round"/>
-                <circle cx="16" cy="10" r="5" fill="%23fcc"/><path d="M10 10 A6 6 0 0 1 22 10 L24 6 L8 6 Z" fill="%23ff0"/>
-            </g>
-        </svg>`;
+        // --- 4. HERNÍ SCÉNA ---
+        scene("game", (levelIndex = 0, startHp = 3, startAmmo = 5, startScore = 0) => {
+            const currentLevel = LEVELS[levelIndex];
+            setBackground(currentLevel.bg);
+            setGravity(currentLevel.gravity);
 
-        // Bounder (Červený, skákající, odhazovací)
-        const svgBounder = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="14" fill="%23dd0000"/><circle cx="12" cy="10" r="6" fill="%23ff5555" opacity="0.6"/><circle cx="10" cy="14" r="3" fill="white"/><circle cx="22" cy="14" r="3" fill="white"/><circle cx="10" cy="14" r="1" fill="black"/><circle cx="22" cy="14" r="1" fill="black"/><path d="M 12 24 Q 16 20 20 24" stroke="black" stroke-width="2" fill="none"/></svg>`;
-        
-        // Letec (Modrý netopýr/ptáček)
-        const svgFlyer = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><ellipse cx="16" cy="16" rx="8" ry="6" fill="%230055dd"/><path d="M 8 16 Q 0 8 4 4 Q 8 12 8 16 Z" fill="%2300aaff"/><path d="M 24 16 Q 32 8 28 4 Q 24 12 24 16 Z" fill="%2300aaff"/><circle cx="14" cy="14" r="1.5" fill="white"/><circle cx="18" cy="14" r="1.5" fill="white"/></svg>`;
+            let maxHp = startHp;
+            let hp = startHp;
+            let ammo = startAmmo;
+            let score = startScore;
+            let canDoubleJump = false;
 
-        // Ostatní grafika zaktualizována do stylu starých her
-        const svgStunnerRing = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><ellipse cx="8" cy="8" rx="6" ry="3" fill="none" stroke="%2300ff00" stroke-width="3"/></svg>`;
-        const svgBlock = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%238B5A2B"/><rect width="40" height="8" fill="%23228B22"/><circle cx="10" cy="20" r="3" fill="%236B4226"/><circle cx="30" cy="30" r="4" fill="%236B4226"/></svg>`;
-        const svgDrop = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M12 4 Q 18 16 12 20 Q 6 16 12 4 Z" fill="%2300ffff" stroke="%23008888" stroke-width="2"/></svg>`;
-        const svgAcid = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%23222"/><rect y="20" width="40" height="20" fill="%2300ff00" opacity="0.8"/><circle cx="10" cy="25" r="3" fill="%23aaffaa"/><circle cx="30" cy="30" r="2" fill="%23aaffaa"/></svg>`;
-        const svgEnemyGreen = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><path d="M 4 28 C 4 10, 28 10, 28 28 Z" fill="%2300aa00"/><circle cx="16" cy="14" r="6" fill="white"/><circle cx="16" cy="14" r="2" fill="black"/></svg>`;
+            // --- EFEKTY NA POZADÍ (Paralaxa / Sníh) ---
+            if (levelIndex === 6) { // Zima - Sníh
+                onUpdate(() => {
+                    if (chance(0.4)) {
+                        add([ rect(4, 4), color(255,255,255), pos(camPos().x + rand(-500, 500), -50), move(DOWN, rand(100, 200)), lifespan(5), z(0) ]);
+                    }
+                });
+            } else if (levelIndex === 8) { // Vesmír - Hvězdy
+                for(let i=0; i<60; i++) {
+                    add([ rect(2,2), color(255,255,255), opacity(rand(0.2, 0.8)), pos(rand(0, 3000), rand(0, 400)), z(0), "star" ]);
+                }
+            } else {
+                // Obecná paralaxa pro ostatní levely (mraky nebo struktury)
+                for(let i=0; i<15; i++) {
+                    add([ rect(rand(20,80), rand(10,30)), color(255,255,255), opacity(0.1), pos(rand(0, 3000), rand(20, 150)), z(0), "cloud" ]);
+                }
+            }
 
-        // Předchozí UI prvky
-        const svgDeath = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="14" fill="%23aaa"/><line x1="10" y1="10" x2="22" y2="22" stroke="black" stroke-width="2"/><line x1="22" y1="10" x2="10" y2="22" stroke="black" stroke-width="2"/></svg>`;
-        const svgFlag = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="80"><rect x="18" y="10" width="4" height="70" fill="%23fff"/><polygon points="22,10 40,20 22,30" fill="%23ff0000"/></svg>`;
-        const svgPistol = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect x="2" y="4" width="16" height="4" rx="2" fill="%23cc0000"/><rect x="14" y="8" width="4" height="6" rx="1" fill="%23555"/></svg>`;
-        const svgHeart = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="red"/></svg>`;
-
-        loadSprite("player", svgKeenAnim, { 
-            sliceX: 6, 
-            anims: { 
-                idle: { from: 0, to: 1, loop: true, speed: 2 }, // Plynulé dýchání (2 snímky)
-                run: { from: 2, to: 4, loop: true, speed: 12 }, 
-                jump: 5 
-            } 
-        });
-        
-        loadSprite("bounder", svgBounder);
-        loadSprite("flyer", svgFlyer);
-        loadSprite("slug", svgEnemyGreen);
-        loadSprite("death", svgDeath);
-        loadSprite("bullet", svgStunnerRing);
-        loadSprite("block", svgBlock);
-        loadSprite("drop", svgDrop);
-        loadSprite("acid", svgAcid);
-        loadSprite("flag", svgFlag);
-        loadSprite("pistol", svgPistol);
-        loadSprite("heart", svgHeart);
-
-        // --- 2. HERNÍ SCÉNA ---
-        scene("game", () => {
-            // Zmenšená gravitace pro "vznášející se" Keenovské skoky
-            setGravity(1200);
-
-            let hp = 3;
-            let ammo = 5;
-            let score = 0;
-
-            // Mapový design připomínající staré plošinovky (více pater, jamky)
-            const mapLayout = [
-                "                                                                                                                  ",
-                "                                                                                                                  ",
-                "                                      B                                                                         F ",
-                "                  P                                       $$               H                          ======      ",
-                "       ========      H    $$      =====    =======          ============         ===           ====               ",
-                "                  ======   S                                              S  P                 ====               ",
-                "                              =====      R             ===               ===      ====   R     ====   S           ",
-                "    ====           ^^      ===      ^^^^^^^^^^^       =====    ^^^^^^^^^^^^^^^    =============================== ",
-                "==================  =============================================================================================="
-            ];
-
+            // --- MAPA ---
             const levelConf = {
                 tileWidth: 40, tileHeight: 40,
                 tiles: {
-                    "=": () => [sprite("block"), area(), body({ isStatic: true }), anchor("center")],
-                    // Kyselina/Bodáky mají zmenšený hitbox, aby nebyl hráč potrestán nespravedlivě
-                    "^": () => [sprite("acid"), area({ shape: new Rect(vec2(0, 10), 40, 20) }), body({ isStatic: true }), anchor("center"), "danger"],
+                    "=": () => [sprite(currentLevel.theme), area(), body({ isStatic: true }), anchor("center"), "ground"],
+                    "^": () => [sprite("spike"), area({ shape: new Polygon([vec2(0, 15), vec2(20, -15), vec2(-20, -15)]) }), body({ isStatic: true }), anchor("center"), "danger"],
                     "F": () => [sprite("flag"), area(), anchor("center"), "finish"],
-                    "$": () => [sprite("drop"), area(), anchor("center"), "drop"],
+                    "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
                     "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
                     
-                    // S: Slug (Zelený skokan) - Ubírá životy
-                    "S": () => [sprite("slug"), area(), body(), anchor("center"), "enemy", { hp: 1, type: "slug", speed: 80, jumpTimer: 0 }],
+                    "1": () => [sprite("enemy1"), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "normal", speed: 80 }],
+                    "3": () => [sprite("enemy3"), area(), body(), anchor("center"), "enemy", "danger", { hp: 1, type: "jumper", speed: 100, jumpTimer: 0 }],
+                    "2": () => [sprite("enemy2"), area(), body(), anchor("center"), scale(1.2), "enemy", "pusher", { hp: 2, type: "bouncer", speed: 120, stunTimer: 0 }],
+                    "B": () => [sprite("flyer"), area(), anchor("center"), "enemy", "danger", { hp: 1, type: "flyer", speed: 70, dir: 1, startY: 0 }],
                     
-                    // R: Bounder (Červený míč) - Honí hráče, odhazuje (neubírá životy)
-                    "R": () => [sprite("bounder"), area({ shape: new Circle(vec2(0,0), 14) }), body(), anchor("center"), "enemy", "pusher", { hp: 2, type: "bounder", speed: 120 }],
-                    
-                    // B: Bird/Flyer (Modrý letec) - Létá ve vzduchu ve vlnovce
-                    "B": () => [sprite("flyer"), area(), anchor("center"), "enemy", { hp: 1, type: "flyer", speed: 60, dir: 1, startY: 0 }]
+                    // Easter Eggs
+                    "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake"], // Falešný bodák
+                    "W": () => [sprite(currentLevel.theme), color(200,100,100), area(), body({ isStatic: true }), anchor("center"), "breakable", { hp: 1 }] // Prasklá zeď
                 }
             };
 
-            const level = addLevel(mapLayout, levelConf);
+            addLevel(currentLevel.layout, levelConf);
 
-            // Nastavení počáteční Y pozice pro létající nepřátele (aby se měli podle čeho vlnit)
-            get("enemy").forEach((e) => {
-                if (e.type === "flyer") e.startY = e.pos.y;
-            });
-
-            // Hráč
+            // --- HRÁČ (OPRAVENÝ BEZPEČNÝ SPAWN) ---
             const player = add([
-                sprite("player"), pos(80, 250),
-                area({ shape: new Rect(vec2(0, 0), 20, 42) }), // Přesný hitbox na tělo
-                body(), anchor("center"), 
+                sprite("player"),
+                pos(currentLevel.startX, currentLevel.startY),
+                area({ shape: new Rect(vec2(0, 5), 20, 38) }),
+                body(), anchor("center"),
                 "player",
-                { stunned: false } // Vlastnost určující, zda zrovna neletí po odhození
+                { stunned: false, pushDir: 0 }
             ]);
             player.play("idle");
 
-            const SPEED = 250;
-            const BASE_JUMP = 600;
+            get("enemy").forEach((e) => { if (e.type === "flyer") e.startY = e.pos.y; });
+
+            const SPEED = 300;
+            // Upravené skoky pro vodu (level 4) a vesmír (level 8)
+            const BASE_JUMP = currentLevel.gravity < 1000 ? 450 : 650; 
+
+            // --- TMA (Level 7) ---
+            let light;
+            if (currentLevel.isDark) {
+                light = add([ sprite("lightmask"), pos(player.pos), anchor("center"), z(90) ]);
+            }
 
             // --- UI ---
             const ui = add([fixed(), z(100)]);
-            const scoreLabel = ui.add([ text("Kapky: 0", { size: 24 }), pos(20, 20) ]);
+            const scoreLabel = ui.add([ text(`Skore: ${score} | Lvl ${levelIndex+1}`, { size: 24 }), pos(20, 20) ]);
             ui.add([ sprite("pistol"), pos(width() / 2 - 40, 20), scale(1.5) ]);
             const ammoLabel = ui.add([ text(`x ${ammo}`, { size: 24 }), pos(width() / 2 - 5, 18) ]);
 
             function updateHP() {
                 destroyAll("ui_hp");
-                for (let i = 0; i < 3; i++) ui.add([ sprite("heart"), pos(width() - 40 - i * 35, 20), color(0, 0, 0), opacity(0.3), "ui_hp" ]);
+                for (let i = 0; i < maxHp; i++) ui.add([ sprite("heart"), pos(width() - 40 - i * 35, 20), color(0, 0, 0), opacity(0.3), "ui_hp" ]);
                 for (let i = 0; i < hp; i++) ui.add([ sprite("heart"), pos(width() - 40 - i * 35, 20), "ui_hp" ]);
             }
             updateHP();
 
-            // --- OVLÁDÁNÍ ---
+            // --- DOTYKY ---
             const btnArea = add([fixed(), z(99)]);
             const isLeftBtn = (p) => p.x < 160 && p.y > height() - 150;
             const isRightBtn = (p) => p.x >= 160 && p.x < 320 && p.y > height() - 150;
             const isShootBtn = (p) => p.x > width() - 250 && p.x <= width() - 125 && p.y > height() - 150;
             const isJumpBtn = (p) => p.x > width() - 125 && p.y > height() - 150;
 
-            btnArea.add([ rect(100, 100, { radius: 10 }), pos(30, height() - 120), color(0, 0, 0), opacity(0.2) ]);
-            btnArea.add([ text("<", { size: 60 }), pos(60, height() - 100) ]);
-            btnArea.add([ rect(100, 100, { radius: 10 }), pos(190, height() - 120), color(0, 0, 0), opacity(0.2) ]);
-            btnArea.add([ text(">", { size: 60 }), pos(220, height() - 100) ]);
-            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 220, height() - 120), color(0, 150, 0), opacity(0.4) ]);
-            btnArea.add([ sprite("bullet"), pos(width() - 178, height() - 78), scale(1.5) ]);
-            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 110, height() - 120), color(0, 0, 0), opacity(0.2) ]);
-            btnArea.add([ text("^", { size: 60 }), pos(width() - 85, height() - 100) ]);
+            btnArea.add([ rect(100, 100, { radius: 10 }), pos(30, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text("<", { size: 60 }), pos(60, height() - 100) ]);
+            btnArea.add([ rect(100, 100, { radius: 10 }), pos(190, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text(">", { size: 60 }), pos(220, height() - 100) ]);
+            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 220, height() - 120), color(200,0,0), opacity(0.5) ]); btnArea.add([ sprite("pistol"), pos(width() - 208, height() - 105), scale(1.5) ]);
+            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 110, height() - 120), color(0,0,0), opacity(0.3) ]); btnArea.add([ text("^", { size: 60 }), pos(width() - 85, height() - 100) ]);
 
             function playerJump() {
                 if (!player || player.stunned) return;
                 let force = BASE_JUMP;
-                if (isKeyDown("left") || isKeyDown("right") || isMouseDown()) force += 80; 
-                if (player.isGrounded()) player.jump(force); 
+                if (isKeyDown("left") || isKeyDown("right") || isMouseDown()) force += (currentLevel.gravity < 1000 ? 30 : 80); 
+                if (player.isGrounded()) { player.jump(force); canDoubleJump = true; player.scale = vec2(0.8, 1.2); } 
+                else if (canDoubleJump) { player.jump(force * 0.85); canDoubleJump = false; player.scale = vec2(0.8, 1.2); }
             }
 
             function playerShoot() {
                 if (!player || ammo <= 0 || player.stunned) return;
                 ammo--; ammoLabel.text = `x ${ammo}`;
+                player.scale = vec2(1.2, 0.9);
                 const dir = player.flipX ? LEFT : RIGHT;
                 const offset = player.flipX ? -20 : 20;
-                add([
-                    sprite("bullet"), pos(player.pos.x + offset, player.pos.y), area(), anchor("center"),
-                    move(dir, 600), offscreen({ destroy: true }), "bullet"
-                ]);
+                add([ sprite("bullet"), pos(player.pos.x + offset, player.pos.y), area(), anchor("center"), move(dir, 1000), offscreen({ destroy: true }), "bullet" ]);
             }
 
             onMousePress(() => { const p = mousePos(); if (isJumpBtn(p)) playerJump(); if (isShootBtn(p)) playerShoot(); });
@@ -228,187 +316,125 @@
             onKeyPress("up", () => playerJump());
             onKeyPress("space", () => playerShoot());
 
-            // --- LOGIKA BĚHU A FYZIKY HRÁČE ---
+            // --- SMYČKA ---
             onUpdate(() => {
                 if (!player) return;
 
-                // Pokud je hráč omráčený/odhozený Bounderem, neovládáme ho
-                if (!player.stunned) {
-                    let currentMove = 0;
-                    if (isKeyDown("left")) currentMove = -1;
-                    if (isKeyDown("right")) currentMove = 1;
-                    if (isMouseDown()) {
-                        const p = mousePos();
-                        if (isLeftBtn(p)) currentMove = -1;
-                        if (isRightBtn(p)) currentMove = 1;
-                    }
-                    for (const id in activeTouches) {
-                        const p = activeTouches[id];
-                        if (isLeftBtn(p)) currentMove = -1;
-                        if (isRightBtn(p)) currentMove = 1;
-                    }
+                if (light) light.pos = player.pos;
 
-                    if (currentMove < 0) { player.move(-SPEED, 0); player.flipX = true; }
-                    if (currentMove > 0) { player.move(SPEED, 0); player.flipX = false; }
+                player.scale.x = lerp(player.scale.x, 1, 0.1);
+                player.scale.y = lerp(player.scale.y, 1, 0.1);
+                if (player.isGrounded() && player.curAnim() === "jump") player.scale = vec2(1.3, 0.7);
 
-                    if (!player.isGrounded()) {
-                        if (player.curAnim() !== "jump") player.play("jump");
-                    } else if (currentMove !== 0) {
-                        if (player.curAnim() !== "run") player.play("run");
-                    } else {
-                        if (player.curAnim() !== "idle") player.play("idle");
-                    }
+                if (player.stunned) {
+                    player.move(player.pushDir * (currentLevel.friction===2 ? 600 : 400), 0);
+                    if (player.curAnim() !== "jump") player.play("jump");
+                } else {
+                    let moveTarget = 0;
+                    if (isKeyDown("left")) moveTarget = -SPEED;
+                    if (isKeyDown("right")) moveTarget = SPEED;
+                    if (isMouseDown()) { const p = mousePos(); if (isLeftBtn(p)) moveTarget = -SPEED; if (isRightBtn(p)) moveTarget = SPEED; }
+                    for (const id in activeTouches) { const p = activeTouches[id]; if (isLeftBtn(p)) moveTarget = -SPEED; if (isRightBtn(p)) moveTarget = SPEED; }
+
+                    player.vel.x = lerp(player.vel.x, moveTarget, dt() * currentLevel.friction);
+                    
+                    if (moveTarget < 0) player.flipX = true;
+                    else if (moveTarget > 0) player.flipX = false;
+
+                    if (!player.isGrounded()) { if (player.curAnim() !== "jump") player.play("jump"); } 
+                    else if (Math.abs(player.vel.x) > 50) { if (player.curAnim() !== "run") player.play("run"); } 
+                    else { if (player.curAnim() !== "idle") player.play("idle"); }
                 }
 
                 if (player.pos.x < 16) player.pos.x = 16;
                 let camX = Math.max(width() / 2, player.pos.x);
                 camPos(camX, height() / 2);
 
-                if (player.pos.y > height() + 100) go("lose", score);
+                // Efekt Paralaxy (Pomalý posun mraků/hvězd vůči kameře)
+                get("star").forEach(s => { s.pos.x -= player.vel.x * dt() * 0.1; });
+                get("cloud").forEach(c => { c.pos.x -= player.vel.x * dt() * 0.05; });
+
+                if (player.pos.y > height() + 100) go("lose", levelIndex, score); 
             });
 
-            // --- UMĚLÁ INTELIGENCE NEPŘÁTEL ---
+            // --- NEPŘÁTELÉ ---
             onUpdate("enemy", (e) => {
-                // Skokan (Slug) - Chodí sem a tam a občas skočí
-                if (e.type === "slug") {
-                    e.move(e.speed, 0);
-                    e.jumpTimer -= dt();
-                    if (e.jumpTimer <= 0 && e.isGrounded()) {
-                        e.jump(500);
-                        e.jumpTimer = rand(1.5, 3);
-                    }
+                if (e.stunTimer > 0) {
+                    e.stunTimer -= dt();
+                    if (e.stunTimer <= 0) e.color = rgb(255, 255, 255);
+                    return;
                 }
-                
-                // Letec (Flyer) - Létá ve vzduchu pomocí matematické vlny (Sinus)
-                if (e.type === "flyer") {
-                    e.move(e.speed * e.dir, 0);
-                    e.pos.y = e.startY + Math.sin(time() * 4) * 40; // Létá nahoru a dolů
-                }
+                let baseScale = e.type === "bouncer" ? 1.2 : 1;
+                e.scale = vec2(baseScale + Math.sin(time() * 5) * 0.05, baseScale - Math.sin(time() * 5) * 0.05);
 
-                // Bounder (Pusher) - Honí tě a hopsá jako šílenec
-                if (e.type === "bounder") {
-                    // Mění směr podle hráče, pokud je blízko (vzdálenost < 400 pixelů)
-                    if (player.exists() && Math.abs(player.pos.x - e.pos.x) < 400) {
-                        const targetDir = player.pos.x < e.pos.x ? -1 : 1;
-                        // Mění rychlost postupně, ne okamžitě
-                        e.speed = lerp(e.speed, targetDir * 180, 0.05);
-                    }
+                if (e.type === "jumper") { e.move(e.speed, 0); e.jumpTimer -= dt(); if (e.jumpTimer <= 0 && e.isGrounded()) { e.jump(500); e.jumpTimer = rand(1, 2.5); } }
+                if (e.type === "bouncer") {
+                    if (player.exists() && Math.abs(player.pos.x - e.pos.x) < 400) { e.speed = lerp(e.speed, (player.pos.x < e.pos.x ? -1 : 1) * 180, 0.05); }
                     e.move(e.speed, 0);
-                    
-                    // Neustále se odráží od země
-                    if (e.isGrounded()) {
-                        e.jump(700); // Skáče vysoko
-                        // Trošku se deformuje při odrazu
-                        e.scale = vec2(1.2, 0.8);
-                        wait(0.1, () => { if(e) e.scale = vec2(1); });
-                    }
+                    if (e.isGrounded()) { e.jump(650); e.scale = vec2(1.4, 0.9); }
                 }
+                if (e.type === "flyer") { e.move(e.speed * e.dir, 0); e.pos.y = e.startY + Math.sin(time() * 4) * 60; }
+                if (e.type === "normal") { e.move(e.speed, 0); }
             });
 
-            // Odrážení hloupějších nepřátel (Slugs a Letců) od zdí a okrajů mapy
-            onCollide("enemy", "block", (e, b, col) => {
-                if (e.type !== "bounder" && col && (col.isLeft() || col.isRight())) {
-                    if (e.type === "flyer") e.dir = -e.dir;
-                    else e.speed = -e.speed;
-                    e.flipX = !e.flipX;
-                }
-            });
+            onCollide("enemy", "ground", (e, b, col) => { if (e.type !== "bouncer" && col && (col.isLeft() || col.isRight())) { if (e.type === "flyer") e.dir = -e.dir; else e.speed = -e.speed; } });
 
-            // --- KOLIZE A LOGIKA ---
-
-            // Hráč střelí nepřítele
+            // --- KOLIZE ---
+            onCollide("bullet", "breakable", (b, w) => { destroy(b); destroy(w); score+=5; scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; });
+            
             onCollide("bullet", "enemy", (b, e) => {
                 destroy(b);
-                e.hp--;
-                e.color = rgb(255, 0, 0); // Problikne červeně
-                wait(0.1, () => { if (e) e.color = rgb(255, 255, 255); });
-
-                if (e.hp <= 0) {
-                    const p = e.pos;
-                    if(e.type === "bounder") score += 5;
-                    else score += 1;
-                    destroy(e);
-                    scoreLabel.text = `Kapky: ${score}`;
-                    
-                    const dead = add([ sprite("death"), pos(p), anchor("center"), move(UP, 100) ]);
-                    wait(0.4, () => destroy(dead));
-                }
+                if (e.type === "bouncer") { e.stunTimer = 3; e.color = rgb(100, 100, 100); return; }
+                e.hp--; e.scale = vec2(0.5);
+                if (e.hp <= 0) { const p = e.pos; score += 5; destroy(e); scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; wait(0.4, () => destroy(add([ sprite("death"), pos(p), anchor("center"), move(UP, 100) ]))); }
             });
 
-            // Odrážeč (Bounder) narazí do hráče - NEUBÍRÁ ŽIVOTY, ALE ODRÁŽÍ!
             player.onCollide("pusher", (p) => {
-                if (player.stunned) return; // Zabrání přehršli odrazů
-                
-                // Určí směr odhození podle toho, z jaké strany míč narazil
-                const pushDir = player.pos.x < p.pos.x ? -1 : 1;
-                
-                // Nastaví hráči rychlost odletu (přepíše engine)
-                player.vel.x = pushDir * 800;
-                player.vel.y = -400; // Letí obloukem nahoru
-                
-                // Omráčí hráče (přestaneš ho na malou chvíli ovládat)
-                player.stunned = true;
-                player.play("jump"); // Změní animaci
-                player.color = rgb(150, 150, 150); // Zešediví
-
-                wait(0.6, () => {
-                    if (player) {
-                        player.stunned = false;
-                        player.color = rgb(255, 255, 255);
-                    }
-                });
+                if (player.stunned || p.stunTimer > 0) return; 
+                player.pushDir = player.pos.x < p.pos.x ? -1 : 1; player.stunned = true; player.jump(currentLevel.gravity < 1000 ? 300 : 500); player.color = rgb(150, 150, 150);
+                wait(0.5, () => { if (player) { player.stunned = false; player.pushDir = 0; player.color = rgb(255, 255, 255); } });
             });
 
-            // Normální smrtící překážky a klasičtí nepřátelé (Kyselina, Slug)
             player.onCollide("danger", (d) => {
-                if (player.stunned) return; // Během odrazu se nenechá zranit
-                
-                hp--;
-                updateHP();
-                if (hp <= 0) {
-                    go("lose", score);
-                } else {
-                    player.jump(BASE_JUMP * 0.7);
-                    player.stunned = true;
-                    player.color = rgb(255, 50, 50);
-                    d.paused = true; 
-                    wait(0.5, () => {
-                        if (player) { player.color = rgb(255, 255, 255); player.stunned = false; }
-                        if (d.exists()) d.paused = false;
-                    });
+                if (player.stunned) return; 
+                hp--; updateHP();
+                if (hp <= 0) go("lose", levelIndex, score);
+                else {
+                    player.jump(BASE_JUMP * 0.7); player.stunned = true; player.pushDir = player.pos.x < d.pos.x ? -1 : 1; player.color = rgb(255, 50, 50); d.paused = true; 
+                    wait(0.5, () => { if (player) { player.color = rgb(255, 255, 255); player.stunned = false; player.pushDir = 0; } if (d.exists()) d.paused = false; });
                 }
             });
 
-            // Sběr věcí
-            player.onCollide("drop", (c) => { 
-                destroy(c); score += 1; scoreLabel.text = `Kapky: ${score}`; 
-                add([ text("+1", { size: 16, font: "monospace" }), pos(c.pos), move(UP, 50), opacity(0.8), lifespan(0.5, { fade: 0.5 }) ]);
-            });
-            player.onCollide("pistol", (p) => { destroy(p); ammo += 5; ammoLabel.text = `x ${ammo}`; });
-            player.onCollide("heal", (h) => { destroy(h); hp = Math.min(3, hp + 1); updateHP(); });
+            player.onCollide("coin", (c) => { destroy(c); score += 1; scoreLabel.text = `Skore: ${score} | Lvl ${levelIndex+1}`; add([ text("+1", { size: 16 }), pos(c.pos), move(UP, 50), opacity(0.8), lifespan(0.5, { fade: 0.5 }) ]); });
+            player.onCollide("pistol", (p) => { destroy(p); ammo += 3; ammoLabel.text = `x ${ammo}`; });
+            player.onCollide("heal", (h) => { destroy(h); hp++; if (hp > maxHp) maxHp = hp; updateHP(); });
             
-            // Cíl
-            player.onCollide("finish", () => { go("win", score); });
+            player.onCollide("finish", () => {
+                if (levelIndex + 1 < LEVELS.length) {
+                    go("win", levelIndex, hp, ammo, score, false); 
+                } else {
+                    go("win", levelIndex, hp, ammo, score, true); 
+                }
+            });
         });
 
-        // --- KONCE HRY ---
-        scene("lose", (score) => {
-            add([
-                text(`KONEC HRY\n\nKapky: ${score}\n\nKlepni pro restart`, { align: "center", size: 32 }),
-                pos(width() / 2, height() / 2), anchor("center"),
-            ]);
-            onTouchStart(() => go("game")); onMousePress(() => go("game")); onKeyPress(() => go("game"));
+        // --- KONCOVÉ SCÉNY ---
+        scene("lose", (levelIndex, score) => {
+            add([ text(`ZEMŘEL JSI V LEVELU ${levelIndex+1}\n\nSkore: ${score}\n\nKlepni pro restart levelu`, { align: "center", size: 32 }), pos(width() / 2, height() / 2), anchor("center") ]);
+            onTouchStart(() => go("game", levelIndex, 3, 5, score)); onMousePress(() => go("game", levelIndex, 3, 5, score)); onKeyPress(() => go("game", levelIndex, 3, 5, score));
         });
 
-        scene("win", (score) => {
-            add([
-                text(`VYBORNE, VELITELI!\n\nKapky: ${score}\n\nKlepni pro restart`, { align: "center", size: 32 }),
-                pos(width() / 2, height() / 2), anchor("center"),
-            ]);
-            onTouchStart(() => go("game")); onMousePress(() => go("game")); onKeyPress(() => go("game"));
+        scene("win", (levelIndex, hp, ammo, score, isFinal) => {
+            if (isFinal) {
+                add([ text(`DOHRÁL JSI CELOU HRU!\n\nKonečné Skore: ${score}\n\nKlepni pro hraní odznovu`, { align: "center", size: 32 }), pos(width() / 2, height() / 2), anchor("center") ]);
+                onTouchStart(() => go("game", 0)); onMousePress(() => go("game", 0)); onKeyPress(() => go("game", 0));
+            } else {
+                add([ text(`LEVEL ${levelIndex+1} DOKONČEN!\n\nSkore: ${score}\n\nKlepni pro další level`, { align: "center", size: 32 }), pos(width() / 2, height() / 2), anchor("center") ]);
+                onTouchStart(() => go("game", levelIndex + 1, hp, ammo, score)); onMousePress(() => go("game", levelIndex + 1, hp, ammo, score)); onKeyPress(() => go("game", levelIndex + 1, hp, ammo, score));
+            }
         });
 
-        go("game");
+        go("game", 0, 3, 5, 0); // Start
     </script>
 </body>
 </html>
