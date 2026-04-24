@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>Stickman Skákačka</title>
+    <title>v1.0.2</title>
     <style>
         body, html {
             margin: 0;
@@ -32,13 +32,29 @@
             crisp: true
         });
 
-        const svgStickman = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="48" viewBox="0 0 32 48"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="6" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="26" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="8" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="24" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/></svg>`;
+        // Vylepšené SVG s dvěma snímky pro animaci pohybu (šířka 64, obsahuje dvě 32px postavičky vedle sebe)
+        const svgStickmanAnim = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="6" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="26" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="8" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="24" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><circle cx="48" cy="10" r="7" fill="black"/><line x1="48" y1="17" x2="48" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="22" x2="40" y2="26" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="22" x2="56" y2="26" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="32" x2="44" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="32" x2="52" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/></svg>`;
+        
+        // Nové entity
+        const svgEnemy = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><path d="M 4 28 L 4 16 C 4 8, 28 8, 28 16 L 28 28 Z" fill="%23800080"/><circle cx="12" cy="14" r="4" fill="white"/><circle cx="20" cy="14" r="4" fill="white"/><circle cx="12" cy="14" r="1.5" fill="black"/><circle cx="20" cy="14" r="1.5" fill="black"/><path d="M 10 22 L 22 22" stroke="black" stroke-width="2"/></svg>`;
+        const svgBullet = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="8"><rect width="16" height="8" rx="4" fill="%23ffff00" stroke="%23ff8c00" stroke-width="2"/></svg>`;
+        
+        // Původní bloky
         const svgBlock = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%238b4513"/><rect width="40" height="10" fill="%2332cd32"/></svg>`;
         const svgCoin = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="%23ffd700" stroke="%23daa520" stroke-width="2"/><text x="12" y="16" font-family="Arial" font-size="12" font-weight="bold" fill="%23daa520" text-anchor="middle">$</text></svg>`;
         const svgSpike = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><polygon points="20,10 40,40 0,40" fill="%23696969"/></svg>`;
         const svgFlag = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="80"><rect x="18" y="10" width="4" height="70" fill="%23fff"/><polygon points="22,10 40,20 22,30" fill="%23ff0000"/></svg>`;
 
-        loadSprite("player", svgStickman);
+        // Načtení animovaného hráče a ostatních prvků
+        loadSprite("player", svgStickmanAnim, {
+            sliceX: 2, // SVG rozdělí na 2 snímky vedle sebe
+            anims: {
+                idle: 0,
+                run: { from: 0, to: 1, loop: true, speed: 10 }
+            }
+        });
+        loadSprite("enemy", svgEnemy);
+        loadSprite("bullet", svgBullet);
         loadSprite("block", svgBlock);
         loadSprite("coin", svgCoin);
         loadSprite("spike", svgSpike);
@@ -47,7 +63,7 @@
         scene("game", () => {
             setGravity(1800);
 
-            // Odstraněn symbol hráče (@) z mapy, vytvoříme ho samostatně
+            // Upravená mapa pro potvory
             const mapLayout = [
                 "                                                  ",
                 "                                                  ",
@@ -55,9 +71,9 @@
                 "                                                  ",
                 "           $$                         $           ",
                 "       ====           $$          =====           ",
-                "                  ======                          ",
-                "                                                  ",
-                "             ^^              ^                  F ",
+                "                  ======   E                      ",
+                "       E                                          ",
+                "    ====           ^^      ===      ^           F ",
                 "==================  =============================="
             ];
 
@@ -68,88 +84,175 @@
                     "=": () => [sprite("block"), area(), body({ isStatic: true }), anchor("center")],
                     "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
                     "^": () => [sprite("spike"), area({ shape: new Polygon([vec2(0, 15), vec2(20, -15), vec2(-20, -15)]) }), body({ isStatic: true }), anchor("center"), "danger"],
-                    "F": () => [sprite("flag"), area(), anchor("center"), "finish"]
+                    "F": () => [sprite("flag"), area(), anchor("center"), "finish"],
+                    "E": () => [sprite("enemy"), area(), body(), anchor("center"), "enemy", "danger", { speed: 80 }]
                 }
             };
 
             addLevel(mapLayout, levelConf);
 
-            // Explicitní vytvoření hráče - zaručuje, že proměnná není undefined
             const player = add([
                 sprite("player"),
-                pos(80, 300), // Výchozí pozice
+                pos(80, 250),
                 area(),
                 body(),
                 anchor("center"),
                 "player"
             ]);
+            
+            // Spustíme základní animaci pro stání
+            player.play("idle");
 
             let score = 0;
             const SPEED = 300;
             const JUMP_FORCE = 700;
 
             const scoreLabel = add([
-                text("Skóre: 0", { size: 24 }),
+                text("Skore: 0", { size: 24 }),
                 pos(24, 24),
                 fixed(),
                 z(100)
             ]);
 
-            // Tlačítka
+            // Tlačítka (posunutá a s novým tlačítkem pro střelbu)
             add([ rect(80, 80, { radius: 10 }), pos(20, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
             add([ text("<", { size: 40 }), pos(45, height() - 80), fixed() ]);
+            
             add([ rect(80, 80, { radius: 10 }), pos(120, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
             add([ text(">", { size: 40 }), pos(145, height() - 80), fixed() ]);
+            
+            // Tlačítko střelba
+            add([ rect(80, 80, { radius: 40 }), pos(width() - 200, height() - 100), color(150, 0, 0), opacity(0.4), fixed() ]);
+            add([ text("O", { size: 40 }), pos(width() - 175, height() - 80), fixed() ]);
+
+            // Tlačítko skok
             add([ rect(80, 80, { radius: 40 }), pos(width() - 100, height() - 100), color(0, 0, 0), opacity(0.3), fixed() ]);
             add([ text("^", { size: 40 }), pos(width() - 75, height() - 80), fixed() ]);
 
             let moveDirection = 0;
 
+            function shoot() {
+                if (!player) return;
+                // Vystřelí z pozice hráče po směru, kam zrovna kouká (podle flipX)
+                const dir = player.flipX ? LEFT : RIGHT;
+                const offset = player.flipX ? -20 : 20;
+                add([
+                    sprite("bullet"),
+                    pos(player.pos.x + offset, player.pos.y),
+                    area(),
+                    anchor("center"),
+                    move(dir, 800),
+                    offscreen({ destroy: true }), // zničí se mimo obrazovku
+                    "bullet"
+                ]);
+            }
+
+            // --- DOTYKOVÉ OVLÁDÁNÍ ---
             onTouchStart((id, pos) => {
-                if (pos.x > width() - 120 && pos.y > height() - 120) {
-                    if (player.isGrounded()) player.jump(JUMP_FORCE);
-                } else if (pos.x > 10 && pos.x < 110 && pos.y > height() - 120) {
+                if (pos.x >= width() - 110 && pos.y > height() - 120) {
+                    // Skok (pravé krajní tlačítko)
+                    if (player && player.isGrounded()) player.jump(JUMP_FORCE);
+                } else if (pos.x >= width() - 220 && pos.x < width() - 110 && pos.y > height() - 120) {
+                    // Střelba (vedle skoku)
+                    shoot();
+                } else if (pos.x < 110 && pos.y > height() - 120) {
+                    // Vlevo
                     moveDirection = -1;
-                } else if (pos.x > 110 && pos.x < 210 && pos.y > height() - 120) {
+                } else if (pos.x >= 110 && pos.x < 220 && pos.y > height() - 120) {
+                    // Vpravo
                     moveDirection = 1;
                 }
             });
 
             onTouchEnd((id, pos) => { moveDirection = 0; });
+
+            // --- KLÁVESOVÉ OVLÁDÁNÍ NA PC ---
             onKeyDown("left", () => moveDirection = -1);
             onKeyDown("right", () => moveDirection = 1);
             onKeyRelease(["left", "right"], () => moveDirection = 0);
-            onKeyPress(["space", "up"], () => { if (player.isGrounded()) player.jump(JUMP_FORCE); });
+            onKeyPress("up", () => { if (player && player.isGrounded()) player.jump(JUMP_FORCE); });
+            onKeyPress("space", () => { shoot(); });
 
+            // --- HERNÍ SMYČKA ---
             onUpdate(() => {
-                if (moveDirection < 0) player.move(-SPEED, 0);
-                if (moveDirection > 0) player.move(SPEED, 0);
+                if (!player) return;
 
+                // Pohyb a orientace
+                if (moveDirection < 0) {
+                    player.move(-SPEED, 0);
+                    player.flipX = true; // Otočí texturu vlevo
+                }
+                if (moveDirection > 0) {
+                    player.move(SPEED, 0);
+                    player.flipX = false; // Nastaví texturu vpravo
+                }
+
+                // Přepínání animací (Běh / Stání)
+                if (player.isGrounded()) {
+                    if (moveDirection !== 0 && player.curAnim() !== "run") {
+                        player.play("run");
+                    } else if (moveDirection === 0 && player.curAnim() !== "idle") {
+                        player.play("idle");
+                    }
+                } else {
+                    // Ve skoku ukazuje základní snímek
+                    if (player.curAnim() !== "idle") player.play("idle");
+                }
+
+                // Omezení, aby hráč nemohl odejít doleva mimo úplný okraj mapy
+                if (player.pos.x < 16) {
+                    player.pos.x = 16;
+                }
+
+                // Kamera
                 let camX = Math.max(width() / 2, player.pos.x);
                 camPos(camX, height() / 2);
 
                 if (player.pos.y > height() + 100) { go("game"); }
             });
 
-            // Kolize
-            player.onCollide("coin", (c) => {
-                destroy(c);
-                score++;
-                scoreLabel.text = `Skóre: ${score}`;
+            // --- LOGIKA NEPŘÁTEL ---
+            onUpdate("enemy", (e) => {
+                e.move(e.speed, 0);
+            });
+            // Změna směru nepřátel při nárazu do stěny (bloku)
+            onCollide("enemy", "block", (e, b, col) => {
+                if (col && (col.isLeft() || col.isRight())) {
+                    e.speed = -e.speed;
+                }
             });
 
-            player.onCollide("danger", () => { go("game"); });
-            player.onCollide("finish", () => { go("win", score); });
+            // --- GLOBÁLNÍ KOLIZE ---
+            onCollide("player", "coin", (p, c) => {
+                destroy(c);
+                score++;
+                scoreLabel.text = `Skore: ${score}`;
+            });
+
+            onCollide("bullet", "enemy", (b, e) => {
+                destroy(b);
+                destroy(e);
+                score += 5; // Extra body za zabití
+                scoreLabel.text = `Skore: ${score}`;
+            });
+
+            onCollide("player", "danger", () => {
+                go("game");
+            });
+
+            onCollide("player", "finish", () => {
+                go("win", score);
+            });
         });
 
         scene("win", (score) => {
             add([
-                text(`VYHRAL JSI!\n\nSkóre: ${score}\n\nDotkni se pro restart`, { align: "center" }),
+                text(`VYHRAL JSI!\n\nSkore: ${score}\n\nDotkni se pro restart`, { align: "center" }),
                 pos(width() / 2, height() / 2),
                 anchor("center"),
             ]);
             onTouchStart(() => go("game"));
-            onKeyPress("space", () => go("game"));
+            onKeyPress("up", () => go("game"));
         });
 
         go("game");
