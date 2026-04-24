@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="screen-orientation" content="landscape">
-    <title>v1.0.3</title>
+    <title>v1.0.4 - Stickman RPG</title>
     <style>
         body, html {
             margin: 0;
@@ -12,7 +12,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background-color: #222;
+            background-color: #111;
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
@@ -27,54 +27,68 @@
         import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
         kaboom({
-            background: [135, 206, 235],
+            background: [100, 180, 220],
             width: 800,
             height: 400,
             letterbox: true,
             crisp: true
         });
 
-        const svgStickmanAnim = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="6" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="22" x2="26" y2="30" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="8" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="16" y1="32" x2="24" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><circle cx="48" cy="10" r="7" fill="black"/><line x1="48" y1="17" x2="48" y2="32" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="22" x2="40" y2="26" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="22" x2="56" y2="26" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="32" x2="44" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/><line x1="48" y1="32" x2="52" y2="46" stroke="black" stroke-width="4" stroke-linecap="round"/></svg>`;
-        const svgEnemy = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><path d="M 4 28 L 4 16 C 4 8, 28 8, 28 16 L 28 28 Z" fill="%23800080"/><circle cx="12" cy="14" r="4" fill="white"/><circle cx="20" cy="14" r="4" fill="white"/><circle cx="12" cy="14" r="1.5" fill="black"/><circle cx="20" cy="14" r="1.5" fill="black"/><path d="M 10 22 L 22 22" stroke="black" stroke-width="2"/></svg>`;
+        // --- VYLPŠENÁ SVG GRAFIKA & ANIMACE ---
+        // Spritesheet: 3 snímky (Idle, Run1, Run2) - 32x48px každý
+        const svgPlayerAnim = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="48" viewBox="0 0 96 48"><g transform="translate(0,0)"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="6" y2="30" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="26" y2="30" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="8" y2="46" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="24" y2="46" stroke="black" stroke-width="4"/></g><g transform="translate(32,0)"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="10" y2="28" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="22" y2="28" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="12" y2="46" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="20" y2="46" stroke="black" stroke-width="4"/></g><g transform="translate(64,0)"><circle cx="16" cy="10" r="7" fill="black"/><line x1="16" y1="17" x2="16" y2="32" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="14" y2="31" stroke="black" stroke-width="4"/><line x1="16" y1="22" x2="18" y2="31" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="10" y2="46" stroke="black" stroke-width="4"/><line x1="16" y1="32" x2="22" y2="46" stroke="black" stroke-width="4"/></g></svg>`;
+        const svgEnemy = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="14" fill="%23800080"/><circle cx="11" cy="12" r="3" fill="white"/><circle cx="21" cy="12" r="3" fill="white"/><circle cx="11" cy="12" r="1" fill="black"/><circle cx="21" cy="12" r="1" fill="black"/><path d="M 8 22 Q 16 26 24 22" stroke="black" stroke-width="2" fill="none"/></svg>`;
+        const svgDeath = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="14" fill="%23aaa"/><line x1="10" y1="10" x2="22" y2="22" stroke="black" stroke-width="2"/><line x1="22" y1="10" x2="10" y2="22" stroke="black" stroke-width="2"/></svg>`;
         const svgBullet = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="8"><rect width="16" height="8" rx="4" fill="%23ffff00" stroke="%23ff8c00" stroke-width="2"/></svg>`;
         const svgBlock = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="%238b4513"/><rect width="40" height="10" fill="%2332cd32"/></svg>`;
-        const svgCoin = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="%23ffd700" stroke="%23daa520" stroke-width="2"/><text x="12" y="16" font-family="Arial" font-size="12" font-weight="bold" fill="%23daa520" text-anchor="middle">$</text></svg>`;
+        const svgCoin = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="%23ffd700" stroke="%23daa520" stroke-width="2"/><text x="12" y="16" font-family="Arial" font-size="12" fill="%23daa520" text-anchor="middle">$</text></svg>`;
         const svgSpike = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><polygon points="20,10 40,40 0,40" fill="%23696969"/></svg>`;
         const svgFlag = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="80"><rect x="18" y="10" width="4" height="70" fill="%23fff"/><polygon points="22,10 40,20 22,30" fill="%23ff0000"/></svg>`;
+        const svgPistol = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="16"><rect x="2" y="2" width="20" height="6" rx="2" fill="%23000"/><rect x="16" y="8" width="6" height="6" rx="1" fill="%23000"/></svg>`;
+        const svgHeart = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="red"/></svg>`;
 
-        loadSprite("player", svgStickmanAnim, { sliceX: 2, anims: { idle: 0, run: { from: 0, to: 1, loop: true, speed: 10 } } });
+        loadSprite("player", svgPlayerAnim, { sliceX: 3, anims: { idle: 0, run: { from: 1, to: 2, loop: true, speed: 10 }, jump: 1 } });
         loadSprite("enemy", svgEnemy);
+        loadSprite("death", svgDeath);
         loadSprite("bullet", svgBullet);
         loadSprite("block", svgBlock);
         loadSprite("coin", svgCoin);
         loadSprite("spike", svgSpike);
         loadSprite("flag", svgFlag);
+        loadSprite("pistol", svgPistol);
+        loadSprite("heart", svgHeart);
 
         scene("game", () => {
             setGravity(1800);
 
+            // --- RPG STAV HRÁČE ---
+            let hp = 3;
+            let ammo = 5;
+            let score = 0;
+            let canDoubleJump = false;
+
+            // --- MAPA ---
             const mapLayout = [
-                "                                                  ",
-                "                                                  ",
-                "                                                  ",
-                "                                                  ",
-                "           $$                         $           ",
-                "       ====           $$          =====           ",
-                "                  ======   E                      ",
-                "       E                                          ",
-                "    ====           ^^      ===      ^           F ",
-                "==================  =============================="
+                "                                                            ",
+                "                                                            ",
+                "           $$                         $       E             ",
+                "       ========      H    $$      =====    =======          ",
+                "                  ======   E                                ",
+                "       E                      =====                         ",
+                "    ====           ^^  P   ===      ^           E        F ",
+                "==================  =========================================="
             ];
 
             const levelConf = {
-                tileWidth: 40,
-                tileHeight: 40,
+                tileWidth: 40, tileHeight: 40,
                 tiles: {
                     "=": () => [sprite("block"), area(), body({ isStatic: true }), anchor("center")],
                     "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
                     "^": () => [sprite("spike"), area({ shape: new Polygon([vec2(0, 15), vec2(20, -15), vec2(-20, -15)]) }), body({ isStatic: true }), anchor("center"), "danger"],
                     "F": () => [sprite("flag"), area(), anchor("center"), "finish"],
-                    "E": () => [sprite("enemy"), area(), body(), anchor("center"), "enemy", "danger", { speed: 80 }]
+                    "E": () => [sprite("enemy"), area(), body(), anchor("center"), "enemy", "danger", { speed: 80 }],
+                    "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
+                    "H": () => [sprite("heart"), area(), anchor("center"), "heal"]
                 }
             };
 
@@ -83,58 +97,81 @@
             const player = add([
                 sprite("player"),
                 pos(80, 250),
-                area(),
+                area({ shape: new Rect(vec2(0, 5), 24, 40) }), // Vlastní hitbox, menší nahoře
                 body(),
                 anchor("center"),
                 "player"
             ]);
-            
             player.play("idle");
 
-            let score = 0;
-            let jumps = 0;
             const SPEED = 300;
-            const BASE_JUMP_FORCE = 650;
+            const BASE_JUMP = 600;
             let moveDirection = 0;
 
-            const scoreLabel = add([
-                text("Skore: 0", { size: 24 }), pos(24, 24), fixed(), z(100)
-            ]);
-
-            // Větší vizuální tlačítka pro mobily
-            add([ rect(100, 100, { radius: 10 }), pos(10, height() - 110), color(0, 0, 0), opacity(0.3), fixed() ]);
-            add([ text("<", { size: 50 }), pos(40, height() - 85), fixed() ]);
+            // --- UI VRSTVA ---
+            const ui = add([fixed(), z(100)]);
             
-            add([ rect(100, 100, { radius: 10 }), pos(130, height() - 110), color(0, 0, 0), opacity(0.3), fixed() ]);
-            add([ text(">", { size: 50 }), pos(160, height() - 85), fixed() ]);
+            ui.add([ text("Skore: 0", { size: 20 }), pos(20, 20) ]);
             
-            add([ rect(100, 100, { radius: 50 }), pos(width() - 230, height() - 110), color(150, 0, 0), opacity(0.4), fixed() ]);
-            add([ text("O", { size: 50 }), pos(width() - 195, height() - 85), fixed() ]);
+            function updateHP() {
+                destroyAll("ui_hp");
+                for (let i = 0; i < 3; i++) {
+                    ui.add([ sprite("heart"), pos(width() - 40 - i * 30, 20), color(0, 0, 0), opacity(0.3), "ui_hp" ]);
+                }
+                for (let i = 0; i < hp; i++) {
+                    ui.add([ sprite("heart"), pos(width() - 40 - i * 30, 20), "ui_hp" ]);
+                }
+            }
+            updateHP();
 
-            add([ rect(100, 100, { radius: 50 }), pos(width() - 110, height() - 110), color(0, 0, 0), opacity(0.3), fixed() ]);
-            add([ text("^", { size: 50 }), pos(width() - 80, height() - 85), fixed() ]);
+            function updateAmmo() {
+                destroyAll("ui_ammo");
+                ui.add([ sprite("bullet"), pos(width() - 130, 60), "ui_ammo" ]);
+                ui.add([ text(`x${ammo}`, { size: 20 }), pos(width() - 105, 55), "ui_ammo" ]);
+            }
+            updateAmmo();
+
+            // --- SPOLEHLIVÉ DOTYKOVÉ OVLÁDÁNÍ (NEVIDITELNÁ TLAČÍTKA) ---
+            const btnArea = add([fixed(), z(99)]);
+            
+            // Definuje tlačítka jako Kaboom objekty
+            const btnLeft = btnArea.add([ pos(0, height() - 150), rect(160, 150), opacity(0), area(), "btn_left" ]);
+            const btnRight = btnArea.add([ pos(160, height() - 150), rect(160, 150), opacity(0), area(), "btn_right" ]);
+            const btnShoot = btnArea.add([ pos(width() - 250, height() - 150), rect(125, 150), opacity(0), area(), "btn_shoot" ]);
+            const btnJump = btnArea.add([ pos(width() - 125, height() - 150), rect(125, 150), opacity(0), area(), "btn_jump" ]);
+
+            // Vizuální prvky pro uživatele
+            btnArea.add([ rect(100, 100, { radius: 10 }), pos(30, height() - 120), color(0, 0, 0), opacity(0.2) ]);
+            btnArea.add([ text("<", { size: 60 }), pos(60, height() - 100) ]);
+            
+            btnArea.add([ rect(100, 100, { radius: 10 }), pos(190, height() - 120), color(0, 0, 0), opacity(0.2) ]);
+            btnArea.add([ text(">", { size: 60 }), pos(220, height() - 100) ]);
+
+            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 220, height() - 120), color(200, 0, 0), opacity(0.3) ]);
+            btnArea.add([ sprite("pistol"), pos(width() - 208, height() - 105), scale(1.5) ]);
+
+            btnArea.add([ rect(100, 100, { radius: 50 }), pos(width() - 110, height() - 120), color(0, 0, 0), opacity(0.2) ]);
+            btnArea.add([ text("^", { size: 60 }), pos(width() - 85, height() - 100) ]);
 
             // Logika skoku
-            function doJump() {
+            function playerJump() {
                 if (!player) return;
-                let force = BASE_JUMP_FORCE;
-                
-                // Bonus za rozběh
-                if (Math.abs(moveDirection) > 0) force *= 1.15; 
+                let force = BASE_JUMP;
+                if (Math.abs(moveDirection) > 0) force += 100; // Bonus za běh
 
                 if (player.isGrounded()) {
-                    jumps = 1;
                     player.jump(force);
-                } else if (jumps < 2) {
-                    jumps = 2;
-                    // Dvojskok (ve vzduchu) je ještě o něco vyšší
-                    player.jump(force * 1.25);
+                    canDoubleJump = true;
+                } else if (canDoubleJump) {
+                    player.jump(force * 0.8); // Dvojskok je slabší
+                    canDoubleJump = false;
                 }
             }
 
             // Logika střelby
-            function shoot() {
-                if (!player) return;
+            function playerShoot() {
+                if (!player || ammo <= 0) return;
+                ammo--; updateAmmo();
                 const dir = player.flipX ? LEFT : RIGHT;
                 const offset = player.flipX ? -20 : 20;
                 add([
@@ -143,111 +180,114 @@
                 ]);
             }
 
-            // --- VYLEPŠENÉ MOBILNÍ DOTYKY (PODPORUJE TAŽENÍ PRSTEM) ---
-            const activeTouches = {};
-
+            // --- MAPOVÁNÍ DOTYKŮ ---
+            // Levé/Pravé se drží
             onTouchStart((id, pos) => {
-                activeTouches[id] = pos;
-                // Skok a střelba se aktivují jen při prvním klepnutí na danou oblast
-                if (pos.y > height() - 200) {
-                    if (pos.x > width() - 130) doJump();
-                    else if (pos.x > width() - 250 && pos.x <= width() - 130) shoot();
-                }
+                const worldPos = toWorld(pos);
+                if (btnLeft.checkPoint(worldPos)) moveDirection = -1;
+                else if (btnRight.checkPoint(worldPos)) moveDirection = 1;
+                // Skok/Střelba se aktivují jen při prvním dotyku
+                else if (btnJump.checkPoint(worldPos)) playerJump();
+                else if (btnShoot.checkPoint(worldPos)) playerShoot();
             });
 
-            onTouchMove((id, pos) => { activeTouches[id] = pos; });
-            onTouchEnd((id) => { delete activeTouches[id]; });
+            onTouchEnd(() => { moveDirection = 0; });
 
             // Klávesnice pro PC
-            onKeyPress("up", () => doJump());
-            onKeyPress("space", () => shoot());
+            onKeyPress("up", () => playerJump());
+            onKeyPress("space", () => playerShoot());
 
             // --- HERNÍ SMYČKA ---
             onUpdate(() => {
                 if (!player) return;
 
-                // Reset skoků po dopadu
-                if (player.isGrounded()) jumps = 0;
-
-                // Vyhodnocení plynulého pohybu (Klávesnice + Dotyky)
-                let currentMove = 0;
+                // Pohyb
+                let currentMove = moveDirection;
                 if (isKeyDown("left")) currentMove = -1;
-                else if (isKeyDown("right")) currentMove = 1;
-                
-                // Přepíše klávesnici, pokud hráč drží prst na displeji (oblast šipek)
-                for (const id in activeTouches) {
-                    const p = activeTouches[id];
-                    if (p.y > height() - 250) { 
-                        if (p.x < 120) currentMove = -1;
-                        else if (p.x >= 120 && p.x < 240) currentMove = 1;
-                    }
-                }
-                
-                moveDirection = currentMove;
+                if (isKeyDown("right")) currentMove = 1;
 
-                // Aplikace pohybu
-                if (moveDirection < 0) { player.move(-SPEED, 0); player.flipX = true; }
-                if (moveDirection > 0) { player.move(SPEED, 0); player.flipX = false; }
+                if (currentMove < 0) { player.move(-SPEED, 0); player.flipX = true; }
+                if (currentMove > 0) { player.move(SPEED, 0); player.flipX = false; }
 
-                // Animace
-                if (player.isGrounded()) {
-                    if (moveDirection !== 0 && player.curAnim() !== "run") player.play("run");
-                    else if (moveDirection === 0 && player.curAnim() !== "idle") player.play("idle");
+                // Přepínání animací
+                if (!player.isGrounded()) {
+                    if (player.curAnim() !== "jump") player.play("jump");
+                } else if (currentMove !== 0) {
+                    if (player.curAnim() !== "run") player.play("run");
                 } else {
                     if (player.curAnim() !== "idle") player.play("idle");
                 }
 
-                // Hranice mapy vlevo
+                // Omezení
                 if (player.pos.x < 16) player.pos.x = 16;
-
-                // Kamera sleduje hráče
                 let camX = Math.max(width() / 2, player.pos.x);
                 camPos(camX, height() / 2);
 
-                // Pád do prázdna
                 if (player.pos.y > height() + 100) go("lose", score);
             });
 
-            // --- NEPŘÁTELÉ A KOLIZE ---
+            // --- NEPŘÁTELÉ & KOLIZE ---
             onUpdate("enemy", (e) => { e.move(e.speed, 0); });
             onCollide("enemy", "block", (e, b, col) => {
                 if (col && (col.isLeft() || col.isRight())) e.speed = -e.speed;
             });
 
-            onCollide("player", "coin", (p, c) => {
-                destroy(c); score++; scoreLabel.text = `Skore: ${score}`;
-            });
-
+            // Střela zabije nepřítele (vylepšená animace smrti)
             onCollide("bullet", "enemy", (b, e) => {
-                destroy(b); destroy(e); score += 5; scoreLabel.text = `Skore: ${score}`;
+                destroy(b);
+                const p = e.pos;
+                destroy(e);
+                score += 5; ui.add([text("Skore: "+score, { size: 20 }), pos(20, 20)]); // Jednoduchý refresh skóre
+                
+                // Přidá lebku na místo smrti
+                const dead = add([ sprite("death"), pos(p), anchor("center") ]);
+                wait(0.5, () => destroy(dead)); // Lebka zmizí za 0.5s
             });
 
-            onCollide("player", "danger", () => { go("lose", score); });
-            onCollide("player", "finish", () => { go("win", score); });
+            // Panáček vs Bodáky nebo Nepřítel = zranění
+            player.onCollide("danger", (d) => {
+                hp--;
+                updateHP();
+                if (hp <= 0) {
+                    go("lose", score);
+                } else {
+                    // Krátká nezranitelnost a odražení
+                    player.jump(BASE_JUMP * 0.7);
+                    player.color = rgb(255, 100, 100);
+                    d.paused = true; // Zastaví nepřítele, aby se kolize neopakovala hned
+                    wait(1, () => {
+                        if (player) player.color = rgb(255, 255, 255);
+                        d.paused = false;
+                    });
+                }
+            });
+
+            // Sběr věcí
+            player.onCollide("coin", (c) => { destroy(c); score++; destroyAll("Skore"); ui.add([text("Skore: "+score, { size: 20 }), pos(20, 20)]); });
+            player.onCollide("pistol", (p) => { destroy(p); ammo += 3; updateAmmo(); });
+            player.onCollide("heal", (h) => { destroy(h); hp = Math.min(3, hp + 1); updateHP(); });
+            player.onCollide("finish", () => { go("win", score); });
         });
 
-        // --- OBRAZOVKA PROHRY (OPRAVA RESTARTU) ---
         scene("lose", (score) => {
             add([
-                text(`PROHRÁL JSI!\n\nSkore: ${score}\n\nKlikni nebo se dotkni pro restart`, { align: "center", size: 32 }),
+                text(`PROHRÁL JSI!\n\nSkore: ${score}\n\nKlepni pro restart`, { align: "center", size: 32 }),
                 pos(width() / 2, height() / 2),
                 anchor("center"),
             ]);
-            // Reakce na všechna možná potvrzení
-            onMousePress(() => go("game"));
             onTouchStart(() => go("game"));
+            onMousePress(() => go("game"));
             onKeyPress(() => go("game"));
         });
 
-        // --- OBRAZOVKA VÝHRY (OPRAVA RESTARTU) ---
         scene("win", (score) => {
             add([
-                text(`VYHRÁL JSI!\n\nSkore: ${score}\n\nKlikni nebo se dotkni pro restart`, { align: "center", size: 32 }),
+                text(`VYHRÁL JSI!\n\nSkore: ${score}\n\nKlepni pro restart`, { align: "center", size: 32 }),
                 pos(width() / 2, height() / 2),
                 anchor("center"),
             ]);
-            onMousePress(() => go("game"));
             onTouchStart(() => go("game"));
+            onMousePress(() => go("game"));
             onKeyPress(() => go("game"));
         });
 
