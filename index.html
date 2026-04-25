@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>v9.2 – Clean Code & Nový Cheat</title>
+    <title>v9.3 – Multitouch, Level HUD & Akcelerometr</title>
     <style>
         /* Základní reset a povolení kopírování textů pro debugovací účely */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -71,17 +71,72 @@
             osc.stop(audioCtx.currentTime + duration);
         }
 
-        // Odchycení uživatelské interakce pro inicializaci audia
         window.addEventListener('click', initAudio); 
         window.addEventListener('keydown', initAudio); 
         window.addEventListener('touchstart', initAudio);
 
         // =====================================================================
-        // 2. GLOBÁLNÍ PROMĚNNÉ A NASTAVENÍ
+        // 2. GLOBÁLNÍ PROMĚNNÉ A AKCELEROMETR
         // =====================================================================
         let GLOBAL_PLAYER_COLOR = "white"; // Výchozí barva postavy
+        
+        let useTilt = false; 
+        let tiltAccel = 0;
 
-        // Odchycení chyb pro Crash Screen
+        // Pomocná funkce pro vypsání hlášek na obrazovku
+        function addToast(msg) {
+            add([
+                text(msg, {size: 18}),
+                pos(width()/2, 80),
+                color(0, 255, 255),
+                anchor("center"),
+                fixed(),
+                z(200),
+                lifespan(2, { fade: 0.5 })
+            ]);
+        }
+
+        function handleOrientation(event) {
+            let tilt = 0;
+            // Zjištění orientace displeje pro správnou osu
+            let angle = window.orientation || (window.screen && window.screen.orientation && window.screen.orientation.angle) || 0;
+            
+            if (angle === 90) tilt = event.beta;
+            else if (angle === -90) tilt = -event.beta;
+            else tilt = event.gamma; // Záchrana pro držení na výšku
+
+            // Mrtvá zóna zabraňuje nechtěnému pohybu
+            if (tilt > 12) tiltAccel = 1;
+            else if (tilt < -12) tiltAccel = -1;
+            else tiltAccel = 0;
+        }
+
+        function toggleTilt() {
+            if (!useTilt) {
+                // Vyžádání práv na iOS zařízeních
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission().then(response => {
+                        if (response === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                            useTilt = true;
+                            addToast("Akcelerometr: ZAPNUT");
+                        } else {
+                            addToast("Akcelerometr: ZAMÍTNUT");
+                        }
+                    }).catch(console.error);
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                    useTilt = true;
+                    addToast("Akcelerometr: ZAPNUT");
+                }
+            } else {
+                window.removeEventListener('deviceorientation', handleOrientation);
+                useTilt = false;
+                tiltAccel = 0;
+                addToast("Akcelerometr: VYPNUT");
+            }
+        }
+
         window.addEventListener("error", (e) => {
             const cs = document.getElementById("crash-screen");
             if (cs) { 
@@ -91,13 +146,22 @@
             }
         });
 
-        // Inicializace enginu
         kaboom({ width: 800, height: 480, letterbox: true, crisp: true, background: [0, 0, 0], scale: 1 });
 
         // =====================================================================
         // 3. GRAFIKA (SPRITES)
         // =====================================================================
-        // Funkce vygeneruje hráčův sprite jako SVG kód
+        const TEXTS = {
+            debugTitle: "=== DEBUG INFO ===",
+            debugLevel: (lvl) => `Level: ${lvl}/12`, debugHP: (hp, max) => `HP: ${hp}/${max}`,
+            debugAmmo: (ammo) => `Ammo: ${ammo}`, debugScore: (sc) => `Score: ${sc}`,
+            debugPos: (x, y) => `Pozice: (${x.toFixed(0)}, ${y.toFixed(0)})`, debugVel: (v) => `Rychlost: ${v.toFixed(1)}`,
+            debugGround: (g) => `Na zemi: ${g}`, debugStun: (s) => `Stun: ${s}`,
+            debugGravity: (g) => `Gravitace: ${g}`, debugEnemies: (n) => `Nepřátel: ${n}`,
+            debugCoins: (n) => `Mincí: ${n}`, debugFPS: (fps) => `FPS: ${fps}`,
+            debugTime: (t) => `Čas: ${t.toFixed(1)}s`
+        };
+
         function generateStickmanSVG() {
             const origFrames = [
                 `<g transform="translate(0,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g>`,
@@ -110,22 +174,10 @@
             ];
             const newIdle = `<g transform="translate(224,0)"><circle cx="16" cy="12" r="5" fill="white"/><path d="M16 17v11M16 18l-4 6-2 6M16 18l4 6 2 6M16 28l-4 8v8M16 28l4 8v8"/></g>`;
             const fall = `<g transform="translate(256,0)"><circle cx="16" cy="14" r="5" fill="white"/><path d="M16 19v10M16 20l-9 3-2-4M16 20l9 3 2-4M16 30l-5 9v7M16 30l5 9v7"/></g>`;
-            const allFrames = [...origFrames, newIdle, fall].join("");
-            
-            return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="288" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none">${allFrames}</g></svg>`;
+            return `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="288" height="48"><g stroke="white" stroke-width="3" stroke-linecap="round" fill="none">${[...origFrames, newIdle, fall].join("")}</g></svg>`;
         }
 
-        // Načtení herních spritů
-        loadSprite("player", generateStickmanSVG(), { 
-            sliceX: 9, 
-            anims: { 
-                idle: { from: 0, to: 2, loop: true, speed: 3 }, 
-                run: { from: 3, to: 6, loop: true, speed: 14 }, 
-                jump: { from: 7, to: 7, loop: false, speed: 1 }, 
-                fall: { from: 8, to: 8, loop: false, speed: 1 } 
-            } 
-        });
-        
+        loadSprite("player", generateStickmanSVG(), { sliceX: 9, anims: { idle: { from: 0, to: 2, loop: true, speed: 3 }, run: { from: 3, to: 6, loop: true, speed: 14 }, jump: { from: 7, to: 7, loop: false, speed: 1 }, fall: { from: 8, to: 8, loop: false, speed: 1 } } });
         loadSprite("e_nrm", `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="white"/><circle cx="11" cy="12" r="3" fill="black"/><circle cx="21" cy="12" r="3" fill="black"/></svg>`);
         loadSprite("e_bnc", `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="16" r="14" fill="%23ddd"/><circle cx="16" cy="16" r="10" fill="white"/><circle cx="11" cy="12" r="2" fill="black"/><circle cx="21" cy="12" r="2" fill="black"/></svg>`);
         loadSprite("e_jmp", `data:image/svg+xml;utf8,<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><path d="M 4 28 C 4 10, 28 10, 28 28 Z" fill="white"/><circle cx="16" cy="14" r="6" fill="black"/><circle cx="16" cy="14" r="2" fill="white"/></svg>`);
@@ -161,7 +213,7 @@
             { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, m:["                                                                                                    ","                                                                                                    ","                                            F                                                     ","                 B                     $$ ==             3    X    3                              ","       ======   ===        1          ==== ==      P     =========================================","          W          W        1   1      !   ===          ==                                       ","          W  ^^      W  ^^   === ===     !    1           ==           P                           ","======    ====      ====                 !                ==                                       ","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] }
         ];
 
-        // Přípona připojovaná na konec každého levelu s překážkovou dráhou plošin
+        // Přípona připojovaná na konec každého levelu
         const mapSuffix = [
             "                            ", 
             "                            ", 
@@ -179,36 +231,42 @@
             "                            "  
         ];
 
-        // Oříznutí starých map a připojení nového konce
         const LVL = RAW_LVL.map(l => ({ 
             ...l, 
             m: l.m.map((row, i) => row.substring(0, 92).padEnd(92, " ") + mapSuffix[i]) 
         }));
 
         // =====================================================================
-        // 5. DEBUG PANEL A EXTERNÍ NÁSTROJE
+        // 5. DEBUG A CHEATY
         // =====================================================================
         const debugPanel = document.getElementById("debug-panel");
         let debugVisible = false;
         
         document.getElementById("debug-toggle").addEventListener("click", () => { 
-            debugVisible = !debugVisible; 
-            debugPanel.style.display = debugVisible ? "block" : "none"; 
+            debugVisible = !debugVisible; debugPanel.style.display = debugVisible ? "block" : "none"; 
         });
-        
         onKeyPress("f3", () => { 
-            debugVisible = !debugVisible; 
-            debugPanel.style.display = debugVisible ? "block" : "none"; 
+            debugVisible = !debugVisible; debugPanel.style.display = debugVisible ? "block" : "none"; 
         });
 
         document.getElementById("copy-debug-btn").addEventListener("click", () => {
             const text = document.getElementById("debug-content").textContent;
             if (!text.trim()) { alert("Debug panel je prázdný."); return; }
-            if (navigator.clipboard) { 
-                navigator.clipboard.writeText(text).then(() => alert("Debug zkopírován!")); 
-            } else { 
-                prompt("Zkopíruj ručně:", text); 
-            }
+            if (navigator.clipboard) { navigator.clipboard.writeText(text).then(() => alert("Debug zkopírován!")); } 
+            else { prompt("Zkopíruj ručně:", text); }
+        });
+
+        // Klávesnicový cheat "vítězství"
+        const cheatMap = { "+":0,"1":0,"ě":1,"2":1,"š":2,"3":2,"č":3,"4":3,"ř":4,"5":4,"ž":5,"6":5,"ý":6,"7":6,"á":7,"8":7,"í":8,"9":8,"é":"v","0":"v" };
+        let cheatBuf = [];
+        onCharInput((k) => {
+            if (k in cheatMap) {
+                cheatBuf.push(k); if (cheatBuf.length > 6) cheatBuf.shift();
+                if (cheatBuf.length === 6 && cheatBuf.every(v => v === k)) {
+                    const t = cheatMap[k]; cheatBuf = [];
+                    if (t === "v") go("victory", 9999); else go("game", t, 3, 15, 0);
+                }
+            } else cheatBuf = [];
         });
 
         // =====================================================================
@@ -219,12 +277,12 @@
             
             add([text("VÝBĚR POSTAVY", {size: 40}), pos(width()/2, 100), anchor("center")]);
 
-            // Tlačítko - Černá barva
+            // Tlačítko - Černá
             const btnB = add([rect(180, 60, {radius: 8}), pos(width()/2 - 120, 230), anchor("center"), color(40,40,40), area(), "btn", {col: "black"}]);
             btnB.add([text("ČERNÁ", {size: 24}), color(255,255,255), anchor("center")]);
             add([text("(Šipka VLEVO)", {size: 14}), pos(width()/2 - 120, 275), color(150,150,150), anchor("center")]);
 
-            // Tlačítko - Bílá barva
+            // Tlačítko - Bílá
             const btnW = add([rect(180, 60, {radius: 8}), pos(width()/2 + 120, 230), anchor("center"), color(255,255,255), area(), "btn", {col: "white"}]);
             btnW.add([text("BÍLÁ", {size: 24}), color(0,0,0), anchor("center")]);
             add([text("(Šipka VPRAVO)", {size: 14}), pos(width()/2 + 120, 275), color(150,150,150), anchor("center")]);
@@ -242,21 +300,20 @@
                 chosen = true;
                 GLOBAL_PLAYER_COLOR = col; 
                 initAudio(); 
-                go("game", 0, 3, 15, 0); // Start s 15 náboji
+                go("game", 0, 3, 15, 0); 
             };
 
             onClick("btn", (b) => startGame(b.col));
             const kL = onKeyPress("left", () => startGame("black"));
             const kR = onKeyPress("right", () => startGame("white"));
 
-            // Logika odpočtu
             onUpdate(() => {
                 if (chosen) return;
                 timeLeft -= dt();
                 displayNum = Math.max(0, Math.ceil(timeLeft * 2));
                 timerText.text = `Start za: ${displayNum}`;
                 
-                if (timeLeft <= 0) startGame("black"); // Výchozí volba při nečinnosti
+                if (timeLeft <= 0) startGame("black");
             });
 
             onSceneLeave(() => { kL.cancel(); kR.cancel(); });
@@ -271,7 +328,6 @@
             setBackground(lvl.bg);
             setGravity(lvl.g);
 
-            // Stavové proměnné hráče
             let maxHp = Math.max(3, hp);
             let canDbl = false; 
             let playerDead = false; 
@@ -294,9 +350,7 @@
             for (let i=0; i<10; i++) { 
                 bgNear.add([sprite("prx_near"), pos(i*200, height()-160), color(lvl.th[0],lvl.th[1],lvl.th[2]), opacity(0.4)]); 
             }
-            if (lvl.isSpc) {
-                for (let i=0; i<80; i++) bgFar.add([rect(2,2), color(255,255,255), opacity(rand(0.3,0.9)), pos(rand(0,MAP_W), rand(0,MAP_H)), "star"]);
-            }
+            if (lvl.isSpc) for (let i=0; i<80; i++) bgFar.add([rect(2,2), color(255,255,255), opacity(rand(0.3,0.9)), pos(rand(0,MAP_W), rand(0,MAP_H)), "star"]);
             if (lvlIdx === 6) { 
                 const rainLayer = add([fixed(), z(-5)]); 
                 for (let i=0; i<40; i++) rainLayer.add([rect(2,rand(8,16)), color(180,200,255), opacity(0.4), pos(rand(0,1000), rand(-200,0)), move(DOWN, rand(200,400)), "rain"]); 
@@ -316,8 +370,6 @@
                     "$": () => [sprite("coin"), area(), anchor("center"), "coin"],
                     "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
-                    
-                    // Nepřátelé
                     "1": () => [sprite("e_nrm"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:2, type:"nrm", speed:80, stunTimer:0 }],
                     "3": () => [sprite("e_jmp"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:4, type:"jmp", speed:100, jTmr:rand(1,3), stunTimer:0 }],
                     "2": () => [sprite("e_bnc"), color(ec[0],ec[1],ec[2]), scale(1.7), area(), body(), anchor("center"), "enemy", "pusher", { hp:5, type:"bnc", speed:120, stunTimer:0 }],
@@ -326,7 +378,6 @@
                     "W": () => [sprite("block"), color(lvl.tt[0],lvl.tt[1],lvl.tt[2]), area(), body({isStatic:true}), anchor("center"), "breakable", "solid"],
                     "X": () => [sprite("e_bnc"), color(255,50,50), scale(3.0), area(), body(), anchor("center"), "enemy", "danger", "boss", { hp:25, maxHp:25, type:"bnc", speed:150, stunTimer:0 }],
                     
-                    // Pohyblivé plošiny a zarážky
                     "H": () => [rect(120, 20), color(100, 200, 255), area(), body({isStatic:true}), anchor("center"), "ground", "solid", "moving_h", { vx: 120 }],
                     "L": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: 1 }, opacity(0)],
                     "R": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: -1 }, opacity(0)],
@@ -336,32 +387,22 @@
                 }
             });
 
-            // Fyzika a pohyb plošin
             onUpdate("moving_h", (p) => p.move(p.vx, 0)); 
             onCollide("moving_h", "bound_h", (p, b) => p.vx = Math.abs(p.vx) * b.dir);
-            
             onUpdate("moving_v", (p) => p.move(0, p.vy)); 
             onCollide("moving_v", "bound_v", (p, b) => p.vy = Math.abs(p.vy) * b.dir);
             
             onCollideUpdate("player", "moving_h", (p, m, col) => { if (col && col.isBottom()) p.pos.x += m.vx * dt(); });
             onCollideUpdate("player", "moving_v", (p, m, col) => { if (col && col.isBottom() && m.vy > 0) p.pos.y += m.vy * dt(); });
 
-            // ---- ČÁSTICOVÉ EFEKTY ----
-            function spawnDust(p) { 
-                for(let i=0; i<6; i++) add([ rect(4,4), pos(p.x + rand(-10,10), p.y), color(200,200,200), move(vec2(rand(-1,1), rand(-0.1,-1)), rand(20,60)), opacity(0.8), lifespan(0.3, {fade: 0.3}), z(50) ]); 
-            }
-            function spawnBlood(p, count=6) { 
-                for(let i=0; i<count; i++) add([ rect(rand(4,8), rand(4,8)), pos(p), color(255, 0, 0), move(vec2(rand(-1,1), rand(-1,1)), rand(100, 300)), opacity(0.9), lifespan(0.3, {fade: 0.3}), z(50) ]); 
-            }
-            function spawnKillSplash(p) { 
-                playSound(100, 'sawtooth', 0.1, 0.2); 
-                for (let i = 0; i < 4; i++) add([ circle(rand(20, 40)), pos(p.add(rand(-15, 15), rand(-10, 10))), color(255, 0, 0), opacity(0.8), anchor("center"), z(50), lifespan(0.25, {fade: 0.15}), "splash" ]); 
-            }
+            // ---- ČÁSTICE ----
+            function spawnDust(p) { for(let i=0; i<6; i++) add([ rect(4,4), pos(p.x + rand(-10,10), p.y), color(200,200,200), move(vec2(rand(-1,1), rand(-0.1,-1)), rand(20,60)), opacity(0.8), lifespan(0.3, {fade: 0.3}), z(50) ]); }
+            function spawnBlood(p, count=6) { for(let i=0; i<count; i++) add([ rect(rand(4,8), rand(4,8)), pos(p), color(255, 0, 0), move(vec2(rand(-1,1), rand(-1,1)), rand(100, 300)), opacity(0.9), lifespan(0.3, {fade: 0.3}), z(50) ]); }
+            function spawnKillSplash(p) { playSound(100, 'sawtooth', 0.1, 0.2); for (let i = 0; i < 4; i++) add([ circle(rand(20, 40)), pos(p.add(rand(-15, 15), rand(-10, 10))), color(255, 0, 0), opacity(0.8), anchor("center"), z(50), lifespan(0.25, {fade: 0.15}), "splash" ]); }
             function doShake(intensity) { screenShake = Math.max(screenShake, intensity); }
 
             // ---- HRÁČ ----
             const playerColor = GLOBAL_PLAYER_COLOR === "black" ? rgb(30,30,30) : rgb(255,255,255);
-            
             const player = add([ 
                 sprite("player"), pos(80, 200), color(playerColor), 
                 area({ width: 20, height: 38 }), body(), anchor("center"), 
@@ -371,87 +412,64 @@
 
             get("enemy").forEach(e => { if (e.type === "fly" && e.pos) e.baseY = e.pos.y; });
 
-            // ---- UI (CANVAS TEXTS) ----
+            // ---- HUD & UI ----
             const ui = add([fixed(), z(100)]);
             ui.add([sprite("coin"), pos(20,22)]);
             const scoreLabel = ui.add([text(`Score: ${score}`, {size:20}), pos(50,20)]);
             ui.add([sprite("pistol"), pos(200,22), scale(1.4)]);
             const ammoLabel = ui.add([text(`x ${ammo}`, {size:20}), pos(235,20)]);
+            
+            // UKAZATEL LEVELU - dvojklik zapíná/vypíná Akcelerometr
+            const lvlIndicator = ui.add([text(`Level ${lvlIdx+1}/${LVL.length}`, {size:20}), pos(width()/2, 20), anchor("center"), area(), "lvl_indicator"]);
+            let lastLvlClick = 0;
+            onClick("lvl_indicator", () => {
+                if (time() - lastLvlClick < 0.5) toggleTilt();
+                lastLvlClick = time();
+            });
 
-            // Logika překreslení zdraví a tajného cheatu
             const updateHP = () => {
                 destroyAll("ui_hp");
-                destroyAll("cheat_zone"); // Čištění předchozích zón
+                destroyAll("cheat_zone");
                 
                 for (let i=0; i<maxHp; i++) {
                     const heartPos = vec2(width() - 40 - i*35, 20);
-                    
-                    // Pozadí pro chybějící srdíčka
                     ui.add([sprite("heart"), pos(heartPos), color(0,0,0), opacity(0.25), "ui_hp"]);
-                    
-                    // Kreslení plného srdíčka (pokud existuje)
-                    if (i < hp) {
-                        ui.add([sprite("heart"), pos(heartPos), "ui_hp"]);
-                    }
+                    if (i < hp) ui.add([sprite("heart"), pos(heartPos), "ui_hp"]);
 
-                    // ====== CHEAT KÓD ======
-                    // Identifikace 2. srdíčka ZLEVA
-                    // Srdíčka se kreslí zprava (i=0) doleva (i=maxHp-1).
-                    // Tudíž 1. zleva = maxHp-1.
-                    // Tudíž 2. zleva = maxHp-2.
                     if (i === maxHp - 2) {
-                        ui.add([
-                            rect(30, 30), 
-                            pos(heartPos.x - 5, heartPos.y - 5), // Vycentrováno na srdce
-                            opacity(0), // Průhledný hitbox
-                            area(), 
-                            fixed(),
-                            z(105),
-                            "cheat_zone"
-                        ]);
+                        ui.add([ rect(30, 30), pos(heartPos.x - 5, heartPos.y - 5), opacity(0), area(), fixed(), z(105), "cheat_zone" ]);
                     }
                 }
             };
             updateHP();
 
-            // Sledování kliků na cheat zónu (3x klik na 2. srdce zleva)
             let cheatClicks = 0;
             let lastCheatTime = 0;
-            
             onClick("cheat_zone", () => {
-                if (time() - lastCheatTime > 2) cheatClicks = 0; // Reset, pokud klikáš moc pomalu
-                cheatClicks++;
-                lastCheatTime = time();
-                
+                if (time() - lastCheatTime > 2) cheatClicks = 0;
+                cheatClicks++; lastCheatTime = time();
                 if (cheatClicks >= 3) {
                     cheatClicks = 0;
-                    if (lvlIdx + 1 < LVL.length) {
-                        go("game", lvlIdx + 1, hp, ammo, score);
-                    } else {
-                        go("victory", score);
-                    }
+                    if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
+                    else go("victory", score);
                 }
             });
 
-            // Ukazatel pro Bosse
+            // Ukazatel Boss HP
             let bossBarBg, bossBarFg, bossText;
             if (lvl.isBoss) {
                 const bossUI = add([fixed(), z(100)]);
                 bossBarBg = bossUI.add([rect(400, 16), pos(width()/2 - 200, height() - 30), color(50,50,50)]);
                 bossBarFg = bossUI.add([rect(396, 12), pos(width()/2 - 198, height() - 28), color(255,50,50)]);
                 bossText = bossUI.add([text("BOSS", {size: 16}), pos(width()/2, height() - 45), anchor("center")]);
-                
                 onUpdate(() => { 
                     const bosses = get("boss"); 
-                    if (bosses.length > 0) { 
-                        bossBarFg.width = 396 * (Math.max(0, bosses[0].hp) / bosses[0].maxHp); 
-                    } else { 
-                        bossBarBg.opacity = 0; bossBarFg.opacity = 0; bossText.opacity = 0; 
-                    } 
+                    if (bosses.length > 0) bossBarFg.width = 396 * (Math.max(0, bosses[0].hp) / bosses[0].maxHp); 
+                    else { bossBarBg.opacity = 0; bossBarFg.opacity = 0; bossText.opacity = 0; } 
                 });
             }
 
-            // Dotykové ovládání
+            // Dotyková tlačítka 
             const uiC = add([fixed(), z(99)]);
             const mkBtn = (p, dir) => { 
                 uiC.add([rect(90,90,{radius:10}), pos(p), color(0,0,0), opacity(0.35)]); 
@@ -467,7 +485,6 @@
             uiC.add([rect(90,90,{radius:45}), pos(width()-220, height()-110), color(200,50,50), opacity(0.5)]);
             uiC.add([sprite("pistol"), pos(width()-195, height()-95), scale(1.5)]);
 
-            // Oblasti ovládání
             const zones = { 
                 left: p => p && p.x < 125 && p.y > height()-150, 
                 right: p => p && p.x >= 125 && p.x < 250 && p.y > height()-150, 
@@ -475,236 +492,163 @@
                 jump: p => p && p.x > width()-125 && p.y > height()-150 
             };
 
+            // ---- OVLÁDÁNÍ ----
             const SPEED = 320; 
             const JUMP_FORCE = lvl.g < 1000 ? 420 : 680;
 
             function performJump(force) { 
                 const bonus = Math.abs(player.cVel) > 50 ? (lvl.g < 1000 ? 30 : 80) : 0; 
-                player.jump(force + bonus); 
-                spawnDust(player.pos.add(0, 15)); 
+                player.jump(force + bonus); spawnDust(player.pos.add(0, 15)); 
             }
 
             const doJump = () => { 
                 if (!player.exists() || player.stun || playerDead) return; 
                 jumpBuffer = 0.15; 
-                if (coyoteTime <= 0 && canDbl) { 
-                    performJump(JUMP_FORCE * 0.85); 
-                    canDbl = false; 
-                    jumpBuffer = 0; 
-                    playSound(600, 'sine', 0.2, 0.05); 
-                } 
+                if (coyoteTime <= 0 && canDbl) { performJump(JUMP_FORCE * 0.85); canDbl = false; jumpBuffer = 0; playSound(600, 'sine', 0.2, 0.05); } 
             };
             
             const doShoot = () => { 
                 if (!player.exists() || player.stun || ammo <= 0 || playerDead) return; 
-                ammo--; 
-                ammoLabel.text = `x ${ammo}`; 
-                playSound(600, 'square', 0.1, 0.05); 
+                ammo--; ammoLabel.text = `x ${ammo}`; playSound(600, 'square', 0.1, 0.05); 
                 add([sprite("bullet"), pos(player.pos.x+(player.flipX?-20:20), player.pos.y), area(), anchor("center"), move(player.flipX?LEFT:RIGHT, 1000), offscreen({destroy:true}), "bullet"]); 
             };
 
-            // Event Listenery
+            // OPRAVA MULTITOUCH: Iterace přes pole aktivních dotyků namísto prostého if/else
             const activeTouches = {};
-            onTouchStart((id, pos) => { activeTouches[id] = pos; if (zones.jump(pos)) doJump(); if (zones.shoot(pos)) doShoot(); initAudio(); });
-            onTouchMove((id, pos) => { activeTouches[id] = pos; }); 
-            onTouchEnd((id) => { delete activeTouches[id]; });
+            
+            function updateTouch(a, b) {
+                let id, p;
+                if (typeof a === 'object' && a !== null) { p = a; id = b?.id ?? 0; } // Kaboom v3000 callback(pos, t)
+                else { id = a; p = b; } // Starší Kaboom callback(id, pos)
+                activeTouches[id] = p;
+                return p;
+            }
+
+            onTouchStart((a, b) => { 
+                const p = updateTouch(a, b);
+                if (zones.jump(p)) doJump(); 
+                if (zones.shoot(p)) doShoot(); 
+                initAudio(); 
+            });
+            onTouchMove((a, b) => { updateTouch(a, b); });
+            onTouchEnd((a, b) => { 
+                let id = (typeof a === 'object' && a !== null) ? (b?.id ?? 0) : a;
+                delete activeTouches[id]; 
+            });
             
             const getMouse = () => { try { return mousePos("screen") || mousePos(); } catch(e){ return mousePos(); } };
             onMousePress(() => { const m = getMouse(); if (zones.jump(m)) doJump(); if (zones.shoot(m)) doShoot(); });
-            
-            onKeyPress("up", doJump); 
-            onKeyPress("space", doShoot); 
-            onKeyPress("w", doJump);
+            onKeyPress("up", doJump); onKeyPress("space", doShoot); onKeyPress("w", doJump);
 
-            // ---- MAIN UPDATE LOOP ----
+            // ---- HERNÍ SMYČKA ----
             let camTarget = vec2(400,240);
             
             onUpdate(() => {
                 if (!player.exists() || playerDead) return;
                 
                 if (light && player.pos) light.pos = player.pos;
-                if (player.vel.y > 800) player.vel.y = 800; // Oprava Tunnelingu
+                if (player.vel.y > 800) player.vel.y = 800;
 
-                // Coyote Time & Jump Buffer Logic
-                if (player.isGrounded()) { 
-                    coyoteTime = 0.15; canDbl = true; 
-                } else { 
-                    coyoteTime -= dt(); 
-                }
-                
-                if (jumpBuffer > 0) { 
-                    jumpBuffer -= dt(); 
-                    if (coyoteTime > 0) { 
-                        performJump(JUMP_FORCE); 
-                        jumpBuffer = 0; coyoteTime = 0; 
-                        playSound(400, 'sine', 0.2, 0.05); 
-                    } 
-                }
-                
-                if (player.isGrounded() && !wasGrounded) { 
-                    spawnDust(player.pos.add(0, 15)); 
-                    playSound(200, 'triangle', 0.1, 0.03); 
-                }
+                if (player.isGrounded()) { coyoteTime = 0.15; canDbl = true; } else { coyoteTime -= dt(); }
+                if (jumpBuffer > 0) { jumpBuffer -= dt(); if (coyoteTime > 0) { performJump(JUMP_FORCE); jumpBuffer = 0; coyoteTime = 0; playSound(400, 'sine', 0.2, 0.05); } }
+                if (player.isGrounded() && !wasGrounded) { spawnDust(player.pos.add(0, 15)); playSound(200, 'triangle', 0.1, 0.03); }
                 wasGrounded = player.isGrounded();
 
-                // Fyzika a pohyb
                 if (player.stun) {
                     player.move(player.cVel, 0); 
                     if (player.curAnim() !== "jump") player.play("jump");
                 } else {
                     let dir = 0;
+                    
+                    // 1. Priorita: Klávesnice
                     if (isKeyDown("left")||isKeyDown("a")) dir = -1; 
                     if (isKeyDown("right")||isKeyDown("d")) dir = 1;
                     
-                    if (isMouseDown()) { const m = getMouse(); if (zones.left(m)) dir = -1; if (zones.right(m)) dir = 1; }
-                    for (const id in activeTouches) { const t = activeTouches[id]; if (zones.left(t)) dir = -1; if (zones.right(t)) dir = 1; }
+                    // 2. Priorita: Multitouch (Zcela bezpečný proti konfliktu s tlačítky skoku)
+                    let touchDir = 0;
+                    for (const id in activeTouches) { 
+                        const p = activeTouches[id];
+                        if (zones.left(p)) touchDir = -1; 
+                        if (zones.right(p)) touchDir = 1; 
+                    }
+                    if (touchDir !== 0) dir = touchDir;
+
+                    // 3. Priorita: Myš (Pokud není multitouch)
+                    if (dir === 0 && Object.keys(activeTouches).length === 0 && isMouseDown()) { 
+                        const m = getMouse(); if (zones.left(m)) dir = -1; if (zones.right(m)) dir = 1; 
+                    }
+
+                    // 4. Priorita: Akcelerometr 
+                    if (useTilt && tiltAccel !== 0) dir = tiltAccel;
 
                     player.cVel = lerp(player.cVel, dir * SPEED, dt() * lvl.f); 
                     player.move(player.cVel, 0);
 
-                    // Motion Blur pro pohyb po horizontále
+                    // Efekt Motion Blur pro rychlý pohyb
                     if (Math.abs(player.cVel) > 100) {
                         const blurOpacity = 0.05 + ((Math.abs(player.cVel) - 100) / (SPEED - 100)) * 0.25;
                         const spr = add([ 
-                            sprite("player"), 
-                            pos(player.pos.x + rand(-3,3), player.pos.y + rand(-2,2)), 
-                            color(playerColor), 
-                            opacity(blurOpacity), 
-                            z(player.z - 1), 
-                            anchor("center"), 
-                            lifespan(0.15, {fade: 0.15}) 
+                            sprite("player"), pos(player.pos.x + rand(-3,3), player.pos.y + rand(-2,2)), color(playerColor), opacity(blurOpacity), z(player.z - 1), anchor("center"), lifespan(0.15, {fade: 0.15}) 
                         ]);
                         spr.flipX = player.flipX;
                     }
                     
-                    // Přepínání animací
-                    if (dir !== 0) { 
-                        player.flipX = dir < 0; 
-                        if (player.isGrounded()) player.play("run"); 
-                    } else if (player.isGrounded()) { 
-                        player.play("idle"); 
-                    }
+                    if (dir !== 0) { player.flipX = dir < 0; if (player.isGrounded()) player.play("run"); } else if (player.isGrounded()) { player.play("idle"); }
                 }
 
-                if (!player.isGrounded()) { 
-                    if (player.vel.y < -50) player.play("jump"); 
-                    else if (player.vel.y > 50) player.play("fall"); 
-                }
-                
-                // Omezení mapy
+                if (!player.isGrounded()) { if (player.vel.y < -50) player.play("jump"); else if (player.vel.y > 50) player.play("fall"); }
                 player.pos.x = Math.max(20, Math.min(player.pos.x, MAP_W-20));
                 
-                // Smrt pádem
-                if (player.pos.y > MAP_H+100 && !playerDead) { 
-                    playerDead = true; go("lose", lvlIdx, score); 
-                }
+                if (player.pos.y > MAP_H+100 && !playerDead) { playerDead = true; go("lose", lvlIdx, score); }
 
-                // Kamera a Parallax
-                const tx = Math.max(400, Math.min(player.pos.x, MAP_W-400)); 
-                const ty = Math.max(240, Math.min(player.pos.y, MAP_H-240));
-                
+                const tx = Math.max(400, Math.min(player.pos.x, MAP_W-400)); const ty = Math.max(240, Math.min(player.pos.y, MAP_H-240));
                 camTarget = vec2(lerp(camTarget.x, tx, 0.08), lerp(camTarget.y, ty, 0.08));
-                screenShake = lerp(screenShake, 0, 0.1); 
-                camPos(camTarget.x + rand(-screenShake, screenShake), camTarget.y + rand(-screenShake, screenShake));
-                
-                const cx = camPos().x; 
-                bgFar.pos.x = -((cx-400)*0.15) % 800; 
-                bgNear.pos.x = -((cx-400)*0.35) % 800;
+                screenShake = lerp(screenShake, 0, 0.1); camPos(camTarget.x + rand(-screenShake, screenShake), camTarget.y + rand(-screenShake, screenShake));
+                const cx = camPos().x; bgFar.pos.x = -((cx-400)*0.15) % 800; bgNear.pos.x = -((cx-400)*0.35) % 800;
 
-                // Aktualizace Debug panelu
                 if (debugVisible && Math.floor(time()*60)%10 === 0) {
-                    const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
-                                   `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
-                                   `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
-                                   `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
-                                   `${TEXTS.debugEnemies(get("enemy").length)}\n${TEXTS.debugCoins(get("coin").length)}\n` +
-                                   `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}`;
-                    document.getElementById("debug-content").innerText = dbgTxt;
+                    const txt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n${TEXTS.debugEnemies(get("enemy").length)}\n${TEXTS.debugCoins(get("coin").length)}\n${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}`;
+                    document.getElementById("debug-content").innerText = txt;
                 }
-            });
-
-            // ---- ENEMY LOOP & LOGIC ----
-            onUpdate("enemy", (e) => {
-                if (!e.pos || playerDead) return;
-                if (e.stunTimer > 0) { 
-                    e.stunTimer -= dt(); e.color = rgb(255,100,100); 
-                    if (e.stunTimer <= 0) e.color = rgb(ec[0],ec[1],ec[2]); return; 
-                }
-                
-                const bs = e.type==="bnc" ? (e.is("boss")?3.0:1.7) : 1.4; 
-                e.scale = vec2(bs + Math.sin(time()*6)*0.06, bs - Math.sin(time()*6)*0.06);
-                
-                if (e.type==="fly") { 
-                    if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); 
-                } else e.move(e.speed,0);
-                
-                if (e.type==="jmp" && e.isGrounded()) { 
-                    e.jump(520); e.jTmr -= dt(); if (e.jTmr<=0) { e.jump(520); e.jTmr=rand(1.2,2.8); } 
-                }
-                if (e.type==="bnc") { 
-                    if (player.exists() && player.pos && Math.abs(player.pos.x-e.pos.x)<450) {
-                        e.speed=lerp(e.speed,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); 
-                    }
-                    if (e.isGrounded()) { e.jump(680); e.scale=vec2(bs*1.15,bs*0.75); } 
-                }
-                
-                if (Math.abs(e.pos.x-camPos().x) > 2000 && !e.is("boss")) destroy(e);
             });
 
             // ---- KOLIZE ----
+            onUpdate("enemy", (e) => {
+                if (!e.pos || playerDead) return;
+                if (e.stunTimer > 0) { e.stunTimer -= dt(); e.color = rgb(255,100,100); if (e.stunTimer <= 0) e.color = rgb(ec[0],ec[1],ec[2]); return; }
+                const bs = e.type==="bnc" ? (e.is("boss")?3.0:1.7) : 1.4; e.scale = vec2(bs + Math.sin(time()*6)*0.06, bs - Math.sin(time()*6)*0.06);
+                if (e.type==="fly") { if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); } else e.move(e.speed,0);
+                if (e.type==="jmp" && e.isGrounded()) { e.jump(520); e.jTmr -= dt(); if (e.jTmr<=0) { e.jump(520); e.jTmr=rand(1.2,2.8); } }
+                if (e.type==="bnc") { if (player.exists() && player.pos && Math.abs(player.pos.x-e.pos.x)<450) e.speed=lerp(e.speed,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); if (e.isGrounded()) { e.jump(680); e.scale=vec2(bs*1.15,bs*0.75); } }
+                if (Math.abs(e.pos.x-camPos().x) > 2000 && !e.is("boss")) destroy(e);
+            });
+
             onCollide("enemy","solid",(e,b,col)=>{ if (col && (col.isLeft()||col.isRight())) { if (e.type==="fly") e.dir=-e.dir; else e.speed*=-1; } });
             
-            onCollide("bullet","breakable",(b,w)=>{ 
-                destroy(b); destroy(w); 
-                score+=10; scoreLabel.text=`Score: ${score}`; 
-                spawnDust(w.pos); playSound(300, 'square', 0.1, 0.05); 
-            });
-            
+            onCollide("bullet","breakable",(b,w)=>{ destroy(b); destroy(w); score+=10; scoreLabel.text=`Score: ${score}`; spawnDust(w.pos); playSound(300, 'square', 0.1, 0.05); });
             onCollide("bullet","enemy",(b,e)=>{
                 destroy(b); spawnBlood(e.pos, 5); e.hp--; playSound(150, 'sawtooth', 0.1, 0.05);
                 if(e.hp<=0){ 
-                    const ep=e.pos.clone(); destroy(e); 
-                    score += e.is("boss") ? 100 : 5; scoreLabel.text=`Score: ${score}`; 
+                    const ep=e.pos.clone(); destroy(e); score += e.is("boss") ? 100 : 5; scoreLabel.text=`Score: ${score}`; 
                     spawnBlood(ep, e.is("boss") ? 60 : 20); doShake(e.is("boss") ? 15 : 3); spawnKillSplash(ep);
-                } else { 
-                    e.stunTimer = 0.2; 
-                }
+                } else { e.stunTimer = 0.2; }
             });
 
             onCollide("player","pusher",(p,e)=>{
                 if(!p.pos||!e.pos||p.stun||e.stunTimer>0||playerDead) return;
                 p.stun=true; p.cVel=(p.pos.x<e.pos.x?-1:1)*420; p.jump(lvl.g<1000?300:500); p.color=rgb(180,180,180);
-                playSound(200, 'sawtooth', 0.2, 0.1); doShake(6); 
-                wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=playerColor; } });
+                playSound(200, 'sawtooth', 0.2, 0.1); doShake(6); wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=playerColor; } });
             });
-            
             onCollide("player","danger",(p,d)=>{
                 if(!p.pos||p.stun||playerDead) return;
                 hp--; updateHP(); if(hp<=0){ playerDead=true; go("lose",lvlIdx,score); return; }
                 p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
-                playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
-                wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=playerColor; } });
+                playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=playerColor; } });
             });
-            
-            onCollide("player","coin",(p,c)=>{ 
-                destroy(c); score++; scoreLabel.text=`Score: ${score}`; 
-                add([sprite("coin"), pos(c.pos), scale(0.8), move(UP,50), opacity(0.9), lifespan(0.4,{fade:0.4})]); 
-                playSound(1200, 'sine', 0.1, 0.05); setTimeout(()=>playSound(1600, 'sine', 0.1, 0.05), 100); 
-            });
-            
-            onCollide("player","pistol",(p,w)=>{ 
-                destroy(w); ammo+=3; ammoLabel.text=`x ${ammo}`; 
-                playSound(800, 'square', 0.1, 0.05); 
-            });
-            
-            onCollide("player","heal",(p,h)=>{ 
-                destroy(h); hp++; if(hp>maxHp) maxHp=hp; updateHP(); 
-                playSound(900, 'sine', 0.3, 0.05); 
-            });
-            
-            onCollide("player","finish",()=>{ 
-                if(!playerDead){ playerDead=true; lvlIdx+1<LVL.length?go("game",lvlIdx+1,hp,ammo,score):go("victory",score); } 
-            });
+            onCollide("player","coin",(p,c)=>{ destroy(c); score++; scoreLabel.text=`Score: ${score}`; add([sprite("coin"), pos(c.pos), scale(0.8), move(UP,50), opacity(0.9), lifespan(0.4,{fade:0.4})]); playSound(1200, 'sine', 0.1, 0.05); setTimeout(()=>playSound(1600, 'sine', 0.1, 0.05), 100); });
+            onCollide("player","pistol",(p,w)=>{ destroy(w); ammo+=3; ammoLabel.text=`x ${ammo}`; playSound(800, 'square', 0.1, 0.05); });
+            onCollide("player","heal",(p,h)=>{ destroy(h); hp++; if(hp>maxHp) maxHp=hp; updateHP(); playSound(900, 'sine', 0.3, 0.05); });
+            onCollide("player","finish",()=>{ if(!playerDead){ playerDead=true; lvlIdx+1<LVL.length?go("game",lvlIdx+1,hp,ammo,score):go("victory",score); } });
         });
 
         // =====================================================================
@@ -712,52 +656,33 @@
         // =====================================================================
         scene("lose", (lvlIdx, sc) => {
             setBackground(30,10,10); 
-            
             add([text(`ZEMŘEL JSI V LEVELU ${lvlIdx+1}!`, {size:32}), pos(width()/2, height()/2 - 40), color(255,100,100), anchor("center")]);
             add([text(`Score: ${sc}`, {size:24}), pos(width()/2, height()/2), anchor("center")]);
             add([text("Klepni, nebo stiskni Mezerník pro restart", {size:16}), pos(width()/2, height()/2 + 50), color(150,150,150), anchor("center")]);
             
             const restart = () => { initAudio(); go("game", lvlIdx, 3, 15, sc); };
-            
-            const kE = onKeyPress("enter", restart); 
-            const kS = onKeyPress("space", restart); 
-            const mM = onMousePress(restart); 
-            const tS = onTouchStart(restart);
-            
+            const kE = onKeyPress("enter", restart); const kS = onKeyPress("space", restart); const mM = onMousePress(restart); const tS = onTouchStart(restart);
             onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
         });
 
         scene("victory", (sc) => {
             setBackground(80,140,255); 
-            
             add([text("🏆 VÍTĚZSTVÍ! 🏆", {size:44}), pos(width()/2, 70), color(255,200,0), anchor("center")]); 
             add([text(`Konečné score: ${sc}`, {size:26}), pos(width()/2, 130), anchor("center")]);
             add([text("Klepni, nebo stiskni Enter pro do menu", {size:16}), pos(width()/2, 180), color(50,50,50), anchor("center")]);
             
-            // Pódium
             add([rect(width(),40), color(50,200,50), pos(0,height()-40), area(), body({isStatic:true}), anchor("botleft")]);
-            
             const pCol = GLOBAL_PLAYER_COLOR === "black" ? rgb(30,30,30) : rgb(255,255,255);
             add([sprite("player"), pos(400,height()-40), scale(1.4), color(pCol), anchor("bot")]).play("idle");
             
-            LVL.forEach((l,i)=>{ 
-                const xP = i<5?50+i*65:470+(i-5)*65; 
-                const yP = i<5?height()-40:height()-80; 
-                add([sprite("e_nrm"), color(l.ec[0],l.ec[1],l.ec[2]), scale(1.3), pos(xP,yP), anchor("bot"), "cheer"]); 
-            });
+            LVL.forEach((l,i)=>{ const xP = i<5?50+i*65:470+(i-5)*65; const yP = i<5?height()-40:height()-80; add([sprite("e_nrm"), color(l.ec[0],l.ec[1],l.ec[2]), scale(1.3), pos(xP,yP), anchor("bot"), "cheer"]); });
             onUpdate("cheer",(e)=>{ e.scale.y = 1.3+Math.sin(time()*4+e.pos.x*0.01)*0.18; });
             
             const restart = () => { initAudio(); go("menu"); };
-            
-            const kE = onKeyPress("enter", restart); 
-            const kS = onKeyPress("space", restart); 
-            const mM = onMousePress(restart); 
-            const tS = onTouchStart(restart);
-            
+            const kE = onKeyPress("enter", restart); const kS = onKeyPress("space", restart); const mM = onMousePress(restart); const tS = onTouchStart(restart);
             onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
         });
 
-        // Start hry vyvoláním Menu scény
         go("menu"); 
     </script>
 </body>
