@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="screen-orientation" content="landscape">
+    <title>Demolice budovy bagrem</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            font-family: monospace;
+        }
+        canvas {
+            display: block;
+        }
+        #crash-screen,
+        #contact-screen {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 40, 0.95);
+            color: #fff;
+            padding: 20px;
+            box-sizing: border-box;
+            z-index: 9999;
+            overflow: auto;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        #contact-screen {
+            background: rgba(20, 20, 30, 0.92);
+        }
+        #contact-screen h1 {
+            color: #ffaa00;
+            margin-bottom: 15px;
+            font-size: 26px;
+        }
+        #contact-screen .warning-icon {
+            font-size: 60px;
+            margin-bottom: 15px;
+        }
+        #contact-screen .contact-info {
+            background: #1a1a2e;
+            padding: 20px 30px;
+            border-radius: 16px;
+            margin: 15px 0;
+            border: 2px solid #ffaa00;
+            box-shadow: 0 0 25px rgba(255, 170, 0, 0.3);
+        }
+        #contact-screen .phone-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffdd57;
+            text-decoration: none;
+            display: inline-block;
+            padding: 10px 20px;
+            background: #2a2a3e;
+            border-radius: 12px;
+            margin: 10px 0;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: 2px solid #ffaa00;
+            letter-spacing: 1px;
+        }
+        #contact-screen .phone-number:hover,
+        #contact-screen .phone-number:active {
+            background: #3a3a5e;
+            color: #fff;
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(255, 170, 0, 0.6);
+        }
+        #contact-screen .phone-icon {
+            font-size: 32px;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        #contact-screen .subtitle {
+            color: #ccc;
+            font-size: 14px;
+            margin: 8px 0;
+        }
+        #contact-screen .restart-btn {
+            background: #ff5500;
+            color: #fff;
+            border: none;
+            padding: 12px 28px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 20px;
+            font-family: monospace;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(255, 85, 0, 0.5);
+        }
+        #contact-screen .restart-btn:hover,
+        #contact-screen .restart-btn:active {
+            background: #ff7730;
+            transform: scale(1.08);
+            box-shadow: 0 6px 20px rgba(255, 85, 0, 0.7);
+        }
+        #crash-screen {
+            background: #0000aa;
+            justify-content: flex-start;
+            text-align: left;
+            display: none;
+        }
+        #crash-screen.active {
+            display: flex;
+        }
+        #contact-screen.active {
+            display: flex;
+        }
+        button {
+            background: #fff;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-right: 10px;
+            border-radius: 6px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: #111;
+            color: #0f0;
+            border: 1px solid #555;
+            font-family: monospace;
+            margin-top: 10px;
+            resize: vertical;
+        }
+        #copy-btn {
+            background: #ffcc00;
+            color: #000;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="crash-screen">
+        <h1>❌ CHYBA HRY</h1>
+        <p id="err-desc"></p>
+        <textarea id="err-stack" readonly></textarea><br>
+        <button id="copy-btn">📋 Kopírovat chybu</button>
+        <button onclick="location.reload()">↻ Restartovat hru</button>
+    </div>
+
+    <div id="contact-screen">
+        <div class="warning-icon">⚠️🏗️</div>
+        <h1>Spadlá kostka zasáhla rameno bagru!</h1>
+        <p class="subtitle">Je nutná okamžitá oprava – kontaktujte demoliční firmu:</p>
+        <div class="contact-info">
+            <p style="font-size:18px;color:#fff;margin:5px 0;">📞 Demoliční servis 24/7</p>
+            <a href="tel:+420800123456" class="phone-number">
+                <span class="phone-icon">📞</span> +420 800 123 456
+            </a>
+            <p class="subtitle" style="font-size:12px;">Kliknutím na číslo rovnou zavoláte</p>
+        </div>
+        <button class="restart-btn" onclick="location.reload()">↻ Restartovat hru</button>
+    </div>
+
+    <script type="module">
+        import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
+
+        // --- Zachytávání chyb s možností kopírování ---
+        const crashDiv = document.getElementById("crash-screen");
+        const contactDiv = document.getElementById("contact-screen");
+        const errDesc = document.getElementById("err-desc");
+        const errStack = document.getElementById("err-stack");
+        const copyBtn = document.getElementById("copy-btn");
+
+        function showError(message, stack) {
+            crashDiv.classList.add("active");
+            errDesc.innerText = message;
+            errStack.value = stack || "Stack není k dispozici";
+        }
+
+        function showContactScreen() {
+            contactDiv.classList.add("active");
+        }
+
+        window.addEventListener("error", (e) => {
+            showError(
+                `Chyba: ${e.message}\nSoubor: ${e.filename}:${e.lineno}`,
+                e.error?.stack || ""
+            );
+        });
+        window.addEventListener("unhandledrejection", (e) => {
+            showError(
+                `Neodchycená Promise: ${e.reason}`,
+                e.reason?.stack || ""
+            );
+        });
+
+        copyBtn.addEventListener("click", () => {
+            errStack.select();
+            errStack.setSelectionRange(0, 99999);
+            try {
+                document.execCommand("copy");
+                copyBtn.textContent = "✅ Zkopírováno!";
+                setTimeout(() => copyBtn.textContent = "📋 Kopírovat chybu", 1500);
+            } catch (err) {
+                prompt("Zkopírujte ručně (Ctrl+C):", errStack.value);
+            }
+        });
+
+        // --- Kaboom ---
+        kaboom({
+            width: 800,
+            height: 400,
+            letterbox: true,
+            crisp: true,
+            background: [135, 206, 235],
+        });
+
+        scene("game", () => {
+            setGravity(900);
+
+            const GROUND_Y = 360;
+            const BLOCK_W = 36;
+            const BLOCK_H = 28;
+            const COL_SPACING = 40;
+            const BUILDING_X = 520;
+
+            // Zem
+            add([
+                rect(width(), 40),
+                color(100, 180, 100),
+                pos(0, GROUND_Y),
+                area(),
+                body({ isStatic: true }),
+                anchor("topleft"),
+                "ground",
+            ]);
+
+            // --- Bagr (detailní model) ---
+            const bagr = add([
+                rect(100, 55),
+                opacity(0),
+                pos(300, GROUND_Y),
+                anchor("bot"),
+                area(),
+                body({ isStatic: true }),
+                "bagr",
+                { armAngle: -30 }
+            ]);
+
+            bagr.add([rect(30, 15), color(20, 20, 20), pos(-40, -10), anchor("center"), opacity(1)]);
+            bagr.add([rect(30, 15), color(20, 20, 20), pos(40, -10), anchor("center"), opacity(1)]);
+            bagr.add([rect(90, 12), color(50, 50, 50), pos(0, -22), anchor("center"), opacity(1)]);
+            bagr.add([rect(85, 22), color(220, 180, 20), pos(0, -40), anchor("center"), opacity(1)]);
+            bagr.add([rect(34, 36), color(255, 140, 0), pos(-18, -64), anchor("center"), opacity(1)]);
+            bagr.add([rect(22, 18), color(180, 220, 240), pos(-18, -70), anchor("center"), opacity(1)]);
+            bagr.add([rect(7, 24), color(80, 80, 80), pos(32, -68), anchor("center"), opacity(1)]);
+            bagr.add([rect(25, 18), color(180, 180, 180), pos(40, -48), anchor("center"), opacity(1)]);
+            bagr.add([circle(4), color(255, 255, 100), pos(-45, -62), opacity(1)]);
+
+            const pivot = bagr.add([
+                pos(28, -78),
+                anchor("center"),
+                circle(8),
+                color(150, 150, 150),
+                area(),
+                opacity(1),
+                "pivot"
+            ]);
+
+            const ARM_LENGTH = 175;
+            const arm = pivot.add([
+                rect(ARM_LENGTH, 14),
+                color(180, 180, 180),
+                outline(2, rgb(80, 80, 80)),
+                anchor("left"),
+                pos(0, 0),
+                rotate(bagr.armAngle),
+                area(),
+                "rameno",
+                opacity(1)
+            ]);
+
+            const bucket = arm.add([
+                rect(28, 20, { radius: 5 }),
+                color(200, 110, 40),
+                anchor("center"),
+                pos(ARM_LENGTH, 0),
+                area(),
+                "lzice",
+                opacity(1)
+            ]);
+
+            for (let i = -9; i <= 9; i += 9) {
+                bucket.add([rect(4, 8), color(70, 70, 70), pos(i, 12)]);
+            }
+
+            bagr.arm = arm;
+            bagr.bucket = bucket;
+
+            // --- Dům (panelový, 5 sloupců, 5 řad) ---
+            const houseLayout = [
+                "  R  ",
+                " R R ",
+                "R   R",
+                "W G W",
+                "W D W",
+            ];
+            const numRows = houseLayout.length;
+            const numCols = 5;
+            const columns = Array.from({ length: numCols }, () => new Array(numRows).fill(null));
+
+            const blockColor = {
+                W: [180, 75, 30],
+                G: [120, 160, 220],
+                R: [200, 50, 30],
+                D: null
+            };
+
+            for (let row = 0; row < numRows; row++) {
+                const rowStr = houseLayout[numRows - 1 - row];
+                for (let col = 0; col < numCols; col++) {
+                    const type = rowStr[col];
+                    if (!type || type === ' ' || type === 'D' || !blockColor[type]) continue;
+                    const x = BUILDING_X + col * COL_SPACING;
+                    const y = GROUND_Y - row * BLOCK_H;
+                    const blk = add([
+                        rect(BLOCK_W, BLOCK_H),
+                        color(rgb(blockColor[type][0], blockColor[type][1], blockColor[type][2])),
+                        area(),
+                        body({ isStatic: true }),
+                        anchor("bot"),
+                        pos(x, y),
+                        "block",
+                        { col, row, type, isDestroyed: false }
+                    ]);
+                    if (type === 'G') {
+                        blk.add([rect(BLOCK_W - 6, BLOCK_H - 6), color(180, 210, 255), pos(0, -14), anchor(
+                            "center")]);
+                    }
+                    columns[col][row] = blk;
+                }
+            }
+
+            // --- Herní proměnné ---
+            let currentTouchBlock = null;
+            let actionTriggered = false;
+            let gameOver = false;
+            let score = 0;
+
+            const scoreText = add([
+                text(`Skóre: ${score}`, { size: 24 }),
+                pos(20, 20),
+                fixed(),
+                z(100),
+            ]);
+
+            add([
+                text("Pohyb: ← → ↕   Bourat: mezerník / tlačítko\nBourej odshora – bloky nad spadnou!", {
+                    size: 13,
+                    width: width() - 40
+                }),
+                pos(width() / 2, 30),
+                anchor("center"),
+                fixed(),
+                z(100),
+                color(255, 255, 255),
+                lifespan(8, { fade: 1 }),
+            ]);
+
+            // --- Ovládací zóny ---
+            function zoneLeft(p) { return p.x > 25 && p.x < 85 && p.y > 330 && p.y < 380; }
+
+            function zoneRight(p) { return p.x > 95 && p.x < 155 && p.y > 330 && p.y < 380; }
+
+            function zoneUp(p) { return p.x > 60 && p.x < 120 && p.y > 290 && p.y < 340; }
+
+            function zoneDown(p) { return p.x > 60 && p.x < 120 && p.y > 340 && p.y < 390; }
+
+            function zoneAction(p) { return p.x > 640 && p.x < 770 && p.y > 310 && p.y < 390; }
+
+            const uiLayer = add([fixed(), z(99)]);
+            uiLayer.add([rect(200, 200, { radius: 18 }), pos(10, 270), color(255, 255, 255), opacity(0.15)]);
+            uiLayer.add([text("←", { size: 38 }), pos(48, 342), anchor("center"), color(0, 0, 0)]);
+            uiLayer.add([text("→", { size: 38 }), pos(128, 342), anchor("center"), color(0, 0, 0)]);
+            uiLayer.add([text("↑", { size: 38 }), pos(88, 314), anchor("center"), color(0, 0, 0)]);
+            uiLayer.add([text("↓", { size: 38 }), pos(88, 358), anchor("center"), color(0, 0, 0)]);
+            uiLayer.add([rect(130, 80, { radius: 40 }), pos(630, 310), color(220, 60, 60), opacity(0.75)]);
+            uiLayer.add([text("BOURAT", { size: 21 }), pos(695, 350), anchor("center"), color(255, 255, 255)]);
+
+            const activeTouches = {};
+            onTouchStart((id, pos) => {
+                activeTouches[id] = pos;
+                if (zoneAction(pos)) actionTriggered = true;
+            });
+            onTouchMove((id, pos) => {
+                if (activeTouches[id]) activeTouches[id] = pos;
+            });
+            onTouchEnd((id) => delete activeTouches[id]);
+
+            let isMouseDown = false;
+            let currentMousePos = vec2(0, 0);
+            onMouseDown(() => { isMouseDown = true;
+                currentMousePos = mousePos(); });
+            onMouseMove(() => { if (isMouseDown) currentMousePos = mousePos(); });
+            onMouseRelease(() => { isMouseDown = false; });
+            onMousePress(() => {
+                if (zoneAction(mousePos())) actionTriggered = true;
+            });
+
+            onKeyPress("space", () => { actionTriggered = true; });
+
+            function getDirections() {
+                let left = false,
+                    right = false,
+                    up = false,
+                    down = false;
+                for (const id in activeTouches) {
+                    const p = activeTouches[id];
+                    if (zoneLeft(p)) left = true;
+                    if (zoneRight(p)) right = true;
+                    if (zoneUp(p)) up = true;
+                    if (zoneDown(p)) down = true;
+                }
+                if (isMouseDown) {
+                    if (zoneLeft(currentMousePos)) left = true;
+                    if (zoneRight(currentMousePos)) right = true;
+                    if (zoneUp(currentMousePos)) up = true;
+                    if (zoneDown(currentMousePos)) down = true;
+                }
+                if (isKeyDown("left") || isKeyDown("a")) left = true;
+                if (isKeyDown("right") || isKeyDown("d")) right = true;
+                if (isKeyDown("up") || isKeyDown("w")) up = true;
+                if (isKeyDown("down") || isKeyDown("s")) down = true;
+                return { left, right, up, down };
+            }
+
+            function demolish(block) {
+                if (!block || block.isDestroyed || gameOver) return;
+                const col = block.col;
+                const row = block.row;
+                if (col == null || row == null || !columns[col] || columns[col][row] !== block) return;
+
+                block.isDestroyed = true;
+                block.destroy();
+                columns[col][row] = null;
+                score += 10;
+                scoreText.text = `Skóre: ${score}`;
+                add([text("💥", { size: 20 }), pos(block.pos), anchor("center"), lifespan(0.4), fixed()]);
+
+                for (let r = row + 1; r < numRows; r++) {
+                    const above = columns[col][r];
+                    if (above && !above.isDestroyed) {
+                        above.isStatic = false;
+                        above.vel = vec2(rand(-30, 30), 0);
+                        above.color = rgb(210, 90, 90);
+                        if (!above.is("falling_block")) above.use("falling_block");
+                        columns[col][r] = null;
+                    }
+                }
+
+                let activeBlocks = get("block").filter(b => !b.isDestroyed);
+                if (activeBlocks.length === 0 && !gameOver) {
+                    gameOver = true;
+                    go("win", score);
+                }
+            }
+
+            // --- Detekce kolize padajícího bloku s ramenem bagru ---
+            onCollide("falling_block", "rameno", () => {
+                if (gameOver) return;
+                gameOver = true;
+                add([
+                    text("⚠️ ZÁSAH RAMENE! ⚠️", { size: 34 }),
+                    pos(width() / 2, height() / 2),
+                    anchor("center"),
+                    fixed(),
+                    z(200),
+                    color(255, 170, 0),
+                    lifespan(2.5),
+                ]);
+                wait(1.2, () => {
+                    showContactScreen();
+                });
+            });
+
+            onUpdate(() => {
+                if (gameOver) return;
+                const dir = getDirections();
+
+                let move = 0;
+                if (dir.left) move -= 1;
+                if (dir.right) move += 1;
+                bagr.pos.x += move * 220 * dt();
+                bagr.pos.x = clamp(bagr.pos.x, 100, 730);
+
+                let armDir = 0;
+                if (dir.up) armDir -= 1;
+                if (dir.down) armDir += 1;
+                bagr.armAngle += armDir * 100 * dt();
+                bagr.armAngle = clamp(bagr.armAngle, -80, 15);
+                bagr.arm.angle = bagr.armAngle;
+
+                currentTouchBlock = null;
+                for (const b of get("block")) {
+                    if (!b.isDestroyed && bagr.bucket.isColliding(b)) {
+                        currentTouchBlock = b;
+                        break;
+                    }
+                }
+
+                for (const b of get("block")) {
+                    if (b.isDestroyed || !b.type) continue;
+                    if (b === currentTouchBlock) {
+                        b.color = rgb(255, 220, 50);
+                    } else {
+                        const orig = blockColor[b.type];
+                        if (orig) b.color = rgb(orig[0], orig[1], orig[2]);
+                    }
+                }
+
+                if (actionTriggered && currentTouchBlock) {
+                    demolish(currentTouchBlock);
+                    currentTouchBlock = null;
+                }
+                actionTriggered = false;
+            });
+        });
+
+        scene("win", (sc) => {
+            setBackground(100, 180, 255);
+            add([
+                text("🎉 DŮM ZDEMOLOVÁN! 🎉", { size: 38 }),
+                pos(width() / 2, 85),
+                anchor("center"),
+                z(100),
+            ]);
+            add([
+                text(`Skóre: ${sc}\n\nKlepni pro novou hru`, { align: "center", size: 22 }),
+                pos(width() / 2, height() / 2),
+                anchor("center"),
+                z(100),
+            ]);
+            onKeyPress(() => go("game"));
+            onMousePress(() => go("game"));
+            onTouchStart(() => go("game"));
+        });
+
+        go("game");
+    </script>
+</body>
+</html>
