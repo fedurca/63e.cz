@@ -83,45 +83,60 @@
         window.addEventListener('touchstart', initAudio);
 
         // =====================================================================
+        // FULLSCREEN API LOGIKA
+        // =====================================================================
+        function toggleFullscreen(enter) {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+
+            const requestFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+            const exitFS = doc.exitFullscreen || doc.webkitExitFullscreen || doc.mozCancelFullScreen || doc.msExitFullscreen;
+
+            if (enter) {
+                if (!doc.fullscreenElement && !doc.webkitFullscreenElement && requestFS) {
+                    requestFS.call(docEl).catch(err => console.log(`Nelze přepnout do fullscreenu: ${err.message}`));
+                }
+            } else {
+                if ((doc.fullscreenElement || doc.webkitFullscreenElement) && exitFS) {
+                    exitFS.call(doc);
+                }
+            }
+        }
+
+        function isFullscreen() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement);
+        }
+
+        // =====================================================================
         // 2. GLOBÁLNÍ PROMĚNNÉ A AUTOMATICKÝ AKCELEROMETR
         // =====================================================================
-        let GLOBAL_PLAYER_COLOR = "white"; // Výchozí barva postavy
+        let GLOBAL_PLAYER_COLOR = "white"; 
         
         let useTilt = false; 
         let tiltAccel = 0;
-        let tiltInitialized = false; // Zajišťuje, že si hra vyžádá oprávnění pouze jednou
+        let tiltInitialized = false; 
 
-        // Pomocná funkce pro vypsání hlášek na obrazovku
         function addToast(msg) {
             add([
-                text(msg, {size: 16}),
-                pos(width()/2, 80),
-                color(0, 255, 255),
-                anchor("center"),
-                fixed(),
-                z(200),
-                lifespan(2.5, { fade: 0.5 })
+                text(msg, {size: 16}), pos(width()/2, 80), color(0, 255, 255),
+                anchor("center"), fixed(), z(200), lifespan(2.5, { fade: 0.5 })
             ]);
         }
 
         function handleOrientation(event) {
             let tilt = 0;
-            // Zjištění orientace displeje pro správnou osu
             let angle = window.orientation || (window.screen && window.screen.orientation && window.screen.orientation.angle) || 0;
             
             if (angle === 90) tilt = event.beta;
             else if (angle === -90) tilt = -event.beta;
-            else tilt = event.gamma; // Záchrana pro držení telefonu na výšku
+            else tilt = event.gamma; 
 
-            // Mrtvá zóna zabraňuje nechtěnému pohybu při drobném třesu (12 stupňů)
             if (tilt > 12) tiltAccel = 1;
             else if (tilt < -12) tiltAccel = -1;
             else tiltAccel = 0;
         }
 
-        // Pokus o automatické zapnutí akcelerometru
         function tryEnableTilt(showToast = false) {
-            // Na iOS 13+ je nutné explicitní vyžádání práv uživatelem (po kliknutí)
             if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission().then(response => {
                     if (response === 'granted') {
@@ -134,23 +149,20 @@
                     }
                 }).catch(console.error);
             } else {
-                // Ostatní zařízení (Android, starší iOS)
                 window.addEventListener('deviceorientation', handleOrientation);
                 useTilt = true;
                 if (showToast) addToast("Naklánění: ZAPNUTO (vypneš dvojklikem na Level)");
             }
         }
 
-        // Odchycení prvního dotyku/kliku pro automatické spuštění akcelerometru
         function initTiltOnInteraction() {
             if (tiltInitialized) return;
             tiltInitialized = true;
-            tryEnableTilt(true); // Pokusí se zapnout akcelerometr a ukáže informační zprávu
+            tryEnableTilt(true); 
         }
         window.addEventListener('click', initTiltOnInteraction);
         window.addEventListener('touchstart', initTiltOnInteraction);
 
-        // Funkce pro manuální přepínání dvojklikem na level HUD
         function toggleTilt() {
             if (!useTilt) {
                 tryEnableTilt(true);
@@ -234,7 +246,7 @@
             { bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true, m:["                                                                                                    ","                                                                                                    ","                                             F              ==                                    ","                                          $$ ==   P      ==                                      ","       ======         1                   ====   ===     ==               P                       ","          W      B         1          3      !   ^^      ==                                       ","          W  ^^            =====      =====  !  ===      ==                                       ","======    ====   ====                        !           ==                                       ","              ======                         =======================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] },
             { bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true, m:["                                                                                                    ","                                                                                                    ","                                             F              ==                                    ","                 B       3                   ==  P       ==                                      ","       ======   ===     ===               $$ == ===      ==               P                       ","          W                  1           ==== !          ==                                       ","          W              === ====   3         !  ^^      ==                                       ","======                                 ====== !  ===     ==                                       ","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] },
             { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], m:["                                                                                                    ","                                                                                                    ","                                            F            ==                                       ","                 $$     P                  ==   H        ==                                       ","       ======   ===    ===               ====   ===      ==            B                          ","          W              2     1           !     ^^      ==         ======                        ","          W  ^^          =====  =====       !    ===      ==            P                          ","======    ====    ====            1         !              ==                                       ","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] },
-            { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], m:["                                                                                                    ","                                                                                                    ","                                                                                                  F ","                                                                                                ==","         H       1                W       $$      P      ==         H       1                W    ==","       ======   ===               W      ====    ===     ==       ======   ===               W    ==","                 3          1     W   1          ^^      ==                 3          1     W    ==","                      =====   W =====       ===      ==           ^^             =====   W    ==","======    ====    ====            W         P            == ======    ====    ====            W   ==","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] },
+            { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], m:["                                                                                                    ","                                                                                                    ","                                                                                                  F ","                                                                                                ==","         H       1                W       $$      P      ==         H       1                W    ==","       ======   ===               W      ====    ===     ==       ======   ===               W    ==","                 3          1     W   1          ^^      ==                 3          1     W    ==","           ^^             =====   W =====       ===      ==           ^^             =====   W    ==","======    ====    ====            W         P            == ======    ====    ====            W   ==","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] },
             { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, m:["                                                                                                    ","                                                                                                    ","                                            F                                                     ","                 B                     $$ ==             3    X    3                              ","       ======   ===        1          ==== ==      P     =========================================","          W          W        1   1      !   ===          ==                                       ","          W  ^^      W  ^^   === ===     !    1           ==           P                           ","======    ====      ====                 !                ==                                       ","====================================================================================================","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    ","                                                                                                    "] }
         ];
 
@@ -282,7 +294,6 @@
             else { prompt("Zkopíruj ručně:", text); }
         });
 
-        // Klávesnicový cheat "vítězství"
         const cheatMap = { "+":0,"1":0,"ě":1,"2":1,"š":2,"3":2,"č":3,"4":3,"ř":4,"5":4,"ž":5,"6":5,"ý":6,"7":6,"á":7,"8":7,"í":8,"9":8,"é":"v","0":"v" };
         let cheatBuf = [];
         onCharInput((k) => {
@@ -303,12 +314,10 @@
             
             add([text("VÝBĚR POSTAVY", {size: 40}), pos(width()/2, 100), anchor("center")]);
 
-            // Tlačítko - Černá
             const btnB = add([rect(180, 60, {radius: 8}), pos(width()/2 - 120, 230), anchor("center"), color(40,40,40), area(), "btn", {col: "black"}]);
             btnB.add([text("ČERNÁ", {size: 24}), color(255,255,255), anchor("center")]);
             add([text("(Šipka VLEVO)", {size: 14}), pos(width()/2 - 120, 275), color(150,150,150), anchor("center")]);
 
-            // Tlačítko - Bílá
             const btnW = add([rect(180, 60, {radius: 8}), pos(width()/2 + 120, 230), anchor("center"), color(255,255,255), area(), "btn", {col: "white"}]);
             btnW.add([text("BÍLÁ", {size: 24}), color(0,0,0), anchor("center")]);
             add([text("(Šipka VPRAVO)", {size: 14}), pos(width()/2 + 120, 275), color(150,150,150), anchor("center")]);
@@ -399,7 +408,6 @@
                     "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
                     "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
                     
-                    // Nepřátelé
                     "1": () => [sprite("e_nrm"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:2, type:"nrm", speed:80, stunTimer:0 }],
                     "3": () => [sprite("e_jmp"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:4, type:"jmp", speed:100, jTmr:rand(1,3), stunTimer:0 }],
                     "2": () => [sprite("e_bnc"), color(ec[0],ec[1],ec[2]), scale(1.7), area(), body(), anchor("center"), "enemy", "pusher", { hp:5, type:"bnc", speed:120, stunTimer:0 }],
@@ -408,7 +416,6 @@
                     "W": () => [sprite("block"), color(lvl.tt[0],lvl.tt[1],lvl.tt[2]), area(), body({isStatic:true}), anchor("center"), "breakable", "solid"],
                     "X": () => [sprite("e_bnc"), color(255,50,50), scale(3.0), area(), body(), anchor("center"), "enemy", "danger", "boss", { hp:25, maxHp:25, type:"bnc", speed:150, stunTimer:0 }],
                     
-                    // Pohyblivé plošiny a zarážky
                     "H": () => [rect(120, 20), color(100, 200, 255), area(), body({isStatic:true}), anchor("center"), "ground", "solid", "moving_h", { vx: 120 }],
                     "L": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: 1 }, opacity(0)],
                     "R": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: -1 }, opacity(0)],
@@ -418,7 +425,6 @@
                 }
             });
 
-            // Fyzika a pohyb plošin
             onUpdate("moving_h", (p) => p.move(p.vx, 0)); 
             onCollide("moving_h", "bound_h", (p, b) => p.vx = Math.abs(p.vx) * b.dir);
             
@@ -456,15 +462,37 @@
             // ---- UI (CANVAS TEXTS) ----
             const ui = add([fixed(), z(100)]);
             
-            // Score a Mince
             ui.add([sprite("coin"), pos(20,22)]);
-            const scoreLabel = ui.add([text(`Score: ${score}`, {size:20}), pos(50,20)]);
             
-            // Náboje
+            // SKÓRE + PŘEPÍNAČ FULLSCREENU
+            const scoreLabel = ui.add([
+                text(`Score: ${score}`, {size:20}), 
+                pos(50,20),
+                area(),          // Aby na text šlo klikat
+                "score_label"
+            ]);
+            
+            let scoreClickCount = 0;
+            let lastScoreClickTime = 0;
+            
+            onClick("score_label", () => {
+                const t = time();
+                if (t - lastScoreClickTime > 0.4) scoreClickCount = 0; 
+                scoreClickCount++;
+                lastScoreClickTime = t;
+
+                if (!isFullscreen()) {
+                    toggleFullscreen(true);
+                } else if (scoreClickCount >= 2) {
+                    toggleFullscreen(false);
+                    scoreClickCount = 0;
+                }
+            });
+
             ui.add([sprite("pistol"), pos(200,22), scale(1.4)]);
             const ammoLabel = ui.add([text(`x ${ammo}`, {size:20}), pos(235,20)]);
             
-            // NÁZEV LEVELU + DVOJKLIK AKCELEROMETR
+            // UKAZATEL LEVELU - dvojklik zapíná/vypíná Akcelerometr
             const lvlIndicator = ui.add([
                 text(`Level ${lvlIdx+1}/${LVL.length}`, {size:20}), 
                 pos(width()/2, 20), 
@@ -479,7 +507,6 @@
                 lastLvlClick = time();
             });
 
-            // Logika překreslení zdraví a tajného cheatu
             const updateHP = () => {
                 destroyAll("ui_hp");
                 destroyAll("cheat_zone"); 
@@ -487,33 +514,23 @@
                 for (let i=0; i<maxHp; i++) {
                     const heartPos = vec2(width() - 40 - i*35, 20);
                     
-                    // Pozadí pro chybějící srdíčka
                     ui.add([sprite("heart"), pos(heartPos), color(0,0,0), opacity(0.25), "ui_hp"]);
                     
-                    // Kreslení plného srdíčka (pokud existuje)
                     if (i < hp) {
                         ui.add([sprite("heart"), pos(heartPos), "ui_hp"]);
                     }
 
-                    // ====== CHEAT KÓD ======
-                    // Identifikace 2. srdíčka ZLEVA
-                    // Srdíčka se kreslí zprava (i=0) doleva (i=maxHp-1).
                     if (i === maxHp - 2) {
                         ui.add([
                             rect(30, 30), 
-                            pos(heartPos.x - 5, heartPos.y - 5), // Vycentrováno na srdce
-                            opacity(0), // Průhledný hitbox
-                            area(), 
-                            fixed(),
-                            z(105),
-                            "cheat_zone"
+                            pos(heartPos.x - 5, heartPos.y - 5),
+                            opacity(0), area(), fixed(), z(105), "cheat_zone"
                         ]);
                     }
                 }
             };
             updateHP();
 
-            // Sledování kliků na cheat zónu (3x klik na 2. srdce zleva)
             let cheatClicks = 0;
             let lastCheatTime = 0;
             
@@ -600,13 +617,12 @@
             };
 
             // ---- MULTITOUCH & OVLÁDÁNÍ ----
-            // Ukládání všech aktivních dotyků současně pro spolehlivý multitouch
             const activeTouches = {};
             
             function updateTouch(a, b) {
                 let id, p;
-                if (typeof a === 'object' && a !== null) { p = a; id = b?.id ?? 0; } // Kaboom v3000 callback(pos, t)
-                else { id = a; p = b; } // Starší Kaboom callback(id, pos)
+                if (typeof a === 'object' && a !== null) { p = a; id = b?.id ?? 0; } 
+                else { id = a; p = b; } 
                 activeTouches[id] = p;
                 return p;
             }
@@ -637,9 +653,8 @@
                 if (!player.exists() || playerDead) return;
                 
                 if (light && player.pos) light.pos = player.pos;
-                if (player.vel.y > 800) player.vel.y = 800; // Oprava Tunnelingu
+                if (player.vel.y > 800) player.vel.y = 800;
 
-                // Coyote Time & Jump Buffer Logic
                 if (player.isGrounded()) { 
                     coyoteTime = 0.15; canDbl = true; 
                 } else { 
@@ -661,17 +676,16 @@
                 }
                 wasGrounded = player.isGrounded();
 
-                // Fyzika a pohyb
                 if (player.stun) {
                     player.move(player.cVel, 0); 
                     if (player.curAnim() !== "jump") player.play("jump");
                 } else {
                     // ====== PRIORITIZACE OVLÁDÁNÍ ======
                     
-                    // 1. Akcelerometr (Nejnižší priorita)
+                    // 1. Akcelerometr
                     let dir = (useTilt && tiltAccel !== 0) ? tiltAccel : 0;
                     
-                    // 2. Multitouch přepíše akcelerometr, pokud hráč drží prst na šipkách
+                    // 2. Multitouch (přepíše akcelerometr)
                     let touchDir = 0;
                     for (const id in activeTouches) { 
                         const p = activeTouches[id];
@@ -680,19 +694,19 @@
                     }
                     if (touchDir !== 0) dir = touchDir;
 
-                    // 3. Myš (Pokud zrovna není použit multitouch)
+                    // 3. Myš
                     if (touchDir === 0 && Object.keys(activeTouches).length === 0 && isMouseDown()) { 
                         const m = getMouse(); if (zones.left(m)) dir = -1; if (zones.right(m)) dir = 1; 
                     }
 
-                    // 4. Klávesnice (Nejvyšší priorita ze všech)
+                    // 4. Klávesnice
                     if (isKeyDown("left")||isKeyDown("a")) dir = -1; 
                     if (isKeyDown("right")||isKeyDown("d")) dir = 1;
 
                     player.cVel = lerp(player.cVel, dir * SPEED, dt() * lvl.f); 
                     player.move(player.cVel, 0);
 
-                    // Motion Blur pro pohyb po horizontále
+                    // Motion Blur
                     if (Math.abs(player.cVel) > 100) {
                         const blurOpacity = 0.05 + ((Math.abs(player.cVel) - 100) / (SPEED - 100)) * 0.25;
                         const spr = add([ 
@@ -707,7 +721,6 @@
                         spr.flipX = player.flipX;
                     }
                     
-                    // Přepínání animací
                     if (dir !== 0) { 
                         player.flipX = dir < 0; 
                         if (player.isGrounded()) player.play("run"); 
@@ -721,15 +734,12 @@
                     else if (player.vel.y > 50) player.play("fall"); 
                 }
                 
-                // Omezení mapy
                 player.pos.x = Math.max(20, Math.min(player.pos.x, MAP_W-20));
                 
-                // Smrt pádem
                 if (player.pos.y > MAP_H+100 && !playerDead) { 
                     playerDead = true; go("lose", lvlIdx, score); 
                 }
 
-                // Kamera a Parallax
                 const tx = Math.max(400, Math.min(player.pos.x, MAP_W-400)); 
                 const ty = Math.max(240, Math.min(player.pos.y, MAP_H-240));
                 
@@ -741,7 +751,6 @@
                 bgFar.pos.x = -((cx-400)*0.15) % 800; 
                 bgNear.pos.x = -((cx-400)*0.35) % 800;
 
-                // Aktualizace Debug panelu
                 if (debugVisible && Math.floor(time()*60)%10 === 0) {
                     const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
                                    `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
@@ -889,13 +898,6 @@
 
         // Start hry vyvoláním Menu scény
         go("menu"); 
-    </script>
-<script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').then(() => {
-                console.log("Service Worker registrován");
-            });
-        }
     </script>
 </body>
 </html>
