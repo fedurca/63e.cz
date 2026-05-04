@@ -117,12 +117,15 @@
         let tiltInitialized = false; 
 
         function addToast(msg) {
-            add([
-                text(msg, {size: 16}), pos(width()/2, 80), color(0, 255, 255),
-                anchor("center"), fixed(), z(200), lifespan(2.5, { fade: 0.5 })
-            ]);
+        // Přidána pojistka: pokud 'add' ještě neexistuje, nic nedělej
+        if (typeof add === "undefined") return; 
+    
+        add([
+        text(msg, {size: 16}), pos(width()/2, 80), color(0, 255, 255),
+        anchor("center"), fixed(), z(200), lifespan(2.5, { fade: 0.5 })
+        ]);
         }
-
+        
         function handleOrientation(event) {
             let tilt = 0;
             let angle = window.orientation || (window.screen && window.screen.orientation && window.screen.orientation.angle) || 0;
