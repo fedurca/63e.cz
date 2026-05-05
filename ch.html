@@ -2,40 +2,40 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Debug Chat</title>
+    <title>P2P Pro Diagnostika</title>
     <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #e5ddd5; display: flex; flex-direction: column; height: 100vh; margin: 0; }
-        header { background: #075e54; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; }
-        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
-        .msg { background: white; padding: 8px 12px; border-radius: 8px; max-width: 80%; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
-        .msg.me { background: #dcf8c6; align-self: flex-end; }
+        body { font-family: 'Consolas', monospace; background: #1a1a1a; color: #ccc; display: flex; flex-direction: column; height: 100vh; margin: 0; }
+        header { background: #075e54; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif; }
+        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #222; }
+        .msg { background: #333; padding: 8px 12px; border-radius: 8px; max-width: 80%; border: 1px solid #444; }
+        .msg.me { background: #054740; align-self: flex-end; border-color: #075e54; }
         
-        /* Debug okno */
-        #debug { background: #333; color: #0f0; font-family: monospace; font-size: 11px; height: 150px; overflow-y: auto; padding: 10px; border-top: 2px solid #555; }
-        .debug-err { color: #f44; }
-        .debug-ok { color: #0f0; }
+        #debug { background: #000; color: #0f0; font-size: 11px; height: 200px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; line-height: 1.4; }
+        .debug-err { color: #ff5555; }
+        .debug-info { color: #5555ff; }
+        .debug-success { color: #55ff55; }
 
-        .controls { padding: 15px; background: #f0f0f0; display: flex; gap: 10px; }
-        input { flex: 1; padding: 10px; border-radius: 20px; border: 1px solid #ccc; outline: none; }
-        button { padding: 10px 20px; border-radius: 20px; border: none; background: #075e54; color: white; cursor: pointer; }
+        .controls { padding: 15px; background: #222; display: flex; gap: 10px; border-top: 1px solid #444; }
+        input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #111; color: white; outline: none; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #075e54; color: white; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <header>
-    <span id="headerTitle">P2P Chat</span>
-    <small id="peerCount">Peers: 0</small>
+    <div><strong id="headerName">...</strong> <small id="headerId" style="opacity: 0.6; margin-left: 10px;"></small></div>
+    <div id="peerCount">Peers online: 0</div>
 </header>
 
 <div id="chat"></div>
 
 <div id="debug">
-    <div>--- DIAGNOSTIKA SÍTĚ ---</div>
+    <div>=== P2P DIAGNOSTICKÝ KONZOL ===</div>
 </div>
 
 <div class="controls">
-    <input type="text" id="messageInput" placeholder="Napište zprávu...">
+    <input type="text" id="messageInput" placeholder="Zadejte text zprávy...">
     <button onclick="sendMessage()">Odeslat</button>
 </div>
 
@@ -43,18 +43,28 @@
     const debugEl = document.getElementById('debug');
     function log(msg, type = '') {
         const div = document.createElement('div');
-        div.className = type === 'err' ? 'debug-err' : 'debug-ok';
+        if (type === 'err') div.className = 'debug-err';
+        if (type === 'info') div.className = 'debug-info';
+        if (type === 'ok') div.className = 'debug-success';
         div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         debugEl.appendChild(div);
         debugEl.scrollTop = debugEl.scrollHeight;
     }
 
-    // Identita
-    const myName = "Uživatel_" + Math.floor(Math.random() * 1000);
-    document.getElementById('headerTitle').innerText = `Chat: ${myName}`;
-
+    // 1. Identita
+    const myName = "Uživatel_" + Math.floor(Math.random() * 999);
     const client = new WebTorrent();
-    // Používáme co nejvíce veřejných trackerů pro zvýšení šance na spojení
+    
+    // Zobrazení identity v záhlaví
+    document.getElementById('headerName').innerText = myName;
+    
+    // Počkejme na vygenerování Peer ID klientem
+    client.on('ready', () => {
+        document.getElementById('headerId').innerText = `ID: ${client.peerId.substring(0, 8)}...`;
+        log(`Můj Peer ID: ${client.peerId}`, 'info');
+        log(`Moje Jméno: ${myName}`, 'info');
+    });
+
     const trackers = [
         'wss://tracker.openwebtorrent.com',
         'wss://tracker.btorrent.xyz',
@@ -62,37 +72,41 @@
         'wss://tracker.fastcast.nz'
     ];
 
-    const ROOM_ID = 'debug-room-123456789'; // InfoHash
-    const blob = new Blob(['p2p_debug'], { type: 'text/plain' });
+    const ROOM_ID = 'debug-room-universal-2024';
+    const blob = new Blob(['p2p_chat_v2'], { type: 'text/plain' });
 
-    log("Inicializace WebTorrent klienta...");
+    log("Startuji WebTorrent engine...", 'info');
 
     client.seed(blob, { name: 'ChatSession', announce: trackers }, (torrent) => {
-        log(`Seeding spuštěn. InfoHash: ${torrent.infoHash.substring(0,10)}...`);
+        log(`Seeding aktivní. InfoHash: ${torrent.infoHash}`, 'ok');
 
-        // Sledování trackerů
-        torrent.on('warning', err => log("Varování: " + err.message, 'err'));
-        torrent.on('error', err => log("CHYBA: " + err.message, 'err'));
-
-        trackers.forEach(tr => {
-            log(`Pokus o kontaktování trackeru: ${tr}`);
+        // Sledování stavu trackerů
+        torrent.on('trackerAnnounce', (announce) => {
+            // announce obsahuje URL trackeru, který právě odpověděl
+            log(`Tracker OK: ${torrent.discovery.tracker.announce.find(a => a.infoHash === torrent.infoHash).announceUrl}`, 'ok');
         });
 
-        torrent.on('trackerAnnounce', () => {
-            log("Tracker potvrdil naši přítomnost v síti.");
+        torrent.on('warning', err => {
+            if (err.message.includes('connect')) {
+                log(`Tracker nedostupný: ${err.message.split('connecting to ')[1] || 'neznámý'}`, 'err');
+            } else {
+                log(`Varování: ${err.message}`, 'err');
+            }
         });
 
-        // Sledování nových spojení
+        // Událost při nalezení nového peera
         torrent.on('wire', (wire) => {
-            log(`NALEZEN PEER: ${wire.remoteAddress || 'Neznámá IP'} přes ${wire.type}`);
-            document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
+            log(`SPOJENÍ NAVÁZÁNO: Peer ${wire.remoteAddress || 'přes WebRTC'}`, 'ok');
+            document.getElementById('peerCount').innerText = `Peers online: ${torrent.numPeers}`;
 
             wire.use((w) => {
                 wire.on('extended', (code, data) => {
                     try {
                         const m = JSON.parse(data.toString());
                         appendMessage(m.sender, m.text, false);
-                    } catch(e) {}
+                    } catch(e) {
+                        log("Přijata nečitelná data", "err");
+                    }
                 });
             });
         });
@@ -110,15 +124,16 @@
             appendMessage(myName, text, true);
             input.value = '';
         } else {
-            log("Zpráva nebyla odeslána - žádní peeri v dosahu.", "err");
+            log("Nelze odeslat: Žádní peeri nejsou připojeni.", "err");
         }
     }
 
     function appendMessage(sender, text, isMe) {
         const div = document.createElement('div');
         div.className = `msg ${isMe ? 'me' : ''}`;
-        div.innerHTML = `<strong>${sender}:</strong><br>${text}`;
+        div.innerHTML = `<small style="color: #888">${sender}</small><br>${text.replace(/</g, "&lt;")}`;
         document.getElementById('chat').appendChild(div);
+        document.getElementById('chat').scrollTop = document.getElementById('chat').scrollHeight;
     }
 </script>
 </body>
