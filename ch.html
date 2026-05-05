@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v1.4.4</title>
+    <title>E2E Tree P2P Chat v2.0.0</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -54,7 +54,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-e2e { color: #e056fd; } .log-dns { color: #00d2d3; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; }
 
         /* SETUP SCREEN */
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -71,7 +71,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v1.4.4 (Master Fix & Sync)</span>
+            <span class="version-badge">v2.0.0 (API Proxy)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -93,7 +93,7 @@
             
             <div class="debug-stats">
                 <div>ID: <span id="dbg-id"></span></div>
-                <div>Stav DNS: <span id="dbg-dns">IDLE</span></div>
+                <div>Stav API: <span id="dbg-dns">IDLE</span></div>
                 <div>Přímé linky: <span id="dbg-peers">0</span></div>
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
@@ -111,7 +111,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.4: Fix pro localhost a řazení historie.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0: Přímý bypass přes Worker API a dokonalý sync historie.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
         </div>
@@ -204,6 +204,7 @@
         } catch(e) { return null; }
     }
 
+    // --- PŘÍMÉ API SPOJENÍ (Bypass DNS) ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -211,55 +212,68 @@
         return JSON.parse(pako.inflate(pole, { to: 'string' }));
     }
 
-    async function writeDns(subdomena, data) {
+    async function writeSignal(subdomena, data) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
+        logDebug(`[API OUT] Odesílám signál pro: ${subdomena}`, 'api');
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
             const out = await res.json();
             if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
-            return false;
-        } catch (e) { return false; }
+        } catch (e) { logDebug(`[API ERR] Zápis selhal: ${e.message}`, 'error'); }
+        return false;
     }
 
-    async function readDns(subdomena) {
+    async function readSignal(subdomena) {
         updateDebugStats('dns', `ČTENÍ: ${subdomena}`);
         try {
-            const cacheBuster = Date.now() + Math.floor(Math.random() * 1000);
-            const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT&_cb=${cacheBuster}`, { 
-                headers: { 'Accept': 'application/dns-json', 'Cache-Control': 'no-cache' }, cache: 'no-store' 
-            });
+            const res = await fetch(`${WORKER_URL}?key=${subdomena}&_t=${Date.now()}`);
             const json = await res.json();
-            if(!json.Answer) return null;
-            
-            updateDebugStats('dns', 'OK');
-            const rawData = json.Answer[0].data;
-            const cleanB64 = rawData.replace(/["\s\n\r]/g, ''); 
-            const data = dekomprimovat(cleanB64);
-            return data;
-        } catch(e) { return null; }
+            if(json.success && json.content) {
+                updateDebugStats('dns', 'OK');
+                const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
+                const data = dekomprimovat(cleanB64);
+                if(subdomena === 'queue' && data.guestId && data.guestId !== 'IDLE') logDebug(`[API IN] Fronta obsahuje: ${data.guestId}`, 'api');
+                return data;
+            }
+        } catch(e) { } 
+        return null;
     }
 
     // --- CHAT & HISTORIE ---
+    function reRenderAllHistory() {
+        const chat = document.getElementById('chat-area');
+        chat.innerHTML = '';
+        chatHistory.forEach(msg => {
+            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
+        });
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    function renderDivider(text) {
+        const chat = document.getElementById('chat-area');
+        const div = document.createElement('div');
+        div.className = "history-divider";
+        div.innerHTML = `<span>${text}</span>`;
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
     function loadHistory() {
         const saved = localStorage.getItem('chat_history');
         if(saved) {
             chatHistory = JSON.parse(saved);
-            chatHistory.sort((a,b) => a.time - b.time); // Seřazení načtené historie
-            chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time || Date.now(), false));
-            
-            const chat = document.getElementById('chat-area');
-            const div = document.createElement('div');
-            div.className = "history-divider";
-            div.innerHTML = "<span>Konec minulé historie chatu</span>";
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
+            chatHistory.sort((a,b) => a.time - b.time); 
+            reRenderAllHistory();
+            renderDivider("Konec lokální historie");
         }
     }
 
     function saveMessage(msgObj) {
-        if(chatHistory.find(m => m.id === msgObj.id)) return false; 
+        // Kontrola duplicit podle unikátního ID
+        if(chatHistory.some(m => m.id === msgObj.id)) return false; 
         chatHistory.push(msgObj);
-        if(chatHistory.length > MAX_HISTORY) chatHistory.shift();
+        chatHistory.sort((a,b) => a.time - b.time); 
+        if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
         localStorage.setItem('chat_history', JSON.stringify(chatHistory));
         return true;
     }
@@ -320,19 +334,14 @@
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plaintextHistory) {
                 const historyArray = JSON.parse(plaintextHistory);
-                logDebug(`[SYNC] Dešifrována cloudová historie (${historyArray.length} zpráv)`, "success");
+                let added = false;
+                historyArray.forEach(histMsg => { if(saveMessage(histMsg)) added = true; });
                 
-                // Seřazení před uložením a vykreslením
-                historyArray.sort((a,b) => a.time - b.time);
-                
-                let rendered = 0;
-                historyArray.forEach(histMsg => { 
-                    if(saveMessage(histMsg)) {
-                        renderMessage(histMsg.author, histMsg.text, histMsg.author === myName ? 'self' : 'other', histMsg.time);
-                        rendered++;
-                    }
-                });
-                if(rendered > 0) renderMessage('System', `Synchronizováno ${rendered} zpráv z cloudu.`, 'system');
+                if (added) {
+                    logDebug(`Historie z cloudu sloučena a seřazena. Překresluji...`, "success");
+                    reRenderAllHistory();
+                    renderMessage('System', 'Historie chatu byla úspěšně synchronizována.', 'system');
+                }
             }
         } 
         else if (msg.type === 'chat') {
@@ -389,12 +398,8 @@
                 if(knownNodes[targetId]) delete knownNodes[targetId].ping;
                 updateDebugStats('peers', Object.keys(channels).length);
                 
-                // OPRAVA: Master nespouští checkIsolation při odpojení Guesta!
-                if (!isDnsHost) {
-                    checkIsolation(); 
-                } else {
-                    logDebug(`Guest ${targetId} se odpojil z mého Hubu.`, 'info');
-                }
+                if (!isDnsHost) checkIsolation(); 
+                else logDebug(`Guest ${targetId} se odpojil z mého Hubu. Jedu dál.`, 'info');
             }
         };
 
@@ -407,15 +412,13 @@
                 if (pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
-                    logDebug(`Iniciuji zápis SDP klíčů do DNS...`, 'info');
-                    const ok = await writeDns(`offer-${myId}`, pc.localDescription);
-                    if (ok) await writeDns('queue', { guestId: myId });
+                    const ok = await writeSignal(`offer-${myId}`, pc.localDescription);
+                    if (ok) await writeSignal('queue', { guestId: myId });
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                // OPRAVA 2: MAC mDNS fix. Limit zvýšen na štědrých 8 vteřin pro localhost.
                 setTimeout(onGatheringComplete, 8000); 
             }
         } else {
@@ -488,9 +491,9 @@
             logDebug("Ztratil jsem Hub. Zjišťuji situaci...", "error");
             document.getElementById('ui-role').innerText = 'Izolován';
             
-            const hostAlive = await readDns('host-alive');
+            const hostAlive = await readSignal('host-alive');
             if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-                logDebug("Hub v DNS stále žije! Zkusím se připojit znovu...", "info");
+                logDebug("Hub v API stále žije! Zkusím se připojit znovu...", "info");
                 setTimeout(() => joinViaDns(), 5000);
                 return; 
             }
@@ -501,7 +504,7 @@
             aliveIds.sort();
 
             if (aliveIds[0] === myId) {
-                logDebug(`👑 Jsem nejvyšší autorita. Přebírám DNS Mastera!`, "webrtc");
+                logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
                 startDnsHostLoop();
             } else {
                 const jitter = Math.floor(Math.random() * 3000) + 3000; 
@@ -514,14 +517,14 @@
     // --- BOOTSTRAP ---
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
-        document.getElementById('ui-role').innerText = "Kontroluji...";
+        document.getElementById('ui-role').innerText = "Kontroluji API...";
         myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
         
         document.getElementById('setup-screen').style.display = 'none'; 
         loadHistory();
         await initCrypto();
         
-        const hostAlive = await readDns('host-alive');
+        const hostAlive = await readSignal('host-alive');
         if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
         else startDnsHostLoop();
     }
@@ -532,22 +535,20 @@
         networkGraph.root = myId; 
         unlockChat();
         
-        // OPRAVA 3: Čištění fronty, když se ujmu trůnu
-        await writeDns('queue', { guestId: 'IDLE' });
-        
-        await writeDns('host-alive', { timestamp: Date.now() });
-        setInterval(() => writeDns('host-alive', { timestamp: Date.now() }), 60000);
+        await writeSignal('queue', { guestId: 'IDLE' });
+        await writeSignal('host-alive', { timestamp: Date.now() });
+        setInterval(() => writeSignal('host-alive', { timestamp: Date.now() }), 60000);
 
         if (dnsInterval) clearInterval(dnsInterval);
         
         let pollingGuests = new Set();
         dnsInterval = setInterval(async () => {
-            const queue = await readDns('queue');
+            const queue = await readSignal('queue');
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
                 
-                const offer = await readDns(`offer-${queue.guestId}`);
+                const offer = await readSignal(`offer-${queue.guestId}`);
                 if(offer) {
-                    logDebug(`[DNS] Zpracovávám nováčka: ${queue.guestId}`, 'success');
+                    logDebug(`[API IN] Zpracovávám nováčka: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -556,15 +557,15 @@
                     const sendDnsAnswer = async () => {
                         if (connections[queue.guestId].answerDone) return;
                         connections[queue.guestId].answerDone = true;
-                        logDebug(`[DNS OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
-                        await writeDns(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
-                        await writeDns('queue', { guestId: 'IDLE' }); 
+                        logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
+                        await writeSignal(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
+                        await writeSignal('queue', { guestId: 'IDLE' }); 
                     };
 
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
                     else {
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
-                        setTimeout(sendDnsAnswer, 8000); // 8s timeout i pro odpovědi
+                        setTimeout(sendDnsAnswer, 8000); 
                     }
                 }
             }
@@ -580,16 +581,16 @@
             pokusy++;
             if (pokusy > 9) { 
                 clearInterval(iv);
-                logDebug("Spojení vypršelo (Timeout).", "error");
+                logDebug("Spojení vypršelo (Timeout API).", "error");
                 delete connections['hub'];
                 checkIsolation(); 
                 return;
             }
-            logDebug(`[DNS] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
-            const answer = await readDns(`answer-${myId}`);
+            logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
+            const answer = await readSignal(`answer-${myId}`);
             if (answer) {
                 clearInterval(iv);
-                logDebug(`[DNS] Answer nalezen, aplikuji do WebRTC...`, 'success');
+                logDebug(`[API IN] Answer nalezen, aplikuji do WebRTC...`, 'success');
                 await connections['hub'].setRemoteDescription(answer);
             }
         }, 5000);
