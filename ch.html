@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Chat - Sync & Debug</title>
+    <title>P2P Chat - Robust Sync & Debug</title>
     <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
     <style>
         body { font-family: 'Consolas', monospace; background: #1a1a1a; color: #ccc; display: flex; flex-direction: column; height: 100vh; margin: 0; }
@@ -10,7 +10,7 @@
         #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #222; }
         .msg { background: #333; padding: 8px 12px; border-radius: 8px; max-width: 80%; border: 1px solid #444; align-self: flex-start; }
         .msg.me { background: #054740; align-self: flex-end; border-color: #075e54; }
-        #debug { background: #000; color: #0f0; font-size: 11px; height: 250px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; }
+        #debug { background: #000; color: #0f0; font-size: 11px; height: 280px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; line-height: 1.4; }
         .debug-err { color: #ff5555; }
         .debug-ok { color: #55ff55; }
         .debug-warn { color: #ffaa00; }
@@ -31,26 +31,27 @@
 <div id="chat"></div>
 
 <div id="debug">
-    <div>=== P2P DEEP DIAGNOSTIKA & SYNC ===</div>
+    <div>=== P2P ROBUSTNÍ DIAGNOSTIKA & SYNC ===</div>
 </div>
 
 <div class="controls">
     <button class="btn-sync" onclick="forceAnnounce()" title="Vynutí znovupřipojení k trackerům">&#x21bb; Znovu připojit</button>
-    <input type="text" id="messageInput" placeholder="Zadejte zprávu...">
+    <input type="text" id="messageInput" placeholder="Zadejte zprávu..." autocomplete="off">
     <button onclick="sendChatMessage()">Odeslat</button>
 </div>
 
 <script>
     // --- 1. NASTAVENÍ A IDENTITA ---
-    const ROOM_ID = 'p2p-sync-room-999'; // InfoHash
+    const ROOM_ID = 'p2p-sync-room-omega-2026'; // Unikátní Hash pro naši místnost
+    
+    // Spolehlivé veřejné WebRTC trackery
     const TRACKER_LIST = [
         'wss://tracker.openwebtorrent.com',
+        'wss://tracker.webtorrent.dev',
         'wss://tracker.btorrent.xyz',
-        'wss://tracker.files.fm:7073/announce',
-        'wss://tracker.gbitt.info'
+        'wss://tracker.files.fm:7073/announce'
     ];
 
-    // Jméno (uložíme si ho, ať je při F5 stejné)
     let myName = localStorage.getItem('p2p_name');
     if (!myName) {
         myName = "Uživatel_" + Math.floor(Math.random() * 9999);
@@ -58,16 +59,18 @@
     }
     document.getElementById('headerName').innerText = myName;
 
-    // --- 2. HISTORIE CHATU (LocalStorage) ---
+    // --- 2. HISTORIE CHATU ---
     let chatHistory = JSON.parse(localStorage.getItem(`p2p_history_${ROOM_ID}`) || '[]');
 
     function saveAndRenderHistory() {
-        // Seřadit podle času pro jistotu
         chatHistory.sort((a, b) => a.time - b.time);
+        // Necháme v historii jen posledních 100 zpráv, aby nebyl P2P balíček moc velký
+        if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
+        
         localStorage.setItem(`p2p_history_${ROOM_ID}`, JSON.stringify(chatHistory));
         
         const chatEl = document.getElementById('chat');
-        chatEl.innerHTML = ''; // Vymazat a znovu vykreslit
+        chatEl.innerHTML = ''; 
         
         chatHistory.forEach(m => {
             const div = document.createElement('div');
@@ -77,8 +80,6 @@
         });
         chatEl.scrollTop = chatEl.scrollHeight;
     }
-    
-    // Vykreslíme historii po startu
     saveAndRenderHistory();
 
     // --- 3. DEBUG LOG ---
@@ -91,17 +92,22 @@
         debugEl.scrollTop = debugEl.scrollHeight;
     }
 
-    // --- 4. WEBTORRENT P2P LOGIKA S OCHRANOU NAT ---
-    // Přidány STUN servery pro lepší propojení prohlížečů na jedné síti!
+    // --- 4. WEBTORRENT P2P LOGIKA ---
+    // Rozšířené STUN servery pro lepší bypass NATu a lokální sítě
     const client = new WebTorrent({
         tracker: {
             rtcConfig: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
             }
         }
+    });
+
+    client.on('error', (err) => {
+        log(`Kritická chyba klienta: ${err.message}`, 'err');
     });
 
     client.on('ready', () => {
@@ -109,52 +115,65 @@
         log(`Klient připraven. Můj Peer ID: ${client.peerId}`, 'info');
     });
 
-    const blob = new Blob(['p2p_sync_v1'], { type: 'text/plain' });
+    const blob = new Blob(['p2p_sync_robust'], { type: 'text/plain' });
 
-    client.seed(blob, { name: 'SyncSession', announce: TRACKER_LIST }, (torrent) => {
+    client.seed(blob, { name: 'ChatSession', announce: TRACKER_LIST }, (torrent) => {
         log(`Připojování k roji. Hash: ${torrent.infoHash.substring(0,10)}...`, 'warn');
 
-        // Detekce připojení trackeru (pokus o extrakci adresy)
+        // OPRAVA: Extrakce názvů trackerů
         torrent.on('trackerAnnounce', () => {
             try {
-                // WebTorrent interně drží pole trackerů. Zkusíme najít ty připojené.
-                const activeTrackers = torrent.discovery.tracker.trackers.filter(t => t.announced);
+                // Bezpečné prohledání zanořených struktur trackeru
+                let activeTrackers = [];
+                if (torrent.discovery && torrent.discovery.tracker) {
+                    const internalClient = torrent.discovery.tracker;
+                    // Závisí na verzi WebTorrentu/bittorrent-trackeru
+                    const tList = internalClient.trackers || (internalClient.client && internalClient.client.trackers) || [];
+                    
+                    tList.forEach(t => {
+                        if (t.announced && t.announceUrl) activeTrackers.push(t.announceUrl);
+                    });
+                }
+                
                 if (activeTrackers.length > 0) {
-                    const tNames = activeTrackers.map(t => t.announceUrl).join(', ');
-                    log(`Tracker potvrdil spojení (OK): ${tNames}`, 'ok');
+                    log(`Tracker OK: Připojeno k [${activeTrackers.join(', ')}]`, 'ok');
                 } else {
-                    log(`Některý tracker potvrdil spojení, ale neodpovídá na dotaz.`, 'warn');
+                    // Pokud struktura selže, alespoň víme, že event proběhl v pořádku
+                    log(`Tracker OK: Announce úspěšný (přesnou URL nelze z API vyčíst).`, 'ok');
                 }
             } catch (e) {
-                log(`Tracker announce OK (nelze vyčíst název).`, 'ok');
+                log(`Tracker OK.`, 'ok');
             }
         });
 
-        // Naslouchání na data
+        // Detekce nového peera
         torrent.on('wire', (wire) => {
-            log(`+++ NOVÝ PEER: Spojeno přes WebRTC (${wire.remoteAddress || 'lokální/STUN'})`, 'ok');
+            log(`+++ NOVÝ PEER (WebRTC proraženo): ID ${wire.remotePeerId.substring(0,8)}`, 'ok');
             document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
 
-            // Jakmile se spojíme, hned mu pošleme celou naší historii k synchronizaci!
             wire.use((w) => {
-                // Posíláme typ 'sync'
-                const syncData = JSON.stringify({ type: 'sync', data: chatHistory });
-                wire.extended(0, syncData);
+                // 1. Odeslání naší historie novému peerovi
+                try {
+                    const syncData = JSON.stringify({ type: 'sync', data: chatHistory });
+                    wire.extended(0, syncData);
+                    log(`Odeslána synchronizační data peerovi.`, 'info');
+                } catch(e) {
+                    log(`Chyba při odesílání sync dat.`, 'err');
+                }
 
+                // 2. Příjem dat od peera
                 wire.on('extended', (code, data) => {
                     try {
                         const m = JSON.parse(data.toString());
                         
                         if (m.type === 'chat') {
-                            // Přijata nová zpráva
                             if (!chatHistory.find(msg => msg.id === m.id)) {
                                 chatHistory.push(m);
                                 saveAndRenderHistory();
-                                log(`Přijata zpráva od ${m.sender}`, 'info');
+                                log(`Přijata zpráva od: ${m.sender}`, 'ok');
                             }
                         } 
                         else if (m.type === 'sync') {
-                            // Přijata historie od druhého peera - sjednotíme data
                             let added = 0;
                             m.data.forEach(syncMsg => {
                                 if (!chatHistory.find(msg => msg.id === syncMsg.id)) {
@@ -163,34 +182,37 @@
                                 }
                             });
                             if (added > 0) {
-                                log(`Synchronizováno ${added} starších zpráv od peera.`, 'warn');
+                                log(`Synchronizace: Staženo ${added} starších zpráv od peera.`, 'warn');
                                 saveAndRenderHistory();
                             }
                         }
-                    } catch(e) { log("Přijata neznámá P2P data.", "err"); }
+                    } catch(e) { 
+                        log("Přijata neplatná P2P data.", "err"); 
+                    }
                 });
             });
 
             wire.on('close', () => {
-                log(`--- PEER ODPOJEN`, 'err');
+                log(`--- PEER ODPOJEN: ID ${wire.remotePeerId ? wire.remotePeerId.substring(0,8) : 'neznámý'}`, 'err');
                 document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
             });
         });
 
         torrent.on('warning', err => {
             if (err.message.includes('connecting')) {
-                log(`Tracker ERROR: ${err.message.split('connecting to ')[1]}`, 'err');
+                log(`Tracker nedostupný: ${err.message.split('connecting to ')[1]}`, 'err');
+            } else {
+                log(`Varování: ${err.message}`, 'warn');
             }
         });
     });
 
-    // --- 5. ODESLÁNÍ ZPRÁVY A MANUÁLNÍ TRACKER PING ---
+    // --- 5. ODESÍLÁNÍ ZPRÁV ---
     function sendChatMessage() {
         const input = document.getElementById('messageInput');
         const text = input.value.trim();
         if(!text) return;
 
-        // Vygenerujeme unikátní ID zprávy a časové razítko
         const newMsg = {
             id: Math.random().toString(36).substring(2) + Date.now().toString(36),
             type: 'chat',
@@ -201,17 +223,19 @@
 
         const torrent = client.torrents[0];
         if (torrent && torrent.numPeers > 0) {
-            const payload = JSON.stringify(newMsg);
-            torrent.wires.forEach(w => w.extended(0, payload));
-            
-            // Uložíme k sobě a vykreslíme
-            chatHistory.push(newMsg);
-            saveAndRenderHistory();
-            input.value = '';
-            log(`Odesláno peerům (${torrent.numPeers})`, 'info');
+            try {
+                const payload = JSON.stringify(newMsg);
+                torrent.wires.forEach(w => w.extended(0, payload));
+                
+                chatHistory.push(newMsg);
+                saveAndRenderHistory();
+                input.value = '';
+                log(`Zpráva odeslána (${torrent.numPeers} peerům)`, 'ok');
+            } catch (e) {
+                log(`Chyba při odesílání: ${e.message}`, 'err');
+            }
         } else {
-            log(`Zprávu se nepodařilo odeslat. Jste v síti sami.`, "err");
-            // Uložíme ji aspoň k sobě (offline režim)
+            log(`Jste offline / Jste v síti sami. Zpráva uložena lokálně.`, "err");
             chatHistory.push(newMsg);
             saveAndRenderHistory();
             input.value = '';
@@ -219,16 +243,15 @@
     }
 
     function forceAnnounce() {
-        log("Vynucuji dotaz na trackery přes mDNS/STUN...", "warn");
+        log("Manuální dotaz na trackery spuštěn...", "info");
         const torrent = client.torrents[0];
-        if (torrent) {
+        if (torrent && torrent.discovery && torrent.discovery.tracker) {
             torrent.discovery.tracker.announce();
         } else {
-            log("Torrent není připraven.", "err");
+            log("Nelze vynutit, torrent klient ještě není plně inicializován.", "err");
         }
     }
 
-    // Odeslání enterem
     document.getElementById('messageInput').addEventListener('keypress', function (e) {
         if (e.key === 'Enter') sendChatMessage();
     });
