@@ -3,315 +3,340 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>P2P DNS Chat</title>
-    <!-- Knihovna pro kompresi WebRTC klíčů do DNS -->
+    <title>P2P DNS Chat Pro</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
-        :root {
-            --primary: #0078FF;
-            --bg-color: #f4f7f6;
-            --chat-bg: #ffffff;
-            --text-dark: #333;
-            --text-light: #fff;
-        }
-
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-
+        :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
         body, html { height: 100%; background-color: var(--bg-color); overflow: hidden; }
+        #app { display: flex; flex-direction: column; height: 100vh; max-width: 900px; margin: 0 auto; background: var(--chat-bg); box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
 
-        #app { display: flex; flex-direction: column; height: 100vh; max-width: 600px; margin: 0 auto; background: var(--chat-bg); box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
-
-        /* HEADER */
-        header { background: var(--primary); color: var(--text-light); padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
-        header h1 { font-size: 1.2rem; font-weight: 600; }
+        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; }
         .status-dot.online { background: #2ed573; }
-        .users-btn { background: rgba(255,255,255,0.2); border: none; color: white; padding: 5px 10px; border-radius: 15px; cursor: pointer; font-size: 0.9rem; }
-
-        /* SETUP SCREEN */
-        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; flex-direction: column; padding: 20px; overflow-y: auto; }
-        .setup-box { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); margin-bottom: 15px; }
-        input[type="text"] { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 15px; font-size: 1rem; }
-        button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn-primary { background: var(--primary); color: white; margin-bottom: 10px; }
-        .btn-secondary { background: #eef2f5; color: var(--text-dark); }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        /* CHAT AREA */
-        #chat-area { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #e5ddd5; }
-        .msg { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative; }
-        .msg-self { align-self: flex-end; background: #dcf8c6; color: #000; border-bottom-right-radius: 2px; }
-        .msg-other { align-self: flex-start; background: #fff; color: #000; border-bottom-left-radius: 2px; }
-        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
-        .msg-author { font-size: 0.75rem; color: #777; margin-bottom: 3px; font-weight: bold; }
-
-        /* INPUT AREA */
-        #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-        #input-area input { flex: 1; padding: 12px 15px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; margin-bottom: 0; }
-        #input-area button { width: auto; background: var(--primary); color: white; border-radius: 50%; width: 45px; height: 45px; padding: 0; display: flex; justify-content: center; align-items: center; }
-
-        /* USERS MODAL */
-        #users-modal { position: absolute; top: 0; right: -100%; width: 250px; height: 100%; background: white; z-index: 30; transition: 0.3s; box-shadow: -5px 0 15px rgba(0,0,0,0.1); display: flex; flex-direction: column; }
-        #users-modal.active { right: 0; }
-        .modal-header { padding: 15px; background: var(--primary); color: white; display: flex; justify-content: space-between; }
-        .close-btn { background: none; color: white; font-size: 1.5rem; width: auto; padding: 0; line-height: 1; }
-        #users-list { list-style: none; padding: 15px; }
-        #users-list li { padding: 10px 0; border-bottom: 1px solid #eee; font-size: 1rem; display: flex; align-items: center; }
-        #users-list li::before { content: ''; display: inline-block; width: 8px; height: 8px; background: #2ed573; border-radius: 50%; margin-right: 10px; }
+        .status-dot.host { background: #feca57; }
         
-        .log { font-size: 0.8rem; color: #666; margin-top: 10px; text-align: center; }
+        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
+        @media (min-width: 600px) { .main-content { flex-direction: row; } }
+
+        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; }
+        #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
+        .msg { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
+        .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
+        .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
+        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
+        
+        #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
+        #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
+        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; }
+
+        #debug-panel { flex: 1; background: #1e1e1e; color: #00ff00; font-family: monospace; display: flex; flex-direction: column; max-height: 40vh; }
+        @media (min-width: 600px) { #debug-panel { max-height: 100%; max-width: 350px; } }
+        
+        .debug-header { background: #333; padding: 10px; font-size: 0.85rem; color: #fff; border-bottom: 1px solid #444; }
+        .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; font-size: 0.8rem; color: #aaa; }
+        .debug-stats span { color: #00ff00; font-weight: bold; }
+        
+        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; }
+
+        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
+        .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center;}
+        .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <!-- Header -->
     <header>
         <div>
             <span id="status-dot" class="status-dot"></span>
-            <h1 style="display:inline;">DNS Chat</h1>
+            <h1 style="display:inline;">P2P Chat</h1>
         </div>
-        <button class="users-btn" onclick="toggleUsers()">👥 Lidé (<span id="user-count">1</span>)</button>
+        <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
 
-    <!-- Chat Area -->
-    <div id="chat-area">
-        <div class="msg msg-system">Vítej v P2P chatu. Zprávy jsou end-to-end šifrované.</div>
+    <div class="main-content">
+        <div id="chat-container">
+            <div id="chat-area"></div>
+            <div id="input-area">
+                <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
+                <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
+            </div>
+        </div>
+
+        <div id="debug-panel">
+            <div class="debug-header">
+                <div>🛠 DIAGNOSTIKA & STAV</div>
+                <div class="debug-stats">
+                    <div>Místnost: <span id="dbg-room">Společná</span></div>
+                    <div>Stav DNS: <span id="dbg-dns">IDLE</span></div>
+                    <div>Peers (Linky): <span id="dbg-peers">0</span></div>
+                    <div>Zpráv v paměti: <span id="dbg-msg-count">0</span></div>
+                </div>
+            </div>
+            <div id="debug-log"></div>
+        </div>
     </div>
 
-    <!-- Input Area -->
-    <div id="input-area">
-        <input type="text" id="chat-input" placeholder="Napiš zprávu..." disabled onkeypress="handleEnter(event)">
-        <button id="send-btn" disabled onclick="sendMsg()">➤</button>
-    </div>
-
-    <!-- Setup Screen -->
     <div id="setup-screen">
-        <h2 style="text-align: center; margin-bottom: 20px;">Vstup do místnosti</h2>
-        
         <div class="setup-box">
-            <label>Tvá přezdívka:</label>
-            <input type="text" id="username" placeholder="Např. Neo">
+            <h2>Vstup do chatu</h2>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Aplikace automaticky zjistí, zda místnost existuje, nebo ji založí.</p>
+            <input type="text" id="username" placeholder="Tvá přezdívka">
+            <button onclick="autoJoin()">Vstoupit do místnosti</button>
         </div>
-
-        <div class="setup-box">
-            <h3 style="margin-bottom: 10px; font-size: 1.1rem;">Zakladatel (Host)</h3>
-            <p style="font-size: 0.85rem; color: #666; margin-bottom: 10px;">Jako první vytvoř místnost. Zápis do DNS trvá asi 10 vteřin.</p>
-            <button class="btn-primary" id="btn-host" onclick="startHost()">Vytvořit místnost</button>
-            <button class="btn-secondary" id="btn-check-guest" style="display:none;" onclick="checkGuestAnswer()">3. Načíst odpověď hosta z DNS</button>
-            <div id="host-log" class="log"></div>
-        </div>
-
-        <div class="setup-box">
-            <h3 style="margin-bottom: 10px; font-size: 1.1rem;">Host (Guest)</h3>
-            <p style="font-size: 0.85rem; color: #666; margin-bottom: 10px;">Připoj se k již existující místnosti.</p>
-            <button class="btn-primary" id="btn-guest" onclick="startGuest()">Připojit se</button>
-            <div id="guest-log" class="log"></div>
-        </div>
-    </div>
-
-    <!-- Users Modal -->
-    <div id="users-modal">
-        <div class="modal-header">
-            <h3>Připojení</h3>
-            <button class="close-btn" onclick="toggleUsers()">×</button>
-        </div>
-        <ul id="users-list">
-            <!-- Vyplní se JS -->
-        </ul>
     </div>
 </div>
 
 <script>
     // --- KONFIGURACE ---
-    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
+    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev"; 
+    const MAX_HISTORY = 250;
+    
     let myName = "";
+    let myId = Math.random().toString(36).substr(2, 6); // Unikátní ID klienta
     let isHost = false;
-    let peers = []; // Zde se budou ukládat P2P kanály
-    let activeUsers = new Set(); // Seznam jmen
+    let peers = []; 
+    let activeUsers = new Set(); 
+    let chatHistory = [];
 
-    // --- POMOCNÉ FUNKCE PRO DNS ---
-    function komprimovat(data) {
-        const zippnuto = pako.deflate(JSON.stringify(data));
-        return btoa(String.fromCharCode.apply(null, zippnuto));
+    // --- DEBUG & UI ---
+    function logDebug(msg, type = 'info') {
+        const logWindow = document.getElementById('debug-log');
+        const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+        let colorClass = type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : type === 'webrtc' ? 'log-webrtc' : 'log-info';
+        logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="${colorClass}">${msg}</span></div>`;
+        logWindow.scrollTop = logWindow.scrollHeight;
     }
 
-    function dekomprimovat(b64) {
-        const str = atob(b64);
-        const pole = new Uint8Array(str.length);
-        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
-        return JSON.parse(pako.inflate(pole, { to: 'string' }));
-    }
-
-    async function writeDns(subdomena, data, logId) {
-        document.getElementById(logId).innerText = "Zapisuji do DNS... (čekej)";
-        try {
-            await fetch(WORKER_URL, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) })
-            });
-            document.getElementById(logId).innerText = "✅ Zapsáno!";
-        } catch (e) {
-            document.getElementById(logId).innerText = "❌ Chyba zápisu!";
-        }
-    }
-
-    async function readDns(subdomena) {
-        const url = `https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT`;
-        const res = await fetch(url, { headers: { 'Accept': 'application/dns-json' } });
-        const json = await res.json();
-        if(!json.Answer) return null;
-        const text = json.Answer[0].data.replace(/"/g, '');
-        return dekomprimovat(text);
-    }
-
-    // --- UI FUNKCE ---
-    function toggleUsers() {
-        document.getElementById('users-modal').classList.toggle('active');
-    }
-
-    function updateUsersList() {
-        const ul = document.getElementById('users-list');
-        ul.innerHTML = `<li>${myName} (Ty)</li>`;
-        activeUsers.forEach(u => ul.innerHTML += `<li>${u}</li>`);
-        document.getElementById('user-count').innerText = activeUsers.size + 1;
-    }
-
-    function addMessage(author, text, type) {
-        const chat = document.getElementById('chat-area');
-        const div = document.createElement('div');
-        div.className = `msg msg-${type}`;
-        if(type !== 'system') {
-            div.innerHTML = `<div class="msg-author">${author}</div>${text}`;
-        } else {
-            div.innerText = text;
-        }
-        chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight;
-    }
+    function updateDebugStats(stat, value) { document.getElementById(`dbg-${stat}`).innerText = value; }
 
     function hideSetup() {
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('chat-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
-        document.getElementById('status-dot').classList.add('online');
-        updateUsersList();
+        document.getElementById('status-dot').className = `status-dot ${isHost ? 'host' : 'online'}`;
+        document.getElementById('ui-role').innerText = isHost ? 'Host' : 'Guest';
     }
 
-    // --- WEBRTC LOGIKA ---
-    let pc;
+    // --- KOMPRESE & DNS ---
+    function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
+    function dekomprimovat(b64) {
+        const str = atob(b64); const pole = new Uint8Array(str.length);
+        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
+        return JSON.parse(pako.inflate(pole, { to: 'string' }));
+    }
 
-    function initWebRTC() {
-        pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    async function writeDns(subdomena, data) {
+        updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
+        try {
+            const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
+            if((await res.json()).success) { updateDebugStats('dns', 'ZAPÁNO OK'); return true; }
+        } catch (e) { logDebug(`Chyba zápisu: ${e.message}`, 'error'); }
+        return false;
+    }
+
+    async function readDns(subdomena) {
+        updateDebugStats('dns', `ČTENÍ: ${subdomena}`);
+        try {
+            const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT`, { headers: { 'Accept': 'application/dns-json' } });
+            const json = await res.json();
+            if(!json.Answer) return null;
+            updateDebugStats('dns', 'PŘEČTENO OK');
+            return dekomprimovat(json.Answer[0].data.replace(/"/g, ''));
+        } catch(e) { return null; }
+    }
+
+    // --- LOCAL STORAGE & HISTORIE ---
+    function loadHistory() {
+        const saved = localStorage.getItem('chat_history');
+        if(saved) {
+            chatHistory = JSON.parse(saved);
+            chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', false));
+            logDebug(`Načteno ${chatHistory.length} zpráv z LocalStorage.`, 'success');
+            updateDebugStats('msg-count', chatHistory.length);
+        }
+    }
+
+    function saveMessageToHistory(msgObj) {
+        // Kontrola duplicit (při syncu)
+        if(chatHistory.find(m => m.id === msgObj.id)) return false; 
         
-        pc.ondatachannel = (event) => {
-            setupChannel(event.channel);
-        };
+        chatHistory.push(msgObj);
+        if(chatHistory.length > MAX_HISTORY) chatHistory.shift();
+        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+        updateDebugStats('msg-count', chatHistory.length);
+        return true;
+    }
+
+    function renderMessage(author, text, type, scroll = true) {
+        const chat = document.getElementById('chat-area');
+        const div = document.createElement('div');
+        div.className = `msg msg-${type}`;
+        div.innerHTML = type !== 'system' ? `<div style="font-size:0.75rem;color:#777;margin-bottom:3px;"><b>${author}</b></div>${text}` : text;
+        chat.appendChild(div);
+        if(scroll) chat.scrollTop = chat.scrollHeight;
+    }
+
+    function sendMsg() {
+        const text = document.getElementById('chat-input').value.trim();
+        if (!text) return;
         
+        const msgObj = { id: Date.now() + Math.random().toString(16), type: 'msg', author: myName, text: text, time: Date.now() };
+        saveMessageToHistory(msgObj);
+        renderMessage('Ty', text, 'self');
+        broadcast(msgObj); 
+        document.getElementById('chat-input').value = '';
+    }
+
+    // --- WEBRTC CORE ---
+    function createPeerConnection(guestId = null) {
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
         pc.oniceconnectionstatechange = () => {
-            if (pc.iceConnectionState === 'connected') {
-                hideSetup();
-                addMessage('System', 'P2P Spojení navázáno!', 'system');
+            logDebug(`[${guestId || 'Host'}] WebRTC ICE: ${pc.iceConnectionState}`, 'webrtc');
+            if (pc.iceConnectionState === 'disconnected') {
+                peers = peers.filter(p => p.guestId !== guestId);
+                updateDebugStats('peers', peers.length);
             }
         };
+        return pc;
     }
 
-    function setupChannel(channel) {
+    function bindDataChannel(channel, guestId = null) {
         channel.onopen = () => {
+            channel.guestId = guestId;
             peers.push(channel);
-            // Představení sítě (pošli své jméno)
-            channel.send(JSON.stringify({ type: 'join', name: myName }));
+            updateDebugStats('peers', peers.length);
+            document.getElementById('ui-user-count').innerText = peers.length + 1;
+            
+            logDebug(`P2P Kanál otevřen!`, 'success');
+            
+            // Pokud jsem Host, pošlu nováčkovi okamžitě historii chatu
+            if(isHost) {
+                logDebug(`Synchronizuji historii (${chatHistory.length} zpráv) s novým klientem...`, 'info');
+                channel.send(JSON.stringify({ type: 'sync', history: chatHistory }));
+            }
         };
         
         channel.onmessage = (e) => {
             const data = JSON.parse(e.data);
-            if (data.type === 'join') {
-                activeUsers.add(data.name);
-                updateUsersList();
-                addMessage('System', `${data.name} se připojil.`, 'system');
+            
+            if (data.type === 'sync' && !isHost) {
+                logDebug(`Přijata synchronizace historie od Hosta.`, 'success');
+                data.history.forEach(msg => {
+                    if(saveMessageToHistory(msg)) {
+                        renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other');
+                    }
+                });
             } else if (data.type === 'msg') {
-                addMessage(data.author, data.text, 'other');
-                // Pokud jsem host, přepošlu zprávu ostatním připojeným (Mesh Relay)
-                if (isHost) broadcast(data, channel);
+                if(saveMessageToHistory(data)) {
+                    renderMessage(data.author, data.text, 'other');
+                    if (isHost) broadcast(data, channel); // Mesh Relay
+                }
             }
         };
     }
 
     function broadcast(data, excludeChannel = null) {
         peers.forEach(ch => {
-            if (ch !== excludeChannel && ch.readyState === 'open') {
-                ch.send(JSON.stringify(data));
-            }
+            if (ch !== excludeChannel && ch.readyState === 'open') ch.send(JSON.stringify(data));
         });
     }
 
-    function sendMsg() {
-        const input = document.getElementById('chat-input');
-        const text = input.value.trim();
-        if (!text) return;
+    // --- AUTOMATICKÁ LOGIKA MÍSTNOSTI ---
+    async function autoJoin() {
+        myName = document.getElementById('username').value.trim() || 'Anonym';
+        logDebug(`Startuji autodetekci sítě. Zjišťuji, zda žije Host...`, 'info');
+        loadHistory();
         
-        const data = { type: 'msg', author: myName, text: text };
-        broadcast(data); // Pošle všem přes WebRTC
-        addMessage('Ty', text, 'self'); // Zobrazí u mě
+        const hostAlive = await readDns('host-alive');
         
-        input.value = '';
+        // Záznam platí, pokud existuje a je mladší než 2 minuty (120 000 ms)
+        if (hostAlive && hostAlive.timestamp && (Date.now() - hostAlive.timestamp < 120000)) {
+            logDebug(`✅ Nalezen aktivní Host. Připojuji se jako GUEST [ID: ${myId}].`, 'success');
+            becomeGuest();
+        } else {
+            logDebug(`❌ Žádný aktivní Host nenalezen. Vytvářím síť jako HOST.`, 'webrtc');
+            becomeHost();
+        }
     }
 
-    function handleEnter(e) {
-        if (e.key === 'Enter') sendMsg();
-    }
+    // --- HOST ---
+    let polledGuests = new Set();
 
-    // --- ZALOŽENÍ A PŘIPOJENÍ (SIGNALIZACE) ---
-
-    async function startHost() {
-        myName = document.getElementById('username').value.trim() || "Zakladatel";
+    async function becomeHost() {
         isHost = true;
-        initWebRTC();
+        hideSetup();
+        renderMessage('System', 'Jsi Zakladatel sítě. Čekám na připojení dalších klientů...', 'system');
         
-        const channel = pc.createDataChannel('chat');
-        setupChannel(channel);
+        // Host Heartbeat - každých 60 vteřin ohlásí, že žije
+        await writeDns('host-alive', { timestamp: Date.now() });
+        setInterval(() => writeDns('host-alive', { timestamp: Date.now() }), 60000);
 
-        await pc.setLocalDescription(await pc.createOffer());
-        
-        pc.onicegatheringstatechange = async () => {
-            if (pc.iceGatheringState === 'complete') {
-                await writeDns('offer', pc.localDescription, 'host-log');
-                document.getElementById('btn-check-guest').style.display = 'block';
-                document.getElementById('host-log').innerText += "\nNyní ať se kamarád připojí. Pak klikni na tlačítko 3.";
+        // Host naslouchá frontě čekajících Guestů
+        setInterval(async () => {
+            const queue = await readDns('queue');
+            if (queue && queue.guestId && queue.guestId !== 'IDLE' && !polledGuests.has(queue.guestId)) {
+                logDebug(`Nový Guest ve frontě! [ID: ${queue.guestId}]`, 'webrtc');
+                polledGuests.add(queue.guestId);
+                acceptGuest(queue.guestId);
             }
-        };
+        }, 5000); // Polling každých 5s
     }
 
-    async function startGuest() {
-        myName = document.getElementById('username').value.trim() || "Host_" + Math.floor(Math.random()*100);
-        initWebRTC();
-        document.getElementById('guest-log').innerText = "Hledám místnost v DNS...";
+    async function acceptGuest(guestId) {
+        const pc = createPeerConnection(guestId);
+        bindDataChannel(pc.createDataChannel('chat'), guestId);
 
-        const offer = await readDns('offer');
-        if(!offer) return document.getElementById('guest-log').innerText = "❌ Místnost nenalezena!";
-        
-        document.getElementById('guest-log').innerText = "Místnost nalezena, generuji odpověď...";
+        const offer = await readDns(`offer-${guestId}`);
+        if (!offer) {
+            logDebug(`Chyba: Offer pro ${guestId} nenalezen.`, 'error');
+            return;
+        }
+
+        logDebug(`Zpracovávám Offer od ${guestId}, generuji Answer...`, 'webrtc');
         await pc.setRemoteDescription(offer);
         await pc.setLocalDescription(await pc.createAnswer());
 
         pc.onicegatheringstatechange = async () => {
             if (pc.iceGatheringState === 'complete') {
-                await writeDns('answer', pc.localDescription, 'guest-log');
-                document.getElementById('guest-log').innerText += "\nOdpověď odeslána. Čekám na schválení zakladatelem...";
+                await writeDns(`answer-${guestId}`, pc.localDescription);
+                await writeDns('queue', { guestId: 'IDLE' }); // Uvolnění fronty pro další
+                logDebug(`Answer pro ${guestId} odeslán. Čekám na spojení.`, 'success');
             }
         };
     }
 
-    async function checkGuestAnswer() {
-        document.getElementById('host-log').innerText = "Hledám odpověď v DNS...";
-        const answer = await readDns('answer');
-        if(!answer) return document.getElementById('host-log').innerText = "❌ Zatím žádná odpověď.";
+    // --- GUEST ---
+    async function becomeGuest() {
+        const pc = createPeerConnection(myId);
+        pc.ondatachannel = (e) => bindDataChannel(e.channel, 'Host');
+
+        logDebug("Generuji SDP Offer...", "webrtc");
+        await pc.setLocalDescription(await pc.createOffer());
         
-        await pc.setRemoteDescription(answer);
-        document.getElementById('host-log').innerText = "✅ Odpověď přijata! Sestavuji P2P spojení...";
+        pc.onicegatheringstatechange = async () => {
+            if (pc.iceGatheringState === 'complete') {
+                logDebug(`Zapisuji Offer do DNS a stoupám si do fronty...`, 'info');
+                await writeDns(`offer-${myId}`, pc.localDescription);
+                await writeDns('queue', { guestId: myId });
+
+                // Guest nyní čeká, až se mu objeví Answer
+                logDebug("⏳ Vyčkávám, než si mě Host z fronty vyzvedne a pošle Answer...", "info");
+                const interval = setInterval(async () => {
+                    const answer = await readDns(`answer-${myId}`);
+                    if (answer) {
+                        clearInterval(interval);
+                        logDebug(`✅ Answer přijat! Buduji linku na Hosta.`, 'success');
+                        await pc.setRemoteDescription(answer);
+                        hideSetup();
+                    }
+                }, 5000);
+            }
+        };
     }
 </script>
-
 </body>
 </html>
