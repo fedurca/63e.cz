@@ -3,22 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>P2P DNS Chat Pro</title>
+    <title>Full Mesh P2P Chat</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
         body, html { height: 100%; background-color: var(--bg-color); overflow: hidden; }
-        #app { display: flex; flex-direction: column; height: 100vh; max-width: 900px; margin: 0 auto; background: var(--chat-bg); box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
+        #app { display: flex; flex-direction: column; height: 100vh; max-width: 1200px; margin: 0 auto; background: var(--chat-bg); box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
 
         header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; }
         .status-dot.online { background: #2ed573; }
-        .status-dot.host { background: #feca57; }
+        .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
         
         .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
-        @media (min-width: 600px) { .main-content { flex-direction: row; } }
+        @media (min-width: 800px) { .main-content { flex-direction: row; } }
 
+        /* CHAT */
         #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; }
         #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
         .msg { max-width: 80%; padding: 10px 15px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
@@ -30,15 +31,20 @@
         #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
         #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; }
 
-        #debug-panel { flex: 1; background: #1e1e1e; color: #00ff00; font-family: monospace; display: flex; flex-direction: column; max-height: 40vh; }
-        @media (min-width: 600px) { #debug-panel { max-height: 100%; max-width: 350px; } }
+        /* DEBUG & TOPOLOGY */
+        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 50vh; }
+        @media (min-width: 800px) { #debug-panel { width: 400px; height: 100%; } }
         
         .debug-header { background: #333; padding: 10px; font-size: 0.85rem; color: #fff; border-bottom: 1px solid #444; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; font-size: 0.8rem; color: #aaa; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
-        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.8rem; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; }
+        #topo-container { height: 200px; background: #0a0a0a; border-bottom: 1px solid #444; display: flex; justify-content: center; align-items: center; position: relative; }
+        #topo-canvas { width: 100%; height: 100%; }
+        .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
+
+        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-signal { color: #00d2d3; }
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -52,7 +58,7 @@
     <header>
         <div>
             <span id="status-dot" class="status-dot"></span>
-            <h1 style="display:inline;">P2P Chat</h1>
+            <h1 style="display:inline;">Full Mesh P2P</h1>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -67,10 +73,13 @@
         </div>
 
         <div id="debug-panel">
+            <div id="topo-container">
+                <div class="topo-label">SÍŤOVÁ TOPOLOGIE (P2P LINKS)</div>
+                <canvas id="topo-canvas"></canvas>
+            </div>
             <div class="debug-header">
-                <div>🛠 DIAGNOSTIKA & STAV</div>
                 <div class="debug-stats">
-                    <div>Místnost: <span id="dbg-room">Společná</span></div>
+                    <div>Moje ID: <span id="dbg-id"></span></div>
                     <div>Stav DNS: <span id="dbg-dns">IDLE</span></div>
                     <div>Peers (Linky): <span id="dbg-peers">0</span></div>
                     <div>Zpráv v paměti: <span id="dbg-msg-count">0</span></div>
@@ -82,31 +91,35 @@
 
     <div id="setup-screen">
         <div class="setup-box">
-            <h2>Vstup do chatu</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Aplikace automaticky zjistí, zda místnost existuje, nebo ji založí.</p>
+            <h2>Vstup do sítě</h2>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Systém automaticky vyhledá aktivní uzly nebo zahájí novou topologii.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
-            <button onclick="autoJoin()">Vstoupit do místnosti</button>
+            <button onclick="autoJoin()">Iniciovat připojení</button>
         </div>
     </div>
 </div>
 
 <script>
-    // --- KONFIGURACE ---
+    // --- KONFIGURACE (Uprav URL na svůj Worker!) ---
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev"; 
     const MAX_HISTORY = 250;
     
+    let myId = Math.random().toString(36).substr(2, 6);
     let myName = "";
-    let myId = Math.random().toString(36).substr(2, 6); // Unikátní ID klienta
-    let isHost = false;
-    let peers = []; 
-    let activeUsers = new Set(); 
+    let isDnsHost = false;
+    let connections = {}; // RTCPeerConnection instance (ID -> PC)
+    let channels = {}; // RTCDataChannel instance (ID -> Channel)
+    let peerNames = {}; // ID -> Jméno
     let chatHistory = [];
+    let networkGraph = {}; // Pro vizualizaci topologie
+
+    document.getElementById('dbg-id').innerText = myId;
 
     // --- DEBUG & UI ---
     function logDebug(msg, type = 'info') {
         const logWindow = document.getElementById('debug-log');
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-        let colorClass = type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : type === 'webrtc' ? 'log-webrtc' : 'log-info';
+        const colorClass = `log-${type}`;
         logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="${colorClass}">${msg}</span></div>`;
         logWindow.scrollTop = logWindow.scrollHeight;
     }
@@ -117,11 +130,21 @@
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('chat-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
-        document.getElementById('status-dot').className = `status-dot ${isHost ? 'host' : 'online'}`;
-        document.getElementById('ui-role').innerText = isHost ? 'Host' : 'Guest';
+        updateRoleUI();
     }
 
-    // --- KOMPRESE & DNS ---
+    function updateRoleUI() {
+        document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
+        document.getElementById('ui-role').innerText = isDnsHost ? 'DNS Host' : 'P2P Node';
+    }
+
+    function updateUserCount() {
+        const count = Object.keys(channels).length + 1;
+        document.getElementById('ui-user-count').innerText = count;
+        updateDebugStats('peers', Object.keys(channels).length);
+    }
+
+    // --- KOMPRESE A DNS API ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -133,8 +156,8 @@
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
-            if((await res.json()).success) { updateDebugStats('dns', 'ZAPÁNO OK'); return true; }
-        } catch (e) { logDebug(`Chyba zápisu: ${e.message}`, 'error'); }
+            if((await res.json()).success) { updateDebugStats('dns', 'ZÁPIS OK'); return true; }
+        } catch (e) { logDebug(`Chyba zápisu DNS: ${e.message}`, 'error'); }
         return false;
     }
 
@@ -149,21 +172,18 @@
         } catch(e) { return null; }
     }
 
-    // --- LOCAL STORAGE & HISTORIE ---
+    // --- LOCAL STORAGE CHAT ---
     function loadHistory() {
         const saved = localStorage.getItem('chat_history');
         if(saved) {
             chatHistory = JSON.parse(saved);
             chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', false));
-            logDebug(`Načteno ${chatHistory.length} zpráv z LocalStorage.`, 'success');
             updateDebugStats('msg-count', chatHistory.length);
         }
     }
 
-    function saveMessageToHistory(msgObj) {
-        // Kontrola duplicit (při syncu)
+    function saveMessage(msgObj) {
         if(chatHistory.find(m => m.id === msgObj.id)) return false; 
-        
         chatHistory.push(msgObj);
         if(chatHistory.length > MAX_HISTORY) chatHistory.shift();
         localStorage.setItem('chat_history', JSON.stringify(chatHistory));
@@ -183,159 +203,286 @@
     function sendMsg() {
         const text = document.getElementById('chat-input').value.trim();
         if (!text) return;
-        
-        const msgObj = { id: Date.now() + Math.random().toString(16), type: 'msg', author: myName, text: text, time: Date.now() };
-        saveMessageToHistory(msgObj);
+        const msgObj = { id: Date.now() + myId, type: 'msg', author: myName, text: text };
+        saveMessage(msgObj);
         renderMessage('Ty', text, 'self');
         broadcast(msgObj); 
         document.getElementById('chat-input').value = '';
     }
 
-    // --- WEBRTC CORE ---
-    function createPeerConnection(guestId = null) {
-        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-        pc.oniceconnectionstatechange = () => {
-            logDebug(`[${guestId || 'Host'}] WebRTC ICE: ${pc.iceConnectionState}`, 'webrtc');
-            if (pc.iceConnectionState === 'disconnected') {
-                peers = peers.filter(p => p.guestId !== guestId);
-                updateDebugStats('peers', peers.length);
-            }
-        };
-        return pc;
+    // --- FULL MESH LOGIKA A IN-BAND SIGNALIZACE ---
+    
+    // Broadcastí zprávu VŠEM aktuálně připojeným
+    function broadcast(data) {
+        Object.values(channels).forEach(ch => { if (ch.readyState === 'open') ch.send(JSON.stringify(data)); });
     }
 
-    function bindDataChannel(channel, guestId = null) {
+    // Routování in-band signálu (přes stávající síť dohledá cíl)
+    function routeSignal(targetId, payload) {
+        if (channels[targetId] && channels[targetId].readyState === 'open') {
+            // Přímá cesta existuje, použijeme ji
+            channels[targetId].send(JSON.stringify(payload));
+        } else {
+            // Cíl nemáme napřímo, poprosíme KOHOKOLIV v síti o forward (flooding)
+            logDebug(`Routuji signál pro ${targetId} přes síť...`, 'signal');
+            broadcast(payload);
+        }
+    }
+
+    async function createP2PNode(targetId, isInitiator) {
+        if (connections[targetId]) return; // Už se spojujeme/jsme spojeni
+        logDebug(`Zakládám P2P Node pro ${targetId} (Initiator: ${isInitiator})`, 'webrtc');
+        
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+        connections[targetId] = pc;
+
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                logDebug(`P2P Spojení s ${targetId} se rozpadlo.`, 'error');
+                delete connections[targetId];
+                delete channels[targetId];
+                delete peerNames[targetId];
+                updateUserCount();
+                checkHostSuccession(); // Kontrola, jestli nepadl DNS Host a my to musíme převzít
+            }
+        };
+
+        if (isInitiator) {
+            const ch = pc.createDataChannel('chat');
+            bindDataChannel(ch, targetId);
+            
+            await pc.setLocalDescription(await pc.createOffer());
+            pc.onicegatheringstatechange = () => {
+                if (pc.iceGatheringState === 'complete') {
+                    // Místo DNS posíláme Offer skrz už fungující WebRTC Mesh síť!
+                    routeSignal(targetId, { type: 'signal', target: targetId, source: myId, sdp: pc.localDescription });
+                }
+            };
+        } else {
+            pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
+        }
+    }
+
+    function bindDataChannel(channel, targetId) {
         channel.onopen = () => {
-            channel.guestId = guestId;
-            peers.push(channel);
-            updateDebugStats('peers', peers.length);
-            document.getElementById('ui-user-count').innerText = peers.length + 1;
+            channels[targetId] = channel;
+            updateUserCount();
+            logDebug(`Přímá P2P Linka s ${targetId} otevřena!`, 'success');
             
-            logDebug(`P2P Kanál otevřen!`, 'success');
+            channel.send(JSON.stringify({ type: 'hello', name: myName, id: myId }));
             
-            // Pokud jsem Host, pošlu nováčkovi okamžitě historii chatu
-            if(isHost) {
-                logDebug(`Synchronizuji historii (${chatHistory.length} zpráv) s novým klientem...`, 'info');
+            // Pokud jsem byl zrovna DNS Host a pustil jsem ho dovnitř, pošlu mu seznam ostatních k napojení
+            if (isDnsHost) {
+                const others = Object.keys(channels).filter(id => id !== targetId);
+                if (others.length > 0) {
+                    logDebug(`Posílám nováčkovi ${targetId} seznam uzlů pro Full Mesh dopojení...`, 'info');
+                    channel.send(JSON.stringify({ type: 'mesh-connect', peers: others }));
+                }
+                // Plus synchronizace historie
                 channel.send(JSON.stringify({ type: 'sync', history: chatHistory }));
             }
         };
-        
-        channel.onmessage = (e) => {
+
+        channel.onmessage = async (e) => {
             const data = JSON.parse(e.data);
             
-            if (data.type === 'sync' && !isHost) {
-                logDebug(`Přijata synchronizace historie od Hosta.`, 'success');
-                data.history.forEach(msg => {
-                    if(saveMessageToHistory(msg)) {
-                        renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other');
-                    }
-                });
+            if (data.type === 'hello') {
+                peerNames[data.id] = data.name;
+                renderMessage('System', `${data.name} je připojen k tvému uzlu.`, 'system');
+            
             } else if (data.type === 'msg') {
-                if(saveMessageToHistory(data)) {
-                    renderMessage(data.author, data.text, 'other');
-                    if (isHost) broadcast(data, channel); // Mesh Relay
+                if(saveMessage(data)) renderMessage(data.author, data.text, 'other'); // Brání nekonečné smyčce díky ID kontrole
+            
+            } else if (data.type === 'sync') {
+                logDebug(`Historie synchronizována (${data.history.length} zpráv)`, 'success');
+                data.history.forEach(msg => { if(saveMessage(msg)) renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other'); });
+            
+            } else if (data.type === 'mesh-connect') {
+                // Přišel mi seznam lidí, co už tu jsou. Začnu je obvolávat (vytvářím Full Mesh)
+                logDebug(`Iniciuji Full Mesh spojení na: ${data.peers.join(', ')}`, 'info');
+                data.peers.forEach(peerId => createP2PNode(peerId, true));
+            
+            } else if (data.type === 'signal') {
+                // In-Band Signalizace pro propojování MESH sítě
+                if (data.target === myId) {
+                    logDebug(`Přijat in-band signál od ${data.source}`, 'signal');
+                    if (data.sdp.type === 'offer') {
+                        await createP2PNode(data.source, false);
+                        await connections[data.source].setRemoteDescription(data.sdp);
+                        await connections[data.source].setLocalDescription(await connections[data.source].createAnswer());
+                        
+                        connections[data.source].onicegatheringstatechange = () => {
+                            if (connections[data.source].iceGatheringState === 'complete') {
+                                routeSignal(data.source, { type: 'signal', target: data.source, source: myId, sdp: connections[data.source].localDescription });
+                            }
+                        };
+                    } else if (data.sdp.type === 'answer') {
+                        await connections[data.source].setRemoteDescription(data.sdp);
+                    }
+                } else {
+                    // Signál není pro mě, přepošlu ho dál (Mesh Relay)
+                    if (channels[data.target] && channels[data.target].readyState === 'open') {
+                        channels[data.target].send(e.data);
+                    } else {
+                        // Forward všem ostatním (mimo odesílatele)
+                        Object.values(channels).forEach(ch => { if (ch.readyState === 'open' && ch !== channel) ch.send(e.data); });
+                    }
                 }
+            } else if (data.type === 'topo') {
+                networkGraph[data.source] = data.connections;
             }
         };
     }
 
-    function broadcast(data, excludeChannel = null) {
-        peers.forEach(ch => {
-            if (ch !== excludeChannel && ch.readyState === 'open') ch.send(JSON.stringify(data));
-        });
+    // --- NÁSLEDNICTVÍ (Self-Healing) ---
+    function checkHostSuccession() {
+        const activeIds = [myId, ...Object.keys(channels)].sort();
+        if (activeIds[0] === myId && !isDnsHost) {
+            logDebug("👑 Původní Host zemřel. Já mám nejnižší ID, přebírám roli DNS Hostitele!", "error");
+            startDnsHostLoop();
+        }
     }
 
-    // --- AUTOMATICKÁ LOGIKA MÍSTNOSTI ---
+    // --- DNS AUTO-JOIN LOGIKA ---
     async function autoJoin() {
-        myName = document.getElementById('username').value.trim() || 'Anonym';
-        logDebug(`Startuji autodetekci sítě. Zjišťuji, zda žije Host...`, 'info');
+        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
+        logDebug(`Startuji, mé ID: ${myId}. Hledám krále sítě...`, 'info');
         loadHistory();
         
         const hostAlive = await readDns('host-alive');
         
-        // Záznam platí, pokud existuje a je mladší než 2 minuty (120 000 ms)
-        if (hostAlive && hostAlive.timestamp && (Date.now() - hostAlive.timestamp < 120000)) {
-            logDebug(`✅ Nalezen aktivní Host. Připojuji se jako GUEST [ID: ${myId}].`, 'success');
-            becomeGuest();
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
+            logDebug(`Nalezen aktivní uzel. Jdu se k němu připojit přes DNS Queue.`, 'success');
+            joinViaDns();
         } else {
-            logDebug(`❌ Žádný aktivní Host nenalezen. Vytvářím síť jako HOST.`, 'webrtc');
-            becomeHost();
+            logDebug(`Síť je prázdná. Stávám se zakladatelem (DNS Hostem).`, 'webrtc');
+            startDnsHostLoop();
+            hideSetup();
         }
     }
 
-    // --- HOST ---
-    let polledGuests = new Set();
-
-    async function becomeHost() {
-        isHost = true;
-        hideSetup();
-        renderMessage('System', 'Jsi Zakladatel sítě. Čekám na připojení dalších klientů...', 'system');
+    let dnsInterval;
+    async function startDnsHostLoop() {
+        isDnsHost = true;
+        updateRoleUI();
         
-        // Host Heartbeat - každých 60 vteřin ohlásí, že žije
         await writeDns('host-alive', { timestamp: Date.now() });
         setInterval(() => writeDns('host-alive', { timestamp: Date.now() }), 60000);
 
-        // Host naslouchá frontě čekajících Guestů
-        setInterval(async () => {
-            const queue = await readDns('queue');
-            if (queue && queue.guestId && queue.guestId !== 'IDLE' && !polledGuests.has(queue.guestId)) {
-                logDebug(`Nový Guest ve frontě! [ID: ${queue.guestId}]`, 'webrtc');
-                polledGuests.add(queue.guestId);
-                acceptGuest(queue.guestId);
-            }
-        }, 5000); // Polling každých 5s
-    }
-
-    async function acceptGuest(guestId) {
-        const pc = createPeerConnection(guestId);
-        bindDataChannel(pc.createDataChannel('chat'), guestId);
-
-        const offer = await readDns(`offer-${guestId}`);
-        if (!offer) {
-            logDebug(`Chyba: Offer pro ${guestId} nenalezen.`, 'error');
-            return;
-        }
-
-        logDebug(`Zpracovávám Offer od ${guestId}, generuji Answer...`, 'webrtc');
-        await pc.setRemoteDescription(offer);
-        await pc.setLocalDescription(await pc.createAnswer());
-
-        pc.onicegatheringstatechange = async () => {
-            if (pc.iceGatheringState === 'complete') {
-                await writeDns(`answer-${guestId}`, pc.localDescription);
-                await writeDns('queue', { guestId: 'IDLE' }); // Uvolnění fronty pro další
-                logDebug(`Answer pro ${guestId} odeslán. Čekám na spojení.`, 'success');
-            }
-        };
-    }
-
-    // --- GUEST ---
-    async function becomeGuest() {
-        const pc = createPeerConnection(myId);
-        pc.ondatachannel = (e) => bindDataChannel(e.channel, 'Host');
-
-        logDebug("Generuji SDP Offer...", "webrtc");
-        await pc.setLocalDescription(await pc.createOffer());
+        if (dnsInterval) clearInterval(dnsInterval);
         
-        pc.onicegatheringstatechange = async () => {
-            if (pc.iceGatheringState === 'complete') {
-                logDebug(`Zapisuji Offer do DNS a stoupám si do fronty...`, 'info');
-                await writeDns(`offer-${myId}`, pc.localDescription);
+        let pollingGuests = new Set();
+        dnsInterval = setInterval(async () => {
+            const queue = await readDns('queue');
+            if (queue && queue.guestId && queue.guestId !== 'IDLE' && !pollingGuests.has(queue.guestId)) {
+                logDebug(`Našel jsem nováčka ve frontě [ID: ${queue.guestId}]!`, 'webrtc');
+                pollingGuests.add(queue.guestId);
+                
+                await createP2PNode(queue.guestId, false);
+                const offer = await readDns(`offer-${queue.guestId}`);
+                if(offer) {
+                    await connections[queue.guestId].setRemoteDescription(offer);
+                    await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
+                    connections[queue.guestId].onicegatheringstatechange = async () => {
+                        if (connections[queue.guestId].iceGatheringState === 'complete') {
+                            await writeDns(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
+                            await writeDns('queue', { guestId: 'IDLE' }); // Uvolnění fronty
+                        }
+                    };
+                }
+            }
+        }, 5000);
+    }
+
+    async function joinViaDns() {
+        await createP2PNode('host', true); // 'host' je dočasný alias pro prvotní spojení
+        
+        connections['host'].onicegatheringstatechange = async () => {
+            if (connections['host'].iceGatheringState === 'complete') {
+                logDebug(`Zapisuji Offer do DNS a stoupám do fronty...`, 'info');
+                await writeDns(`offer-${myId}`, connections['host'].localDescription);
                 await writeDns('queue', { guestId: myId });
 
-                // Guest nyní čeká, až se mu objeví Answer
-                logDebug("⏳ Vyčkávám, než si mě Host z fronty vyzvedne a pošle Answer...", "info");
-                const interval = setInterval(async () => {
+                const iv = setInterval(async () => {
                     const answer = await readDns(`answer-${myId}`);
                     if (answer) {
-                        clearInterval(interval);
-                        logDebug(`✅ Answer přijat! Buduji linku na Hosta.`, 'success');
-                        await pc.setRemoteDescription(answer);
+                        clearInterval(iv);
+                        logDebug(`Answer z DNS přijat! Buduji P2P linku...`, 'success');
+                        await connections['host'].setRemoteDescription(answer);
                         hideSetup();
                     }
                 }, 5000);
             }
         };
+    }
+
+    // --- VIZUALIZACE TOPOLOGIE (Canvas) ---
+    setInterval(() => {
+        networkGraph[myId] = Object.keys(channels);
+        broadcast({ type: 'topo', source: myId, connections: Object.keys(channels) });
+        drawTopology();
+    }, 2000);
+
+    function drawTopology() {
+        const canvas = document.getElementById('topo-canvas');
+        if(!canvas) return;
+        // Zajištění správného rozlišení canvasu vůči CSS
+        canvas.width = canvas.parentElement.clientWidth;
+        canvas.height = canvas.parentElement.clientHeight;
+        
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        let nodes = new Set([myId]);
+        Object.keys(networkGraph).forEach(k => { nodes.add(k); networkGraph[k].forEach(p => nodes.add(p)); });
+        const nodesArr = Array.from(nodes);
+        
+        const radius = Math.min(canvas.width, canvas.height) / 3;
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2;
+        const pos = {};
+        
+        // Výpočet pozic do kruhu
+        nodesArr.forEach((n, i) => {
+            const angle = (i / nodesArr.length) * 2 * Math.PI - Math.PI / 2;
+            pos[n] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
+        });
+
+        // Kreslení linek (spojení)
+        ctx.lineWidth = 2;
+        nodesArr.forEach(n => {
+            const connected = networkGraph[n] || [];
+            connected.forEach(target => {
+                if (pos[target]) {
+                    ctx.beginPath();
+                    ctx.moveTo(pos[n].x, pos[n].y);
+                    ctx.lineTo(pos[target].x, pos[target].y);
+                    // Zvýraznění spojení, která jdou přímo od nás
+                    ctx.strokeStyle = (n === myId || target === myId) ? '#2ed573' : '#444';
+                    ctx.stroke();
+                }
+            });
+        });
+
+        // Kreslení uzlů (kolečko + text)
+        nodesArr.forEach(n => {
+            ctx.beginPath();
+            ctx.arc(pos[n].x, pos[n].y, 18, 0, 2 * Math.PI);
+            
+            // Logika vybarvení: Král (abecedně první z aktivních) je zlatý
+            const isKing = (n === [...nodesArr].sort()[0]);
+            ctx.fillStyle = (n === myId) ? '#0078FF' : (isKing ? '#feca57' : '#333');
+            
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(peerNames[n] || n.substr(0,4), pos[n].x, pos[n].y + 4);
+        });
     }
 </script>
 </body>
