@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v1.4.2</title>
+    <title>E2E Tree P2P Chat v1.4.3</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -69,7 +69,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v1.4.2 (Split-Brain Fix)</span>
+            <span class="version-badge">v1.4.3 (Robustní NAT)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -109,7 +109,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.2: Oprava Cloudflare Chunking parsování.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.3: Ochrana proti zbrklému převzetí sítě a NAT podpora.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
         </div>
@@ -121,9 +121,14 @@
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
+    // Extrémně posílená WebRTC konfigurace pro mobilní sítě
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' },
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
@@ -143,7 +148,6 @@
 
     document.getElementById('dbg-id').innerText = myId;
 
-    // --- POMOCNÉ FUNKCE ---
     function buf2b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
     function b642buf(b64) {
         const bin = atob(b64); const ui8 = new Uint8Array(bin.length);
@@ -151,7 +155,6 @@
         return ui8.buffer;
     }
 
-    // --- DEBUG & UI ---
     function logDebug(msg, type = 'info') {
         const logWindow = document.getElementById('debug-log');
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
@@ -169,7 +172,6 @@
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
     }
 
-    // --- KRYPTOGRAFIE (E2EE) ---
     async function initCrypto() {
         logDebug("Generuji ECDH (P-256) asymetrický pár klíčů...", "e2e");
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
@@ -204,7 +206,6 @@
         } catch(e) { return null; }
     }
 
-    // --- DNS SIGNALIZACE ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -218,17 +219,9 @@
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
             const out = await res.json();
-            if(out.success) { 
-                updateDebugStats('dns', 'OK'); 
-                return true; 
-            } else {
-                logDebug(`[DNS ERROR] Worker odmítl zápis! Payload moc velký? Detail: ${JSON.stringify(out)}`, 'error');
-                return false;
-            }
-        } catch (e) { 
-            logDebug(`[DNS ERROR] Fetch fail: ${e.message}`, 'error'); 
-            return false; 
-        }
+            if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
+            else return false;
+        } catch (e) { return false; }
     }
 
     async function readDns(subdomena) {
@@ -236,28 +229,20 @@
         try {
             const cacheBuster = Date.now() + Math.floor(Math.random() * 1000);
             const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT&_cb=${cacheBuster}`, { 
-                headers: { 'Accept': 'application/dns-json', 'Cache-Control': 'no-cache' },
-                cache: 'no-store' 
+                headers: { 'Accept': 'application/dns-json', 'Cache-Control': 'no-cache' }, cache: 'no-store' 
             });
             const json = await res.json();
             if(!json.Answer) return null;
             
             updateDebugStats('dns', 'OK');
-            
-            // OPRAVA 1.4.2: Odstranění všech mezer, nového řádkování a uvozovek z chunkovaných záznamů!
             const rawData = json.Answer[0].data;
             const cleanB64 = rawData.replace(/["\s\n\r]/g, ''); 
-            
             const data = dekomprimovat(cleanB64);
-            if(subdomena === 'queue' && data.guestId) logDebug(`[DNS IN] Fronta obsahuje: ${data.guestId}`, 'dns');
+            if(subdomena === 'queue' && data.guestId && data.guestId !== 'IDLE') logDebug(`[DNS IN] Fronta obsahuje: ${data.guestId}`, 'dns');
             return data;
-        } catch(e) { 
-            logDebug(`[DNS PARSE ERROR] Selhalo čtení DNS (pravděpodobně rozbitý Base64): ${e.message}`, 'error');
-            return null; 
-        }
+        } catch(e) { return null; }
     }
 
-    // --- CHAT & HISTORIE ---
     function loadHistory() {
         const saved = localStorage.getItem('chat_history');
         if(saved) {
@@ -289,7 +274,6 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- ROUTING A ZPRACOVÁNÍ ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -385,7 +369,7 @@
 
         pc.oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                logDebug(`Spojení s ${targetId} padlo.`, 'error');
+                logDebug(`[P2P] Spojení s ${targetId} selhalo nebo padlo.`, 'error');
                 delete connections[targetId]; delete channels[targetId];
                 if(knownNodes[targetId]) delete knownNodes[targetId].ping;
                 updateDebugStats('peers', Object.keys(channels).length);
@@ -402,13 +386,12 @@
                 if (pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
-                    // Atomický zápis: Nejprve Offer, pokud projde, tak Queue
                     logDebug(`Iniciuji zápis SDP klíčů do DNS...`, 'info');
                     const ok = await writeDns(`offer-${myId}`, pc.localDescription);
                     if (ok) {
                         await writeDns('queue', { guestId: myId });
                     } else {
-                        logDebug(`Zápis Offeru selhal. Fronta nebyla zapsána, aby nedošlo k záseku.`, 'error');
+                        logDebug(`Zápis Offeru selhal. Fronta nebyla zapsána.`, 'error');
                     }
                 }
             };
@@ -455,7 +438,6 @@
         };
     }
 
-    // --- ZDRAVÍ SÍTĚ RENDERER ---
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -482,23 +464,32 @@
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY ---
-    function checkIsolation() {
+    // --- RECOVERY V1.4.3: OCHRANA PROTI ZBRKLÉ REVOLUCI ---
+    async function checkIsolation() {
         if (Object.keys(channels).length === 0) {
-            logDebug("Ztratil jsem spojení! Inicializuji re-election...", "error");
+            logDebug("Spojení selhalo. Zjišťuji důvod...", "error");
             document.getElementById('ui-role').innerText = 'Izolován';
             
+            // KROK 1: Místo okamžité revoluce zkontrolujeme, jestli Hub náhodou nežije
+            const hostAlive = await readDns('host-alive');
+            if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
+                logDebug("Hub v DNS stále žije! Chyba byla v mém NAT/WebRTC spojení. Zkusím se připojit znovu...", "info");
+                setTimeout(() => joinViaDns(), 5000);
+                return; // Přerušíme proces uzurpace
+            }
+
+            // KROK 2: Pokud DNS mlčí, Hub je fakt mrtvý. Jdeme do voleb.
             const now = Date.now();
             let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 20000);
             if (!aliveIds.includes(myId)) aliveIds.push(myId);
             aliveIds.sort();
 
             if (aliveIds[0] === myId) {
-                logDebug(`👑 Jsem nejvyšší autorita. Přebírám roli DNS Hub!`, "webrtc");
+                logDebug(`👑 Hub je mrtev, mám nejvyšší prioritu. Přebírám DNS Mastera!`, "webrtc");
                 startDnsHostLoop();
             } else {
                 const jitter = Math.floor(Math.random() * 3000) + 3000; 
-                logDebug(`Hubem by se měl stát uzel [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
+                logDebug(`Hub je mrtev. Novým by měl být [${aliveIds[0]}]. Vyčkávám ${jitter}ms a pokusím se připojit...`, "info");
                 setTimeout(() => joinViaDns(), jitter);
             }
         }
@@ -537,7 +528,7 @@
                 
                 const offer = await readDns(`offer-${queue.guestId}`);
                 if(offer) {
-                    logDebug(`[DNS] Přečten Offer od: ${queue.guestId}, generuji Answer...`, 'success');
+                    logDebug(`[DNS] Zpracovávám nováčka: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -556,8 +547,6 @@
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
                         setTimeout(sendDnsAnswer, 4000);
                     }
-                } else {
-                    logDebug(`[DNS] Ve frontě je ${queue.guestId}, ale Offer chybí. Asi problém se zápisem.`, 'error');
                 }
             }
         }, 5000);
@@ -572,7 +561,7 @@
             pokusy++;
             if (pokusy > 9) { 
                 clearInterval(iv);
-                logDebug("Master neodpovídá. Vynucuji re-election!", "error");
+                logDebug("Spojení vypršelo (Timeout).", "error");
                 delete connections['hub'];
                 checkIsolation(); 
                 return;
@@ -581,13 +570,12 @@
             const answer = await readDns(`answer-${myId}`);
             if (answer) {
                 clearInterval(iv);
-                logDebug(`[DNS] Answer nalezen, aplikuji...`, 'success');
+                logDebug(`[DNS] Answer nalezen, aplikuji do WebRTC...`, 'success');
                 await connections['hub'].setRemoteDescription(answer);
             }
         }, 5000);
     }
 
-    // --- VIZUALIZACE TOPOLOGIE ---
     setInterval(() => {
         if (isDnsHost) {
             networkGraph = { root: myId, edges: Object.keys(channels) };
