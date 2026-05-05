@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.0.5</title>
+    <title>E2E Tree P2P Chat v2.0.6</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -79,7 +79,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.5 (Loop Bomb Fix)</span>
+            <span class="version-badge">v2.0.6 (Buffer & Sync Fix)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -120,15 +120,15 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.5: Oprava kaskádových smyček WebRTC.</p>
-            <input type="text" id="username" placeholder="Tvá přezdívka">
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.6: Chunkování historie pro zamezení přetečení WebRTC.</p>
+            <!-- OKAMŽITÉ UKLÁDÁNÍ JMÉNA -->
+            <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
     </div>
 </div>
 
 <script>
-    // --- KONFIGURACE ---
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
@@ -155,7 +155,6 @@
     let chatHistory = []; 
     let myKeyPair = null; 
 
-    // Ochranné zámky a intervaly (Pojistky proti výbuchu)
     let joinInterval = null; 
     let dnsInterval = null;
     let isResetting = false;
@@ -192,7 +191,7 @@
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
     }
 
-    // --- KRYPTOGRAFIE (E2EE) ---
+    // --- KRYPTOGRAFIE ---
     async function initCrypto() {
         logDebug("Generuji ECDH (P-256) asymetrický pár klíčů...", "e2e");
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
@@ -228,7 +227,7 @@
         } catch(e) { return null; }
     }
 
-    // --- PŘÍMÉ API SPOJENÍ (Bypass DNS) ---
+    // --- API SIGNALIZACE ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -299,6 +298,7 @@
         return true;
     }
 
+    let syncTimeout = null;
     function mergeIncomingHistory(incomingArray) {
         let added = false;
         let mergedMap = new Map();
@@ -314,8 +314,13 @@
             chatHistory = Array.from(mergedMap.values()).sort((a,b) => a.time - b.time);
             if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
             localStorage.setItem('chat_history', JSON.stringify(chatHistory));
-            reRenderAllHistory();
-            renderMessage('System', 'Historie sítě byla úspěšně stažena a sjednocena.', 'system');
+            
+            // Debounce zabrání zamrznutí a problikávání UI při příchodu více dávek (chunks) za sebou
+            clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
+                reRenderAllHistory();
+                logDebug(`[SYNC] Historie stažena a sloučena.`, "success");
+            }, 500);
         }
     }
 
@@ -334,7 +339,7 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- ROUTING A ZPRACOVÁNÍ ---
+    // --- ROUTING ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -369,15 +374,26 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                logDebug(`[SYNC] Odesílám zašifrovanou historii pro nováčka (${knownNodes[msg.sender].name})...`, 'info');
-                try {
-                    const encryptedHistory = await encryptE2E(JSON.stringify(chatHistory), msg.sender);
-                    routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory });
-                } catch(e) { }
+                logDebug(`[SYNC] Odesílám historii po částech pro (${knownNodes[msg.sender].name})...`, 'info');
+                
+                // OCHRANA PROTI PŘETEČENÍ WEBRTC: Odesílání po dávkách (Chunks)
+                const batchSize = 15; 
+                let i = 0;
+                
+                const sendBatch = async () => {
+                    if (i >= chatHistory.length) return;
+                    const batch = chatHistory.slice(i, i + batchSize);
+                    try {
+                        const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
+                        routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
+                    } catch(e) {}
+                    i += batchSize;
+                    setTimeout(sendBatch, 250); // Odstup 250ms mezi výstřely
+                };
+                sendBatch();
             }
         }
         else if (msg.type === 'sync-history' && msg.target === myId) {
-            logDebug(`[SYNC] Přijata zašifrovaná historie, dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plaintextHistory) {
                 mergeIncomingHistory(JSON.parse(plaintextHistory));
@@ -436,9 +452,8 @@
         document.getElementById('chat-input').value = '';
     }
 
-    // --- ZABIJÁK KASKÁDOVÝCH SMYČEK (Cleanup Fix) ---
+    // --- WEBRTC ---
     function cleanupConnection(targetId) {
-        // ZÁSADNÍ OPRAVA: Odstranění listenerů před zavřením, aby se nespustil event.onclose a cyklický checkIsolation!
         if(channels[targetId]) { 
             channels[targetId].onclose = null; 
             channels[targetId].close(); 
@@ -459,12 +474,11 @@
                 delete knownNodes[targetId];
             }
         } else if (!isDnsHost && targetId === 'hub') {
-            if (joinInterval) clearInterval(joinInterval); // Zastavení pollingu, aby se nehromadil
+            if (joinInterval) clearInterval(joinInterval); 
             checkIsolation();
         }
     }
 
-    // --- WEBRTC ---
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
         logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
@@ -475,7 +489,7 @@
         pc.oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
                 logDebug(`[P2P] ICE Spojení s ${targetId} padlo.`, 'error');
-                if(connections[targetId]) cleanupConnection(targetId);
+                cleanupConnection(targetId);
             }
         };
 
@@ -527,7 +541,7 @@
 
         channel.onclose = () => {
             logDebug(`[P2P] Datový kanál s ${targetId} se uzavřel.`, 'error');
-            if (channels[targetId]) cleanupConnection(targetId);
+            cleanupConnection(targetId);
         };
 
         channel.onmessage = (e) => {
@@ -563,17 +577,10 @@
             const isMaster = (networkGraph.root === id);
             const lastSeenDiff = now - (node.lastSeen || now);
             
-            // Limit 45s pro spící taby v mobilech
             if (!isMe && lastSeenDiff > 45000) {
-                if (isDnsHost) {
-                    logDebug(`Odstraňuji mrtvý uzel ${node.name} (Zcela vypršel limit 45s)`, 'error');
-                    cleanupConnection(id);
-                } else if (isMaster) {
-                    logDebug(`Master neodpovídá! (Zcela vypršel limit 45s)`, 'error');
-                    cleanupConnection('hub');
-                } else if (lastSeenDiff > 60000) {
-                    delete knownNodes[id];
-                }
+                if (isDnsHost) cleanupConnection(id);
+                else if (isMaster) cleanupConnection('hub');
+                else if (lastSeenDiff > 60000) delete knownNodes[id];
             }
 
             const role = isMaster ? 'Master (Hub)' : 'Spoke';
@@ -589,7 +596,7 @@
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY (MUTEX LOCKS + DVOJITÉ OVĚŘENÍ) ---
+    // --- RECOVERY ---
     async function fullResetAndReconnect() {
         if (isResetting) return;
         isResetting = true;
@@ -599,7 +606,6 @@
         if (joinInterval) clearInterval(joinInterval);
         if (dnsInterval) clearInterval(dnsInterval);
         
-        // Zabití eventů před resetem, aby se to necyklilo
         Object.values(channels).forEach(ch => { ch.onclose = null; if(ch.readyState==='open') ch.close(); });
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
@@ -646,7 +652,6 @@
             const jitter = Math.floor(Math.random() * 3000) + 3000; 
             logDebug(`Novým Hubem bude asi [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
             
-            // ANTI-SPLIT-BRAIN CHECK: Ověří, jestli nás někdo nepředběhl
             setTimeout(async () => {
                 const checkAgain = await readSignal('host-alive');
                 if (checkAgain && (Date.now() - checkAgain.timestamp < 60000)) {
@@ -696,7 +701,6 @@
 
                 const offer = await readSignal(`offer-${queue.guestId}`);
                 if(offer) {
-                    logDebug(`[API IN] Zpracovávám nováčka: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     
@@ -744,7 +748,6 @@
             const answer = await readSignal(`answer-${myId}`);
             if (answer && connections['hub']) {
                 clearInterval(joinInterval);
-                logDebug(`[API IN] Answer nalezen, aplikuji do WebRTC...`, 'success');
                 try {
                     await connections['hub'].setRemoteDescription(answer);
                 } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
