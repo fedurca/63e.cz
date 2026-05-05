@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v1.4.0</title>
+    <title>E2E Tree P2P Chat v1.4.1 (Debug Edition)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -46,14 +46,13 @@
         #topo-canvas { width: 100%; height: 100%; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
 
-        /* Network Health & Log */
         #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; }
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-e2e { color: #e056fd; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-e2e { color: #e056fd; } .log-dns { color: #00d2d3; }
 
         /* SETUP SCREEN */
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -70,7 +69,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v1.4.0</span>
+            <span class="version-badge">v1.4.1 (Cache-Bust)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -110,7 +109,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4: Integrované TURN servery a volba lídra.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Oprava Split-Brain: Agresivní cache-busting DNS.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
         </div>
@@ -122,21 +121,11 @@
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
-    // Konfigurace WebRTC (STUN + TURN pro průraz Symetrických NAT)
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            {
-                urls: 'turn:openrelay.metered.ca:80',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            },
-            {
-                urls: 'turn:openrelay.metered.ca:443',
-                username: 'openrelayproject',
-                credential: 'openrelayproject'
-            }
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
     
@@ -150,7 +139,6 @@
     let seenMessages = new Set(); 
     let knownNodes = {}; 
     let chatHistory = []; 
-
     let myKeyPair = null; 
 
     document.getElementById('dbg-id').innerText = myId;
@@ -216,7 +204,7 @@
         } catch(e) { return null; }
     }
 
-    // --- DNS SIGNALIZACE ---
+    // --- DNS SIGNALIZACE S CACHE BUSTINGEM ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -226,20 +214,30 @@
 
     async function writeDns(subdomena, data) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
+        logDebug(`[DNS OUT] Zapisuji: ${subdomena}.63e.cz`, 'dns');
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
             if((await res.json()).success) { updateDebugStats('dns', 'OK'); return true; }
-        } catch (e) {} return false;
+        } catch (e) { logDebug(`[DNS ERROR] Zápis selhal: ${e.message}`, 'error'); } return false;
     }
 
     async function readDns(subdomena) {
         updateDebugStats('dns', `ČTENÍ: ${subdomena}`);
         try {
-            const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT`, { headers: { 'Accept': 'application/dns-json' } });
+            // OPRAVA 1: Extrémní cache busting (časové razítko + no-store hlavičky)
+            const cacheBuster = Date.now() + Math.floor(Math.random() * 1000);
+            const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT&_cb=${cacheBuster}`, { 
+                headers: { 'Accept': 'application/dns-json', 'Cache-Control': 'no-cache' },
+                cache: 'no-store' 
+            });
             const json = await res.json();
             if(!json.Answer) return null;
+            
             updateDebugStats('dns', 'OK');
-            return dekomprimovat(json.Answer[0].data.replace(/"/g, ''));
+            const data = dekomprimovat(json.Answer[0].data.replace(/"/g, ''));
+            // Odfiltrujeme čtení sebe sama z fronty z minulých životů
+            if(subdomena === 'queue' && data.guestId) logDebug(`[DNS IN] Přečtena fronta: ${data.guestId}`, 'dns');
+            return data;
         } catch(e) { return null; }
     }
 
@@ -334,7 +332,6 @@
             }
         } 
         else if (msg.type === 'topo-sync') {
-            // Master Hub diktuje topologii všem ostatním (Single Source of Truth)
             networkGraph = msg.graph;
             drawTopology();
         }
@@ -365,9 +362,8 @@
     // --- WEBRTC ---
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
-        logDebug(`Zakládám linku: ${targetId} (Používám STUN/TURN)`, 'webrtc');
+        logDebug(`Zakládám linku: ${targetId} (STUN/TURN)`, 'webrtc');
         
-        // Použití nové konfigurace s TURN servery pro průraz Symmetric NAT
         const pc = new RTCPeerConnection(WEBRTC_CONFIG);
         connections[targetId] = pc;
 
@@ -397,7 +393,7 @@
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(onGatheringComplete, 3500); 
+                setTimeout(onGatheringComplete, 4000); 
             }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
@@ -409,6 +405,7 @@
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
+            logDebug(`P2P Spojeno: ${targetId}`, 'success');
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
             routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
@@ -469,19 +466,17 @@
             logDebug("Ztratil jsem spojení! Inicializuji volbu nového Mastera...", "error");
             document.getElementById('ui-role').innerText = 'Izolován';
             
-            // Najdeme uzly, které byly naživu v posledních 20 vteřinách
             const now = Date.now();
             let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 20000);
             if (!aliveIds.includes(myId)) aliveIds.push(myId);
             aliveIds.sort();
 
             if (aliveIds[0] === myId) {
-                logDebug(`👑 Jsem nejvyšší autorita (ID ${myId}). Přebírám DNS Mastera!`, "webrtc");
+                logDebug(`👑 Jsem nejvyšší autorita. Přebírám DNS Mastera!`, "webrtc");
                 startDnsHostLoop();
             } else {
-                // Jitter (Náhodné zpoždění), abychom dali novému Masterovi čas zapsat se do DNS
                 const jitter = Math.floor(Math.random() * 3000) + 3000; 
-                logDebug(`Novým Masterem by se měl stát uzel [${aliveIds[0]}]. Vyčkávám ${jitter}ms a pokusím se připojit...`, "info");
+                logDebug(`Novým Masterem by se měl stát uzel [${aliveIds[0]}]. Vyčkávám ${jitter}ms...`, "info");
                 setTimeout(() => joinViaDns(), jitter);
             }
         }
@@ -505,7 +500,7 @@
     let dnsInterval;
     async function startDnsHostLoop() {
         isDnsHost = true;
-        networkGraph.root = myId; // Jsem Master
+        networkGraph.root = myId; 
         unlockChat();
         
         await writeDns('host-alive', { timestamp: Date.now() });
@@ -515,11 +510,13 @@
         
         let pollingGuests = new Set();
         dnsInterval = setInterval(async () => {
+            logDebug(`[DNS Polling] Kontroluji frontu...`, 'info');
             const queue = await readDns('queue');
-            if (queue && queue.guestId && queue.guestId !== 'IDLE' && !pollingGuests.has(queue.guestId)) {
+            if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
                 
                 const offer = await readDns(`offer-${queue.guestId}`);
                 if(offer) {
+                    logDebug(`[DNS] Zpracovávám Offer od: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -528,6 +525,7 @@
                     const sendDnsAnswer = async () => {
                         if (connections[queue.guestId].answerDone) return;
                         connections[queue.guestId].answerDone = true;
+                        logDebug(`[DNS] Odesílám Answer pro: ${queue.guestId}`, 'info');
                         await writeDns(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
                         await writeDns('queue', { guestId: 'IDLE' }); 
                     };
@@ -535,7 +533,7 @@
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
                     else {
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
-                        setTimeout(sendDnsAnswer, 3500);
+                        setTimeout(sendDnsAnswer, 4000);
                     }
                 }
             }
@@ -549,24 +547,26 @@
         let pokusy = 0;
         const iv = setInterval(async () => {
             pokusy++;
-            if (pokusy > 6) { 
+            // OPRAVA 2: Čekáme déle (45 vteřin), Cloudflare DNS propagace může být pomalejší
+            if (pokusy > 9) { 
                 clearInterval(iv);
                 logDebug("DNS Master dlouho neodpovídá. Vynucuji re-election!", "error");
                 delete connections['hub'];
-                checkIsolation(); // Vyvoláme volbu nového lídra
+                checkIsolation(); 
                 return;
             }
+            logDebug(`[DNS] Hledám Answer pro sebe (Pokus ${pokusy}/9)...`, 'info');
             const answer = await readDns(`answer-${myId}`);
             if (answer) {
                 clearInterval(iv);
+                logDebug(`[DNS] Answer nalezen, spojuji přes WebRTC!`, 'success');
                 await connections['hub'].setRemoteDescription(answer);
             }
         }, 5000);
     }
 
-    // --- VIZUALIZACE TOPOLOGIE (Canvas - Single Source of Truth) ---
+    // --- VIZUALIZACE TOPOLOGIE (Canvas) ---
     setInterval(() => {
-        // Master dictating the topology to everyone
         if (isDnsHost) {
             networkGraph = { root: myId, edges: Object.keys(channels) };
             routeMessage({ id: Date.now() + myId, ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
@@ -586,19 +586,17 @@
         const edges = networkGraph.edges || [];
         
         let nodesArr = [rootId, ...edges];
-        if (!nodesArr.includes(myId)) nodesArr.push(myId); // Zajištění vykreslení izolovaných uzlů
-        nodesArr = [...new Set(nodesArr)]; // Unikátní
+        if (!nodesArr.includes(myId)) nodesArr.push(myId); 
+        nodesArr = [...new Set(nodesArr)]; 
         
         const radius = Math.min(canvas.width, canvas.height) / 3;
         const cx = canvas.width / 2;
         const cy = canvas.height / 2;
         const pos = {};
         
-        // Výpočet pozic (Master uprostřed, ostatní kolem dokola)
         nodesArr.forEach((n, i) => {
             if (n === rootId) { pos[n] = { x: cx, y: cy }; } 
             else {
-                // Přeskakujeme Mastera při výpočtu úhlů pro kružnici
                 const spokeIndex = nodesArr.indexOf(n) - (nodesArr.indexOf(rootId) < nodesArr.indexOf(n) ? 1 : 0);
                 const spokeCount = Math.max(1, nodesArr.length - 1);
                 const angle = (spokeIndex / spokeCount) * 2 * Math.PI - Math.PI / 2;
@@ -606,7 +604,6 @@
             }
         });
 
-        // Kreslení linek z Mastera na všechny Spokes
         ctx.lineWidth = 2;
         if (pos[rootId]) {
             edges.forEach(target => {
@@ -617,7 +614,6 @@
             });
         }
 
-        // Kreslení bodů (Uzlů)
         nodesArr.forEach(n => {
             ctx.beginPath(); ctx.arc(pos[n].x, pos[n].y, 18, 0, 2 * Math.PI);
             ctx.fillStyle = (n === myId) ? '#0078FF' : (n === rootId ? '#feca57' : '#333');
