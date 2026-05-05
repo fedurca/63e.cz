@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v2.0.0</title>
+    <title>E2E Tree P2P Chat v2.0.1</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -31,9 +31,11 @@
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
-        #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
+        /* INPUT AREA WITH NICKNAME */
+        #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; }
+        #ui-my-name { font-weight: bold; color: #333; margin-right: 10px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
         #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
-        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; }
+        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; }
         #input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* DEBUG PANELS */
@@ -71,7 +73,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.0 (API Proxy)</span>
+            <span class="version-badge">v2.0.1 (UI + API Fixes)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -80,6 +82,7 @@
         <div id="chat-container">
             <div id="chat-area"></div>
             <div id="input-area">
+                <div id="ui-my-name">...</div>
                 <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
                 <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
             </div>
@@ -111,9 +114,9 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0: Přímý bypass přes Worker API a dokonalý sync historie.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.1: Stabilizace fronty a paměť jmen.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
-            <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
+            <button id="join-btn" onclick="initSystem()">Připojit</button>
         </div>
     </div>
 </div>
@@ -145,6 +148,14 @@
     let myKeyPair = null; 
 
     document.getElementById('dbg-id').innerText = myId;
+
+    // --- PŘEDVYPLNĚNÍ JMÉNA Z LOCAL STORAGE ---
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedName = localStorage.getItem('chat_nickname');
+        if (savedName) {
+            document.getElementById('username').value = savedName;
+        }
+    });
 
     function buf2b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
     function b642buf(b64) {
@@ -212,14 +223,28 @@
         return JSON.parse(pako.inflate(pole, { to: 'string' }));
     }
 
-    async function writeSignal(subdomena, data) {
+    async function writeSignal(subdomena, data, retry = 2) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
         logDebug(`[API OUT] Odesílám signál pro: ${subdomena}`, 'api');
-        try {
-            const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
-            const out = await res.json();
-            if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
-        } catch (e) { logDebug(`[API ERR] Zápis selhal: ${e.message}`, 'error'); }
+        
+        while (retry > 0) {
+            try {
+                const res = await fetch(WORKER_URL, { 
+                    method: "POST", 
+                    headers: { "Content-Type": "application/json" }, 
+                    body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) 
+                });
+                const out = await res.json();
+                if(out.success) { 
+                    updateDebugStats('dns', 'OK'); 
+                    return true; 
+                }
+            } catch (e) { 
+                logDebug(`[API ERR] Pokus o zápis selhal: ${e.message}`, 'error'); 
+            }
+            retry--;
+            if(retry > 0) await new Promise(r => setTimeout(r, 1000)); // Krátká pauza před dalším pokusem
+        }
         return false;
     }
 
@@ -269,7 +294,6 @@
     }
 
     function saveMessage(msgObj) {
-        // Kontrola duplicit podle unikátního ID
         if(chatHistory.some(m => m.id === msgObj.id)) return false; 
         chatHistory.push(msgObj);
         chatHistory.sort((a,b) => a.time - b.time); 
@@ -398,8 +422,15 @@
                 if(knownNodes[targetId]) delete knownNodes[targetId].ping;
                 updateDebugStats('peers', Object.keys(channels).length);
                 
-                if (!isDnsHost) checkIsolation(); 
-                else logDebug(`Guest ${targetId} se odpojil z mého Hubu. Jedu dál.`, 'info');
+                if (!isDnsHost) {
+                    checkIsolation(); 
+                } else {
+                    logDebug(`Guest ${targetId} se odpojil z mého Hubu.`, 'info');
+                    // OPRAVA: Master okamžitě vyčistí queue, pokud mu spojení spadne ještě před dokončením
+                    if(targetId !== 'hub') {
+                        writeSignal('queue', { guestId: 'IDLE' });
+                    }
+                }
             }
         };
 
@@ -414,6 +445,7 @@
                 if (useDns) {
                     const ok = await writeSignal(`offer-${myId}`, pc.localDescription);
                     if (ok) await writeSignal('queue', { guestId: myId });
+                    else logDebug(`[API ERR] Nepodařilo se zapsat SDP klíče! Fronta zablokována.`, 'error');
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
@@ -518,8 +550,11 @@
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
         document.getElementById('ui-role').innerText = "Kontroluji API...";
-        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
         
+        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
+        localStorage.setItem('chat_nickname', myName); // Uložení jména pro příště
+        document.getElementById('ui-my-name').innerText = myName; // Zobrazení vedle inputu
+
         document.getElementById('setup-screen').style.display = 'none'; 
         loadHistory();
         await initCrypto();
@@ -558,8 +593,9 @@
                         if (connections[queue.guestId].answerDone) return;
                         connections[queue.guestId].answerDone = true;
                         logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
-                        await writeSignal(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
-                        await writeSignal('queue', { guestId: 'IDLE' }); 
+                        const ok = await writeSignal(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
+                        if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
+                        else logDebug(`[API ERR] Zápis Answeru selhal! Fronta zůstane zablokovaná.`, 'error');
                     };
 
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
