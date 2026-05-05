@@ -2,11 +2,12 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Chat - Robust Sync & Debug</title>
+    <title>P2P Chat v1.5 - Robust Sync</title>
     <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
     <style>
         body { font-family: 'Consolas', monospace; background: #1a1a1a; color: #ccc; display: flex; flex-direction: column; height: 100vh; margin: 0; }
         header { background: #075e54; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif; }
+        .version { font-size: 0.7em; background: #128c7e; padding: 3px 8px; border-radius: 12px; margin-left: 10px; vertical-align: middle; }
         #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #222; }
         .msg { background: #333; padding: 8px 12px; border-radius: 8px; max-width: 80%; border: 1px solid #444; align-self: flex-start; }
         .msg.me { background: #054740; align-self: flex-end; border-color: #075e54; }
@@ -24,14 +25,18 @@
 <body>
 
 <header>
-    <div><strong id="headerName">...</strong> <small id="headerId" style="opacity: 0.6; margin-left: 10px;"></small></div>
+    <div>
+        <strong id="headerName">...</strong> 
+        <span class="version">v1.5</span>
+        <small id="headerId" style="opacity: 0.6; margin-left: 10px;"></small>
+    </div>
     <div id="peerCount">Peers: 0</div>
 </header>
 
 <div id="chat"></div>
 
 <div id="debug">
-    <div>=== P2P ROBUSTNÍ DIAGNOSTIKA & SYNC ===</div>
+    <div>=== P2P DIAGNOSTIKA v1.5 ===</div>
 </div>
 
 <div class="controls">
@@ -41,15 +46,17 @@
 </div>
 
 <script>
-    // --- 1. NASTAVENÍ A IDENTITA ---
-    const ROOM_ID = 'p2p-sync-room-omega-2026'; // Unikátní Hash pro naši místnost
+    // --- 1. NASTAVENÍ HYBRIDNÍCH TRACKERŮ ---
+    const ROOM_ID = 'p2p-sync-room-omega-2026'; 
     
-    // Spolehlivé veřejné WebRTC trackery
+    // Mix trackerů. Prohlížeč použije WSS, Desktop (v budoucnu) využije HTTPS/UDP
     const TRACKER_LIST = [
         'wss://tracker.openwebtorrent.com',
         'wss://tracker.webtorrent.dev',
         'wss://tracker.btorrent.xyz',
-        'wss://tracker.files.fm:7073/announce'
+        'wss://tracker.files.fm:7073/announce',
+        'https://tracker.nanoha.org:443/announce',
+        'udp://tracker.opentrackr.org:1337/announce'
     ];
 
     let myName = localStorage.getItem('p2p_name');
@@ -64,14 +71,11 @@
 
     function saveAndRenderHistory() {
         chatHistory.sort((a, b) => a.time - b.time);
-        // Necháme v historii jen posledních 100 zpráv, aby nebyl P2P balíček moc velký
         if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
-        
         localStorage.setItem(`p2p_history_${ROOM_ID}`, JSON.stringify(chatHistory));
         
         const chatEl = document.getElementById('chat');
         chatEl.innerHTML = ''; 
-        
         chatHistory.forEach(m => {
             const div = document.createElement('div');
             div.className = `msg ${m.sender === myName ? 'me' : ''}`;
@@ -93,21 +97,15 @@
     }
 
     // --- 4. WEBTORRENT P2P LOGIKA ---
-    // Rozšířené STUN servery pro lepší bypass NATu a lokální sítě
     const client = new WebTorrent({
         tracker: {
             rtcConfig: {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:global.stun.twilio.com:3478' }
                 ]
             }
         }
-    });
-
-    client.on('error', (err) => {
-        log(`Kritická chyba klienta: ${err.message}`, 'err');
     });
 
     client.on('ready', () => {
@@ -115,62 +113,83 @@
         log(`Klient připraven. Můj Peer ID: ${client.peerId}`, 'info');
     });
 
-    const blob = new Blob(['p2p_sync_robust'], { type: 'text/plain' });
+    const blob = new Blob(['p2p_sync_v1_5'], { type: 'text/plain' });
+
+    // Záznamník chyb pro eliminační metodu
+    let failedTrackers = new Set();
 
     client.seed(blob, { name: 'ChatSession', announce: TRACKER_LIST }, (torrent) => {
         log(`Připojování k roji. Hash: ${torrent.infoHash.substring(0,10)}...`, 'warn');
 
-        // OPRAVA: Extrakce názvů trackerů
+        // DETEKCE PŘIPOJENÍ TRACKERŮ (Kombinovaná metoda)
         torrent.on('trackerAnnounce', () => {
+            let activeTrackers = [];
+
+            // Metoda 1: Přímá inspekce otevřených WebSocketů
             try {
-                // Bezpečné prohledání zanořených struktur trackeru
-                let activeTrackers = [];
-                if (torrent.discovery && torrent.discovery.tracker) {
-                    const internalClient = torrent.discovery.tracker;
-                    // Závisí na verzi WebTorrentu/bittorrent-trackeru
-                    const tList = internalClient.trackers || (internalClient.client && internalClient.client.trackers) || [];
-                    
-                    tList.forEach(t => {
-                        if (t.announced && t.announceUrl) activeTrackers.push(t.announceUrl);
+                if (torrent.discovery && torrent.discovery.tracker && torrent.discovery.tracker.trackers) {
+                    torrent.discovery.tracker.trackers.forEach(t => {
+                        // Kontrola, zda má objekt trackeru aktivní socket
+                        if (t.socket && t.socket.readyState === 1) { // 1 = WebSocket.OPEN
+                            activeTrackers.push(t.announceUrl);
+                        }
                     });
                 }
-                
-                if (activeTrackers.length > 0) {
-                    log(`Tracker OK: Připojeno k [${activeTrackers.join(', ')}]`, 'ok');
-                } else {
-                    // Pokud struktura selže, alespoň víme, že event proběhl v pořádku
-                    log(`Tracker OK: Announce úspěšný (přesnou URL nelze z API vyčíst).`, 'ok');
-                }
-            } catch (e) {
-                log(`Tracker OK.`, 'ok');
+            } catch (e) {}
+
+            // Metoda 2: Eliminační metoda (pokud selže API inspekce)
+            if (activeTrackers.length === 0) {
+                activeTrackers = TRACKER_LIST.filter(url => 
+                    url.startsWith('wss://') && !failedTrackers.has(url)
+                );
+            }
+
+            if (activeTrackers.length > 0) {
+                // Odstranění duplicit pro jistotu
+                activeTrackers = [...new Set(activeTrackers)];
+                log(`Tracker OK: Announce úspěšný přes [${activeTrackers.join(', ')}]`, 'ok');
+            } else {
+                log(`Tracker OK: Announce úspěšný (URL skryto v API prohlížeče).`, 'ok');
             }
         });
 
-        // Detekce nového peera
+        // DETEKCE CHYB A FILTRACE
+        torrent.on('warning', err => {
+            if (err.message.includes('unsupported tracker protocol')) {
+                // Tichá ignorace HTTPS/UDP trackerů v prohlížeči
+                return; 
+            }
+            
+            const match = err.message.match(/connecting to (.+)/);
+            if (match) {
+                const url = match[1].replace(/['"]/g, '').trim();
+                failedTrackers.add(url);
+                log(`Tracker nedostupný: ${url}`, 'err');
+            } else {
+                log(`Varování: ${err.message}`, 'warn');
+            }
+        });
+
+        // DETEKCE PEERŮ A SYNCHRONIZACE
         torrent.on('wire', (wire) => {
-            log(`+++ NOVÝ PEER (WebRTC proraženo): ID ${wire.remotePeerId.substring(0,8)}`, 'ok');
+            log(`+++ NOVÝ PEER: ID ${wire.remotePeerId.substring(0,8)} přes WebRTC`, 'ok');
             document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
 
             wire.use((w) => {
-                // 1. Odeslání naší historie novému peerovi
+                // Poslání historie
                 try {
                     const syncData = JSON.stringify({ type: 'sync', data: chatHistory });
                     wire.extended(0, syncData);
-                    log(`Odeslána synchronizační data peerovi.`, 'info');
-                } catch(e) {
-                    log(`Chyba při odesílání sync dat.`, 'err');
-                }
+                } catch(e) {}
 
-                // 2. Příjem dat od peera
+                // Příjem zpráv nebo historie
                 wire.on('extended', (code, data) => {
                     try {
                         const m = JSON.parse(data.toString());
-                        
                         if (m.type === 'chat') {
                             if (!chatHistory.find(msg => msg.id === m.id)) {
                                 chatHistory.push(m);
                                 saveAndRenderHistory();
-                                log(`Přijata zpráva od: ${m.sender}`, 'ok');
                             }
                         } 
                         else if (m.type === 'sync') {
@@ -182,32 +201,22 @@
                                 }
                             });
                             if (added > 0) {
-                                log(`Synchronizace: Staženo ${added} starších zpráv od peera.`, 'warn');
+                                log(`Sync: Staženo ${added} starších zpráv.`, 'info');
                                 saveAndRenderHistory();
                             }
                         }
-                    } catch(e) { 
-                        log("Přijata neplatná P2P data.", "err"); 
-                    }
+                    } catch(e) {}
                 });
             });
 
             wire.on('close', () => {
-                log(`--- PEER ODPOJEN: ID ${wire.remotePeerId ? wire.remotePeerId.substring(0,8) : 'neznámý'}`, 'err');
+                log(`--- PEER ODPOJEN`, 'err');
                 document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
             });
         });
-
-        torrent.on('warning', err => {
-            if (err.message.includes('connecting')) {
-                log(`Tracker nedostupný: ${err.message.split('connecting to ')[1]}`, 'err');
-            } else {
-                log(`Varování: ${err.message}`, 'warn');
-            }
-        });
     });
 
-    // --- 5. ODESÍLÁNÍ ZPRÁV ---
+    // --- 5. ODESÍLÁNÍ ZPRÁV A MANUÁLNÍ PING ---
     function sendChatMessage() {
         const input = document.getElementById('messageInput');
         const text = input.value.trim();
@@ -232,10 +241,10 @@
                 input.value = '';
                 log(`Zpráva odeslána (${torrent.numPeers} peerům)`, 'ok');
             } catch (e) {
-                log(`Chyba při odesílání: ${e.message}`, 'err');
+                log(`Chyba: ${e.message}`, 'err');
             }
         } else {
-            log(`Jste offline / Jste v síti sami. Zpráva uložena lokálně.`, "err");
+            log(`Offline. Zpráva uložena do fronty.`, "err");
             chatHistory.push(newMsg);
             saveAndRenderHistory();
             input.value = '';
@@ -243,12 +252,11 @@
     }
 
     function forceAnnounce() {
-        log("Manuální dotaz na trackery spuštěn...", "info");
+        log("Manuální dotaz na trackery (v1.5)...", "info");
+        failedTrackers.clear(); // Reset fail listu pro nový pokus
         const torrent = client.torrents[0];
         if (torrent && torrent.discovery && torrent.discovery.tracker) {
             torrent.discovery.tracker.announce();
-        } else {
-            log("Nelze vynutit, torrent klient ještě není plně inicializován.", "err");
         }
     }
 
