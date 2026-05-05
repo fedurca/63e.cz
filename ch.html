@@ -2,24 +2,21 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v2.0.2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>E2E Tree P2P Chat v2.0.3</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
         
-        /* FIX PRO MOBILY: 100dvh dynamicky reaguje na lišty a klávesnice */
-        body, html { 
-            height: 100dvh; height: -webkit-fill-available;
-            background-color: var(--bg-color); overflow: hidden; 
-        }
+        /* FIX PRO MOBILY: Pevná fixace proti posunu klávesnicí */
+        body, html { background-color: var(--bg-color); overflow: hidden; height: 100%; width: 100%; }
         
         #app { 
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
             display: flex; flex-direction: column; 
-            height: 100dvh; height: -webkit-fill-available;
             max-width: 1200px; margin: 0 auto; background: var(--chat-bg); 
-            box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
 
         header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
@@ -42,7 +39,7 @@
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
-        /* INPUT AREA WITH FIX FOR iOS */
+        /* INPUT AREA S PODPOROU iOS SAFE AREA */
         #input-area { 
             display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
             padding-bottom: calc(10px + env(safe-area-inset-bottom)); flex-shrink: 0;
@@ -70,7 +67,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;}
 
         /* SETUP SCREEN */
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -87,7 +84,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.2 (Path Routing & Sync Fix)</span>
+            <span class="version-badge">v2.0.3 (Ironclad Release)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -109,13 +106,13 @@
             </div>
             
             <div class="debug-stats">
-                <div>ID: <span id="dbg-id"></span></div>
+                <div>Moje ID: <span id="dbg-id"></span></div>
                 <div>Stav API: <span id="dbg-dns">IDLE</span></div>
                 <div>Přímé linky: <span id="dbg-peers">0</span></div>
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (GARBAGE COLLECTED)</div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (STRICT TIMEOUT: 15s)</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -128,7 +125,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.2: Zpřesněná synchronizace a stopař zpráv.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.3: Fix mobilního zhasínání, přesný sync a trasování zpráv.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -167,7 +164,6 @@
 
     document.getElementById('dbg-id').innerText = myId;
 
-    // --- PŘEDVYPLNĚNÍ JMÉNA Z LOCAL STORAGE ---
     window.addEventListener('DOMContentLoaded', () => {
         const savedName = localStorage.getItem('chat_nickname');
         if (savedName) document.getElementById('username').value = savedName;
@@ -226,17 +222,11 @@
 
     async function decryptE2E(ivB64, cipherB64, senderId) {
         try {
-            if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) {
-                logDebug(`[E2E ERR] Chybí veřejný klíč odesílatele (${senderId}).`, 'error');
-                return null;
-            }
+            if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) return null;
             const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK);
             const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
             return new TextDecoder().decode(plainBuf);
-        } catch(e) { 
-            logDebug(`[E2E ERR] Dešifrování selhalo: ${e.message}`, 'error');
-            return null; 
-        }
+        } catch(e) { return null; }
     }
 
     // --- PŘÍMÉ API SPOJENÍ (Bypass DNS) ---
@@ -325,7 +315,7 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- ROUTING A ZPRACOVÁNÍ S PATH TRACKINGEM ---
+    // --- ROUTING A ZPRACOVÁNÍ ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -334,7 +324,7 @@
         msgObj.ttl -= 1; 
         if (msgObj.ttl <= 0) return; 
 
-        // Stopař zpráv (Path Tracker)
+        // Stopař
         if (!msgObj.path) msgObj.path = [];
         msgObj.path.push(myId);
 
@@ -360,13 +350,16 @@
             }
         } 
         else if (msg.type === 'request-history') {
-            // EXPLICITNÍ HANDSHAKE: Pokud jsem Hub, odpovím cíleně historií.
-            if (isDnsHost && chatHistory.length > 0) {
-                logDebug(`[SYNC] Generuji historii pro nováčka...`, 'info');
-                const historyJson = JSON.stringify(chatHistory);
-                encryptE2E(historyJson, msg.sender).then(encryptedHistory => {
-                    routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory });
-                }).catch(e => logDebug(`[E2E ERR] Historie šifrování selhalo: ${e.message}`, 'error'));
+            // Bezpečný sync: Rozsekané dávky (Chunks) po 20 zprávách
+            if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
+                logDebug(`[SYNC] Odesílám zašifrovanou historii pro nováčka (${msg.sender})...`, 'info');
+                const chunkSize = 20;
+                for (let i = 0; i < chatHistory.length; i += chunkSize) {
+                    const chunk = chatHistory.slice(i, i + chunkSize);
+                    encryptE2E(JSON.stringify(chunk), msg.sender).then(encryptedHistory => {
+                        routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory });
+                    });
+                }
             }
         }
         else if (msg.type === 'sync-history' && msg.target === myId) {
@@ -377,9 +370,8 @@
                 historyArray.forEach(histMsg => { if(saveMessage(histMsg)) added = true; });
                 
                 if (added) {
-                    logDebug(`[SYNC] Historie z cloudu sloučena a seřazena!`, "success");
                     reRenderAllHistory();
-                    renderMessage('System', 'Historie chatu byla úspěšně synchronizována.', 'system');
+                    renderMessage('System', 'Příjem historie (Chunk) seřazen.', 'system');
                 }
             }
         } 
@@ -390,10 +382,9 @@
                     const secretData = JSON.parse(plainJson);
                     const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
                     
-                    // VYPSÁNÍ STOPAŘE DO LOGU
                     if (msg.path && msg.path.length > 0) {
                         const pathNames = msg.path.map(id => knownNodes[id]?.name || id).join(" ➔ ");
-                        logDebug(`✉ Zpráva (${authorName}) šla cestou: ${pathNames}`, 'log-path');
+                        logDebug(`✉ Zpráva (${authorName}) šla cestou: ${pathNames} ➔ Ty`, 'log-path');
                     }
 
                     const msgObjForStorage = { id: msg.id, author: authorName, text: secretData.text, time: secretData.time };
@@ -438,6 +429,29 @@
     }
 
     // --- WEBRTC ---
+    function cleanupConnection(targetId) {
+        if(connections[targetId]) {
+            connections[targetId].close();
+            delete connections[targetId]; 
+        }
+        if(channels[targetId]) {
+            channels[targetId].close();
+            delete channels[targetId];
+        }
+        updateDebugStats('peers', Object.keys(channels).length);
+
+        if (isDnsHost && targetId !== 'hub') {
+            logDebug(`Odstraňuji mrtvé spojení: ${targetId}`, 'info');
+            writeSignal('queue', { guestId: 'IDLE' }); 
+            if(knownNodes[targetId]) {
+                routeMessage({ id: generateId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
+                delete knownNodes[targetId];
+            }
+        } else if (!isDnsHost && targetId === 'hub') {
+            checkIsolation();
+        }
+    }
+
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
         logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
@@ -447,20 +461,8 @@
 
         pc.oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                logDebug(`[P2P] Spojení s ${targetId} padlo.`, 'error');
-                delete connections[targetId]; delete channels[targetId];
-                if(knownNodes[targetId]) delete knownNodes[targetId].ping;
-                updateDebugStats('peers', Object.keys(channels).length);
-                
-                if (!isDnsHost) {
-                    checkIsolation(); 
-                } else {
-                    logDebug(`Guest ${targetId} se odpojil z Hubu.`, 'info');
-                    if(targetId !== 'hub') {
-                        writeSignal('queue', { guestId: 'IDLE' }); 
-                        routeMessage({ id: generateId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
-                    }
-                }
+                logDebug(`[P2P] ICE Spojení s ${targetId} padlo.`, 'error');
+                cleanupConnection(targetId);
             }
         };
 
@@ -480,7 +482,7 @@
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(onGatheringComplete, 8000); 
+                setTimeout(() => { if (!pc.gatheringDone) onGatheringComplete(); }, 8000); 
             }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
@@ -497,11 +499,9 @@
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
             routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
-            // Pokud jsem Spoke (Host), po chvíli explicitně poprosím o historii (vyhne se to Race Conditions)
             if (!isDnsHost) {
-                setTimeout(() => {
-                    routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId });
-                }, 1500);
+                // Bezpečný odložený dotaz na historii
+                setTimeout(() => { routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId }); }, 2000);
             }
 
             const pingInterval = setInterval(() => {
@@ -510,9 +510,13 @@
             }, 3000);
         };
 
-        // Fix WebRTC záseku: Pokud je už kanál otevřený, spustit hned
         if (channel.readyState === 'open') setupChannel();
         else channel.onopen = setupChannel;
+
+        channel.onclose = () => {
+            logDebug(`[P2P] Datový kanál s ${targetId} se uzavřel.`, 'error');
+            cleanupConnection(targetId);
+        };
 
         channel.onmessage = (e) => {
             const msgObj = JSON.parse(e.data);
@@ -532,7 +536,7 @@
         };
     }
 
-    // --- ZDRAVÍ SÍTĚ (GARBAGE COLLECTED) ---
+    // --- GARBAGE COLLECTOR (Přísný 15s limit) ---
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -545,54 +549,76 @@
             const node = knownNodes[id];
             const isMe = id === myId;
             const isMaster = (networkGraph.root === id);
-            
             const lastSeenDiff = now - (node.lastSeen || now);
             
-            // Garbage Collector (Loví duchy starší než 30s)
-            if (!isMe && lastSeenDiff > 30000) {
-                delete knownNodes[id];
-                return; 
+            // AGRESIVNÍ LOV DUCHŮ
+            if (!isMe && lastSeenDiff > 15000) {
+                if (isDnsHost) {
+                    logDebug(`Odpojuji mrtvý uzel ${node.name} (Ping Timeout)`, 'error');
+                    cleanupConnection(id);
+                } else if (isMaster) {
+                    logDebug(`Master neodpovídá (Ping Timeout)`, 'error');
+                    cleanupConnection('hub');
+                } else if (lastSeenDiff > 30000) {
+                    delete knownNodes[id];
+                }
             }
 
             const role = isMaster ? 'Master (Hub)' : 'Spoke';
             const pingStr = isMe ? '<span style="color:#aaa">Local</span>' : (node.ping !== undefined ? `${node.ping} ms` : '<span style="color:#aaa">Nepřímý</span>');
             
             let status = '<span style="color:#2ed573">Aktivní</span>';
-            if (!isMe && lastSeenDiff > 20000) status = '<span style="color:#ff4757">Odpojen</span>';
-            else if (!isMe && lastSeenDiff > 7000) status = '<span style="color:#feca57">Zpoždění</span>';
+            if (!isMe && lastSeenDiff > 10000) status = '<span style="color:#ff4757">Mrtvý</span>';
+            else if (!isMe && lastSeenDiff > 5000) status = '<span style="color:#feca57">Zpoždění</span>';
 
-            html += `<tr><td>${node.name.substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
+            if(knownNodes[id]) html += `<tr><td>${node.name.substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
         });
         html += '</table>';
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY ---
+    // --- RECOVERY Z POPELA (Full Reset) ---
+    async function fullResetAndReconnect() {
+        logDebug("Provádím kompletní reset identity a znovupřipojení...", "info");
+        
+        Object.values(channels).forEach(ch => { if(ch.readyState==='open') ch.close(); });
+        Object.values(connections).forEach(pc => pc.close());
+        
+        connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
+        isDnsHost = false;
+        
+        myId = generateId().substr(0, 6); // Změna ID = čistý štít
+        document.getElementById('dbg-id').innerText = myId;
+        await initCrypto();
+        
+        const hostAlive = await readSignal('host-alive');
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
+        else startDnsHostLoop();
+    }
+
     async function checkIsolation() {
-        if (Object.keys(channels).length === 0 && !isDnsHost) {
-            logDebug("Ztratil jsem Hub. Zjišťuji situaci...", "error");
-            document.getElementById('ui-role').innerText = 'Izolován';
-            
-            const hostAlive = await readSignal('host-alive');
-            if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-                logDebug("Hub v API stále žije! Zkusím se připojit znovu...", "info");
-                setTimeout(() => joinViaDns(), 5000);
-                return; 
-            }
+        logDebug("Ztratil jsem Hub. Kontroluji stav...", "error");
+        document.getElementById('ui-role').innerText = 'Izolován';
+        
+        const hostAlive = await readSignal('host-alive');
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
+            logDebug("Hub v API stále žije! Zahazuji staré ID a připojuji se znovu...", "info");
+            setTimeout(() => fullResetAndReconnect(), 2000);
+            return; 
+        }
 
-            const now = Date.now();
-            let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 20000);
-            if (!aliveIds.includes(myId)) aliveIds.push(myId);
-            aliveIds.sort();
+        const now = Date.now();
+        let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 15000);
+        if (!aliveIds.includes(myId)) aliveIds.push(myId);
+        aliveIds.sort();
 
-            if (aliveIds[0] === myId) {
-                logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
-                startDnsHostLoop();
-            } else {
-                const jitter = Math.floor(Math.random() * 3000) + 3000; 
-                logDebug(`Novým Hubem bude [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
-                setTimeout(() => joinViaDns(), jitter);
-            }
+        if (aliveIds[0] === myId) {
+            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
+            startDnsHostLoop();
+        } else {
+            const jitter = Math.floor(Math.random() * 3000) + 3000; 
+            logDebug(`Novým Hubem bude [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
+            setTimeout(() => fullResetAndReconnect(), jitter);
         }
     }
 
@@ -631,8 +657,12 @@
             const queue = await readSignal('queue');
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
                 
+                // Vyčistí stará zamrzlá spojení pro toto ID
+                if(connections[queue.guestId]) cleanupConnection(queue.guestId);
+
                 const offer = await readSignal(`offer-${queue.guestId}`);
                 if(offer) {
+                    logDebug(`[API IN] Zpracovávám nováčka: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -649,7 +679,7 @@
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
                     else {
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
-                        setTimeout(sendDnsAnswer, 8000); 
+                        setTimeout(() => { if(!connections[queue.guestId].answerDone) sendDnsAnswer(); }, 8000); 
                     }
                 }
             }
@@ -666,7 +696,6 @@
             if (pokusy > 9) { 
                 clearInterval(iv);
                 logDebug("Spojení vypršelo (Timeout API).", "error");
-                delete connections['hub'];
                 checkIsolation(); 
                 return;
             }
