@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v1.4.3</title>
+    <title>E2E Tree P2P Chat v1.4.4</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -28,6 +28,8 @@
         .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
         .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
         .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
+        .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
+        .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
         #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; }
         #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
@@ -69,7 +71,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v1.4.3 (Robustní NAT)</span>
+            <span class="version-badge">v1.4.4 (Master Fix & Sync)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -109,7 +111,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.3: Ochrana proti zbrklému převzetí sítě a NAT podpora.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.4: Fix pro localhost a řazení historie.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
         </div>
@@ -117,18 +119,14 @@
 </div>
 
 <script>
-    // --- KONFIGURACE (Ověř URL) ---
+    // --- KONFIGURACE ---
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
-    // Extrémně posílená WebRTC konfigurace pro mobilní sítě
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
             { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-            { urls: 'stun:stun3.l.google.com:19302' },
-            { urls: 'stun:stun4.l.google.com:19302' },
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
@@ -215,12 +213,11 @@
 
     async function writeDns(subdomena, data) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
-        logDebug(`[DNS OUT] Odesílám zápis pro: ${subdomena}.63e.cz`, 'dns');
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
             const out = await res.json();
             if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
-            else return false;
+            return false;
         } catch (e) { return false; }
     }
 
@@ -238,16 +235,24 @@
             const rawData = json.Answer[0].data;
             const cleanB64 = rawData.replace(/["\s\n\r]/g, ''); 
             const data = dekomprimovat(cleanB64);
-            if(subdomena === 'queue' && data.guestId && data.guestId !== 'IDLE') logDebug(`[DNS IN] Fronta obsahuje: ${data.guestId}`, 'dns');
             return data;
         } catch(e) { return null; }
     }
 
+    // --- CHAT & HISTORIE ---
     function loadHistory() {
         const saved = localStorage.getItem('chat_history');
         if(saved) {
             chatHistory = JSON.parse(saved);
+            chatHistory.sort((a,b) => a.time - b.time); // Seřazení načtené historie
             chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time || Date.now(), false));
+            
+            const chat = document.getElementById('chat-area');
+            const div = document.createElement('div');
+            div.className = "history-divider";
+            div.innerHTML = "<span>Konec minulé historie chatu</span>";
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
         }
     }
 
@@ -274,6 +279,7 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
+    // --- ROUTING A ZPRACOVÁNÍ ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -314,10 +320,19 @@
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plaintextHistory) {
                 const historyArray = JSON.parse(plaintextHistory);
-                logDebug(`Historie dešifrována!`, "success");
+                logDebug(`[SYNC] Dešifrována cloudová historie (${historyArray.length} zpráv)`, "success");
+                
+                // Seřazení před uložením a vykreslením
+                historyArray.sort((a,b) => a.time - b.time);
+                
+                let rendered = 0;
                 historyArray.forEach(histMsg => { 
-                    if(saveMessage(histMsg)) renderMessage(histMsg.author, histMsg.text, histMsg.author === myName ? 'self' : 'other', histMsg.time);
+                    if(saveMessage(histMsg)) {
+                        renderMessage(histMsg.author, histMsg.text, histMsg.author === myName ? 'self' : 'other', histMsg.time);
+                        rendered++;
+                    }
                 });
+                if(rendered > 0) renderMessage('System', `Synchronizováno ${rendered} zpráv z cloudu.`, 'system');
             }
         } 
         else if (msg.type === 'chat') {
@@ -369,11 +384,17 @@
 
         pc.oniceconnectionstatechange = () => {
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                logDebug(`[P2P] Spojení s ${targetId} selhalo nebo padlo.`, 'error');
+                logDebug(`[P2P] Spojení s ${targetId} padlo.`, 'error');
                 delete connections[targetId]; delete channels[targetId];
                 if(knownNodes[targetId]) delete knownNodes[targetId].ping;
                 updateDebugStats('peers', Object.keys(channels).length);
-                checkIsolation(); 
+                
+                // OPRAVA: Master nespouští checkIsolation při odpojení Guesta!
+                if (!isDnsHost) {
+                    checkIsolation(); 
+                } else {
+                    logDebug(`Guest ${targetId} se odpojil z mého Hubu.`, 'info');
+                }
             }
         };
 
@@ -388,17 +409,14 @@
                 if (useDns) {
                     logDebug(`Iniciuji zápis SDP klíčů do DNS...`, 'info');
                     const ok = await writeDns(`offer-${myId}`, pc.localDescription);
-                    if (ok) {
-                        await writeDns('queue', { guestId: myId });
-                    } else {
-                        logDebug(`Zápis Offeru selhal. Fronta nebyla zapsána.`, 'error');
-                    }
+                    if (ok) await writeDns('queue', { guestId: myId });
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(onGatheringComplete, 4000); 
+                // OPRAVA 2: MAC mDNS fix. Limit zvýšen na štědrých 8 vteřin pro localhost.
+                setTimeout(onGatheringComplete, 8000); 
             }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
@@ -464,32 +482,30 @@
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY V1.4.3: OCHRANA PROTI ZBRKLÉ REVOLUCI ---
+    // --- RECOVERY ---
     async function checkIsolation() {
-        if (Object.keys(channels).length === 0) {
-            logDebug("Spojení selhalo. Zjišťuji důvod...", "error");
+        if (Object.keys(channels).length === 0 && !isDnsHost) {
+            logDebug("Ztratil jsem Hub. Zjišťuji situaci...", "error");
             document.getElementById('ui-role').innerText = 'Izolován';
             
-            // KROK 1: Místo okamžité revoluce zkontrolujeme, jestli Hub náhodou nežije
             const hostAlive = await readDns('host-alive');
             if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-                logDebug("Hub v DNS stále žije! Chyba byla v mém NAT/WebRTC spojení. Zkusím se připojit znovu...", "info");
+                logDebug("Hub v DNS stále žije! Zkusím se připojit znovu...", "info");
                 setTimeout(() => joinViaDns(), 5000);
-                return; // Přerušíme proces uzurpace
+                return; 
             }
 
-            // KROK 2: Pokud DNS mlčí, Hub je fakt mrtvý. Jdeme do voleb.
             const now = Date.now();
             let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 20000);
             if (!aliveIds.includes(myId)) aliveIds.push(myId);
             aliveIds.sort();
 
             if (aliveIds[0] === myId) {
-                logDebug(`👑 Hub je mrtev, mám nejvyšší prioritu. Přebírám DNS Mastera!`, "webrtc");
+                logDebug(`👑 Jsem nejvyšší autorita. Přebírám DNS Mastera!`, "webrtc");
                 startDnsHostLoop();
             } else {
                 const jitter = Math.floor(Math.random() * 3000) + 3000; 
-                logDebug(`Hub je mrtev. Novým by měl být [${aliveIds[0]}]. Vyčkávám ${jitter}ms a pokusím se připojit...`, "info");
+                logDebug(`Novým Hubem bude [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
                 setTimeout(() => joinViaDns(), jitter);
             }
         }
@@ -515,6 +531,9 @@
         isDnsHost = true;
         networkGraph.root = myId; 
         unlockChat();
+        
+        // OPRAVA 3: Čištění fronty, když se ujmu trůnu
+        await writeDns('queue', { guestId: 'IDLE' });
         
         await writeDns('host-alive', { timestamp: Date.now() });
         setInterval(() => writeDns('host-alive', { timestamp: Date.now() }), 60000);
@@ -545,7 +564,7 @@
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
                     else {
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
-                        setTimeout(sendDnsAnswer, 4000);
+                        setTimeout(sendDnsAnswer, 8000); // 8s timeout i pro odpovědi
                     }
                 }
             }
