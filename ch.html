@@ -1,268 +1,690 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-    <meta charset="UTF-8">
-    <title>P2P Chat v1.5 - Robust Sync</title>
-    <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
-    <style>
-        body { font-family: 'Consolas', monospace; background: #1a1a1a; color: #ccc; display: flex; flex-direction: column; height: 100vh; margin: 0; }
-        header { background: #075e54; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-family: sans-serif; }
-        .version { font-size: 0.7em; background: #128c7e; padding: 3px 8px; border-radius: 12px; margin-left: 10px; vertical-align: middle; }
-        #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #222; }
-        .msg { background: #333; padding: 8px 12px; border-radius: 8px; max-width: 80%; border: 1px solid #444; align-self: flex-start; }
-        .msg.me { background: #054740; align-self: flex-end; border-color: #075e54; }
-        #debug { background: #000; color: #0f0; font-size: 11px; height: 280px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; line-height: 1.4; }
-        .debug-err { color: #ff5555; }
-        .debug-ok { color: #55ff55; }
-        .debug-warn { color: #ffaa00; }
-        .debug-info { color: #55aaff; }
-        .controls { padding: 15px; background: #222; display: flex; gap: 10px; border-top: 1px solid #444; }
-        input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #111; color: white; outline: none; }
-        button { padding: 10px 15px; border-radius: 5px; border: none; background: #075e54; color: white; cursor: pointer; font-weight: bold; }
-        .btn-sync { background: #d35400; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>P2P Chat v2.0 - Robust Sync</title>
+  https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.jsscript>
+  <style>
+    :root{ --bg:#1a1a1a; --panel:#222; --panel2:#111; --border:#444; --text:#ccc; --me:#054740; --other:#333; --accent:#075e54; --accent2:#128c7e; --warn:#ffaa00; --ok:#55ff55; --err:#ff5555; --info:#55aaff; }
+    *{ box-sizing:border-box; }
+    body{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:var(--bg); color:var(--text); display:flex; flex-direction:column; height:100vh; margin:0; }
+    header{ background:var(--accent); color:#fff; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; gap:12px; }
+    header .left{ display:flex; flex-direction:column; gap:2px; }
+    header .topline{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .version{ font-size:0.75em; background:var(--accent2); padding:3px 8px; border-radius:999px; }
+    .meta{ opacity:.8; font-size:.85em; display:flex; gap:10px; flex-wrap:wrap; }
+    .pill{ background:rgba(255,255,255,.12); padding:2px 8px; border-radius:999px; }
+
+    #chat{ flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; background:#202020; }
+    .msg{ background:var(--other); padding:8px 12px; border-radius:12px; max-width:min(800px, 86%); border:1px solid #3a3a3a; align-self:flex-start; box-shadow:0 1px 0 rgba(0,0,0,.3); }
+    .msg.me{ background:var(--me); align-self:flex-end; border-color:var(--accent); }
+    .msg small{ color:#b6b6b6; display:flex; gap:8px; align-items:center; }
+    .msg .ts{ opacity:.75; font-size:.8em; }
+
+    #debug{ background:#000; color:#0f0; font-size:11px; height:240px; overflow-y:auto; padding:10px; border-top:2px solid var(--border); line-height:1.4; }
+    .debug-err{ color:var(--err); }
+    .debug-ok{ color:var(--ok); }
+    .debug-warn{ color:var(--warn); }
+    .debug-info{ color:var(--info); }
+
+    .controls{ padding:12px; background:var(--panel); display:flex; gap:10px; border-top:1px solid var(--border); align-items:center; }
+    input{ flex:1; padding:10px; border-radius:10px; border:1px solid var(--border); background:var(--panel2); color:#fff; outline:none; }
+    button{ padding:10px 12px; border-radius:10px; border:none; background:var(--accent); color:#fff; cursor:pointer; font-weight:700; }
+    button:hover{ filter:brightness(1.05); }
+    .btn-warn{ background:#d35400; }
+    .btn-ghost{ background:transparent; border:1px solid rgba(255,255,255,.25); }
+
+    .row{ display:flex; gap:8px; align-items:center; }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .truncate{ max-width:42ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:inline-block; vertical-align:bottom; }
+
+    @media (max-width: 720px){
+      #debug{ height:200px; }
+      .controls{ flex-wrap:wrap; }
+      input{ flex-basis:100%; }
+    }
+  </style>
 </head>
 <body>
 
 <header>
-    <div>
-        <strong id="headerName">...</strong> 
-        <span class="version">v1.5</span>
-        <small id="headerId" style="opacity: 0.6; margin-left: 10px;"></small>
+  <div class="left">
+    <div class="topline">
+      <strong id="headerName">...</strong>
+      <span class="version">v2.0</span>
+      <span class="pill mono" id="headerId">ID: …</span>
     </div>
-    <div id="peerCount">Peers: 0</div>
+    <div class="meta">
+      <span class="pill" id="peerCount">Peers: 0</span>
+      <span class="pill" id="netState">Network: …</span>
+      <span class="pill mono truncate" id="roomHint" title="Magnet URI místnosti">room: …</span>
+      <button class="btn-ghost" id="copyRoomBtn" title="Zkopíruje magnet URI místnosti">Kopírovat room</button>
+    </div>
+  </div>
+  <div class="row">
+    <button class="btn-warn" id="reconnectBtn" title="Vynutí znovupřipojení k trackerům">↻ Znovu připojit</button>
+    <button class="btn-ghost" id="clearBtn" title="Vymaže lokální historii na tomto zařízení">Vymazat historii</button>
+  </div>
 </header>
 
 <div id="chat"></div>
 
 <div id="debug">
-    <div>=== P2P DIAGNOSTIKA v1.5 ===</div>
+  <div>=== P2P DIAGNOSTIKA v2.0 (robustní sync + bezpečný render + outbox) ===</div>
 </div>
 
 <div class="controls">
-    <button class="btn-sync" onclick="forceAnnounce()" title="Vynutí znovupřipojení k trackerům">&#x21bb; Znovu připojit</button>
-    <input type="text" id="messageInput" placeholder="Zadejte zprávu..." autocomplete="off">
-    <button onclick="sendChatMessage()">Odeslat</button>
+  <input type="text" id="messageInput" placeholder="Zadejte zprávu…" autocomplete="off" />
+  <button id="sendBtn">Odeslat</button>
 </div>
 
 <script>
-    // --- 1. NASTAVENÍ HYBRIDNÍCH TRACKERŮ ---
-    const ROOM_ID = 'p2p-sync-room-omega-2026'; 
-    
-    // Mix trackerů. Prohlížeč použije WSS, Desktop (v budoucnu) využije HTTPS/UDP
-    const TRACKER_LIST = [
-        'wss://tracker.openwebtorrent.com',
-        'wss://tracker.webtorrent.dev',
-        'wss://tracker.btorrent.xyz',
-        'wss://tracker.files.fm:7073/announce',
-        'https://tracker.nanoha.org:443/announce',
-        'udp://tracker.opentrackr.org:1337/announce'
-    ];
+(() => {
+  'use strict';
 
-    let myName = localStorage.getItem('p2p_name');
-    if (!myName) {
-        myName = "Uživatel_" + Math.floor(Math.random() * 9999);
-        localStorage.setItem('p2p_name', myName);
+  // ---------------------------
+  // 0) KONFIG
+  // ---------------------------
+  const APP_VERSION = '2.0';
+  const ROOM_ID = 'p2p-sync-room-omega-2026';
+
+  // V prohlížeči prakticky fungují jen WebSocket trackery (wss://).
+  const TRACKER_LIST_ALL = [
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.webtorrent.dev',
+    'wss://tracker.btorrent.xyz',
+    'wss://tracker.files.fm:7073/announce',
+    'https://tracker.nanoha.org:443/announce',
+    'udp://tracker.opentrackr.org:1337/announce'
+  ];
+  const TRACKERS = TRACKER_LIST_ALL.filter(u => u.startsWith('wss://'));
+
+  // Limity a intervaly
+  const MAX_HISTORY = 500;            // uloženo lokálně
+  const MAX_RENDER = 200;             // vykresleno v UI
+  const MAX_SYNC_SEND = 300;          // max zpráv poslaných v jedné sync odpovědi
+  const SYNC_CHUNK = 40;              // chunk size
+  const MAX_PACKET_BYTES = 64 * 1024; // ochrana proti obřím payloadům
+  const ANNOUNCE_KEEPALIVE_MS = 60_000;
+
+  // ---------------------------
+  // 1) UI HELPERY
+  // ---------------------------
+  const chatEl = document.getElementById('chat');
+  const debugEl = document.getElementById('debug');
+  const inputEl = document.getElementById('messageInput');
+  const peerCountEl = document.getElementById('peerCount');
+  const netStateEl = document.getElementById('netState');
+  const headerNameEl = document.getElementById('headerName');
+  const headerIdEl = document.getElementById('headerId');
+  const roomHintEl = document.getElementById('roomHint');
+
+  function log(msg, type=''){
+    const div = document.createElement('div');
+    if(type) div.className = `debug-${type}`;
+    div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    debugEl.appendChild(div);
+    debugEl.scrollTop = debugEl.scrollHeight;
+  }
+
+  function setNetState(){
+    const online = navigator.onLine;
+    netStateEl.textContent = `Network: ${online ? 'online' : 'offline'}`;
+  }
+
+  window.addEventListener('online', setNetState);
+  window.addEventListener('offline', setNetState);
+  setNetState();
+
+  // „autoscroll“ jen když je uživatel u spodku
+  function isNearBottom(){
+    return chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight < 80;
+  }
+
+  function formatTime(ts){
+    try {
+      return new Date(ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    } catch { return ''; }
+  }
+
+  // ---------------------------
+  // 2) IDENTITA (trvalá)
+  // ---------------------------
+  const LS = {
+    deviceId: 'p2p_device_id',
+    name: 'p2p_name',
+    seq: `p2p_seq_${ROOM_ID}`,
+    history: `p2p_history_${ROOM_ID}`,
+    outbox: `p2p_outbox_${ROOM_ID}`
+  };
+
+  function randId(len=16){
+    const abc = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let s = '';
+    for(let i=0;i<len;i++) s += abc[Math.floor(Math.random()*abc.length)];
+    return s;
+  }
+
+  let deviceId = localStorage.getItem(LS.deviceId);
+  if(!deviceId){ deviceId = `dev_${randId(20)}`; localStorage.setItem(LS.deviceId, deviceId); }
+
+  let myName = localStorage.getItem(LS.name);
+  if(!myName){ myName = `Uživatel_${Math.floor(Math.random()*9999)}`; localStorage.setItem(LS.name, myName); }
+  headerNameEl.textContent = myName;
+
+  let seq = parseInt(localStorage.getItem(LS.seq) || '0', 10);
+  function nextSeq(){
+    seq += 1;
+    localStorage.setItem(LS.seq, String(seq));
+    return seq;
+  }
+
+  // ---------------------------
+  // 3) HISTORIE + OUTBOX (Map/Set kvůli dedup)
+  // ---------------------------
+  /** @type {Array<any>} */
+  let chatHistory = [];
+  /** @type {Set<string>} */
+  let msgIndex = new Set();
+
+  function loadHistory(){
+    try {
+      const raw = localStorage.getItem(LS.history);
+      const arr = raw ? JSON.parse(raw) : [];
+      if(Array.isArray(arr)){
+        chatHistory = arr.filter(x => x && typeof x.id === 'string');
+        chatHistory = chatHistory.slice(-MAX_HISTORY);
+        msgIndex = new Set(chatHistory.map(m => m.id));
+      }
+    } catch { chatHistory = []; msgIndex = new Set(); }
+  }
+  loadHistory();
+
+  /** @type {Array<any>} */
+  let outbox = [];
+  function loadOutbox(){
+    try {
+      const raw = localStorage.getItem(LS.outbox);
+      const arr = raw ? JSON.parse(raw) : [];
+      if(Array.isArray(arr)) outbox = arr.filter(x => x && typeof x.id === 'string').slice(-200);
+    } catch { outbox = []; }
+  }
+  loadOutbox();
+
+  function persistHistory(){
+    // řazení robustněji: time, senderId, seq
+    chatHistory.sort((a,b) => (a.time-b.time) || String(a.senderId).localeCompare(String(b.senderId)) || ((a.seq||0)-(b.seq||0)));
+    if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
+    localStorage.setItem(LS.history, JSON.stringify(chatHistory));
+  }
+
+  function persistOutbox(){
+    if(outbox.length > 200) outbox = outbox.slice(-200);
+    localStorage.setItem(LS.outbox, JSON.stringify(outbox));
+  }
+
+  function addMessage(m){
+    if(!m || typeof m.id !== 'string') return false;
+    if(msgIndex.has(m.id)) return false;
+    msgIndex.add(m.id);
+    chatHistory.push(m);
+    return true;
+  }
+
+  function lastTime(){
+    if(chatHistory.length === 0) return 0;
+    let t = 0;
+    for(const m of chatHistory) if(typeof m.time === 'number' && m.time > t) t = m.time;
+    return t;
+  }
+
+  function tailIds(n=20){
+    return chatHistory.slice(-n).map(m => m.id);
+  }
+
+  // Bezpečný render bez innerHTML
+  function render(){
+    const nearBottom = isNearBottom();
+    // Render jen posledních MAX_RENDER
+    const slice = chatHistory.slice(-MAX_RENDER);
+    chatEl.innerHTML = '';
+    for(const m of slice){
+      const div = document.createElement('div');
+      div.className = `msg ${m.senderId === deviceId ? 'me' : ''}`;
+
+      const small = document.createElement('small');
+      const who = document.createElement('span');
+      who.textContent = m.sender || '???';
+      const ts = document.createElement('span');
+      ts.className = 'ts';
+      ts.textContent = formatTime(m.time);
+      small.appendChild(who);
+      small.appendChild(document.createTextNode(' · '));
+      small.appendChild(ts);
+
+      const text = document.createElement('div');
+      text.textContent = String(m.text || '');
+
+      div.appendChild(small);
+      div.appendChild(text);
+      chatEl.appendChild(div);
     }
-    document.getElementById('headerName').innerText = myName;
+    if(nearBottom) chatEl.scrollTop = chatEl.scrollHeight;
+  }
 
-    // --- 2. HISTORIE CHATU ---
-    let chatHistory = JSON.parse(localStorage.getItem(`p2p_history_${ROOM_ID}`) || '[]');
+  persistHistory();
+  render();
 
-    function saveAndRenderHistory() {
-        chatHistory.sort((a, b) => a.time - b.time);
-        if (chatHistory.length > 100) chatHistory = chatHistory.slice(-100);
-        localStorage.setItem(`p2p_history_${ROOM_ID}`, JSON.stringify(chatHistory));
-        
-        const chatEl = document.getElementById('chat');
-        chatEl.innerHTML = ''; 
-        chatHistory.forEach(m => {
-            const div = document.createElement('div');
-            div.className = `msg ${m.sender === myName ? 'me' : ''}`;
-            div.innerHTML = `<small style="color: #888">${m.sender}</small><br>${m.text.replace(/</g, "&lt;")}`;
-            chatEl.appendChild(div);
-        });
-        chatEl.scrollTop = chatEl.scrollHeight;
+  // ---------------------------
+  // 4) ROOM (stabilní magnet, deterministický obsah)
+  // ---------------------------
+  // Použijeme deterministický malý soubor založený na ROOM_ID.
+  // Pokud všichni použijí stejný ROOM_ID, vznikne stejný infoHash.
+  const roomPayloadText = `p2pchat-room:${ROOM_ID}\nversion:${APP_VERSION}\n`;
+  const roomBlob = new Blob([roomPayloadText], {type:'text/plain'});
+
+  // ---------------------------
+  // 5) WEBTORRENT klient
+  // ---------------------------
+  if(!window.WebTorrent){
+    log('WebTorrent knihovna nebyla načtena.', 'err');
+    return;
+  }
+
+  const client = new WebTorrent({
+    tracker: {
+      rtcConfig: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' },
+          { urls: 'stun:stun.cloudflare.com:3478' }
+        ]
+      }
     }
-    saveAndRenderHistory();
+  });
 
-    // --- 3. DEBUG LOG ---
-    const debugEl = document.getElementById('debug');
-    function log(msg, type = '') {
-        const div = document.createElement('div');
-        div.className = type ? `debug-${type}` : '';
-        div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
-        debugEl.appendChild(div);
-        debugEl.scrollTop = debugEl.scrollHeight;
+  client.on('error', err => log(`Client error: ${err?.message || err}`, 'err'));
+  client.on('warning', err => log(`Client warning: ${err?.message || err}`, 'warn'));
+
+  client.on('ready', () => {
+    headerIdEl.textContent = `ID: ${client.peerId.substring(0,8)} / ${deviceId.substring(0,8)}`;
+    log(`Klient připraven. PeerID=${client.peerId}`, 'info');
+  });
+
+  // ---------------------------
+  // 6) Extension "p2pchat" (správně – ne extended(0))
+  // ---------------------------
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+
+  function encodePayload(str){
+    // bittorrent-protocol v browseru často umí Uint8Array
+    return encoder.encode(str);
+  }
+  function decodePayload(buf){
+    try {
+      // buf může být Buffer/Uint8Array
+      return decoder.decode(buf);
+    } catch {
+      // fallback
+      return String(buf);
     }
+  }
 
-    // --- 4. WEBTORRENT P2P LOGIKA ---
-    const client = new WebTorrent({
-        tracker: {
-            rtcConfig: {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:global.stun.twilio.com:3478' }
-                ]
-            }
+  function P2PChatExtension(onPacket){
+    return function (wire){
+      return {
+        name: 'p2pchat',
+        onMessage: function (buf){
+          if(!buf) return;
+          if(buf.length && buf.length > MAX_PACKET_BYTES) return;
+          const text = decodePayload(buf);
+          onPacket(wire, text);
         }
-    });
-
-    client.on('ready', () => {
-        document.getElementById('headerId').innerText = `ID: ${client.peerId.substring(0, 8)}`;
-        log(`Klient připraven. Můj Peer ID: ${client.peerId}`, 'info');
-    });
-
-    const blob = new Blob(['p2p_sync_v1_5'], { type: 'text/plain' });
-
-    // Záznamník chyb pro eliminační metodu
-    let failedTrackers = new Set();
-
-    client.seed(blob, { name: 'ChatSession', announce: TRACKER_LIST }, (torrent) => {
-        log(`Připojování k roji. Hash: ${torrent.infoHash.substring(0,10)}...`, 'warn');
-
-        // DETEKCE PŘIPOJENÍ TRACKERŮ (Kombinovaná metoda)
-        torrent.on('trackerAnnounce', () => {
-            let activeTrackers = [];
-
-            // Metoda 1: Přímá inspekce otevřených WebSocketů
-            try {
-                if (torrent.discovery && torrent.discovery.tracker && torrent.discovery.tracker.trackers) {
-                    torrent.discovery.tracker.trackers.forEach(t => {
-                        // Kontrola, zda má objekt trackeru aktivní socket
-                        if (t.socket && t.socket.readyState === 1) { // 1 = WebSocket.OPEN
-                            activeTrackers.push(t.announceUrl);
-                        }
-                    });
-                }
-            } catch (e) {}
-
-            // Metoda 2: Eliminační metoda (pokud selže API inspekce)
-            if (activeTrackers.length === 0) {
-                activeTrackers = TRACKER_LIST.filter(url => 
-                    url.startsWith('wss://') && !failedTrackers.has(url)
-                );
-            }
-
-            if (activeTrackers.length > 0) {
-                // Odstranění duplicit pro jistotu
-                activeTrackers = [...new Set(activeTrackers)];
-                log(`Tracker OK: Announce úspěšný přes [${activeTrackers.join(', ')}]`, 'ok');
-            } else {
-                log(`Tracker OK: Announce úspěšný (URL skryto v API prohlížeče).`, 'ok');
-            }
-        });
-
-        // DETEKCE CHYB A FILTRACE
-        torrent.on('warning', err => {
-            if (err.message.includes('unsupported tracker protocol')) {
-                // Tichá ignorace HTTPS/UDP trackerů v prohlížeči
-                return; 
-            }
-            
-            const match = err.message.match(/connecting to (.+)/);
-            if (match) {
-                const url = match[1].replace(/['"]/g, '').trim();
-                failedTrackers.add(url);
-                log(`Tracker nedostupný: ${url}`, 'err');
-            } else {
-                log(`Varování: ${err.message}`, 'warn');
-            }
-        });
-
-        // DETEKCE PEERŮ A SYNCHRONIZACE
-        torrent.on('wire', (wire) => {
-            log(`+++ NOVÝ PEER: ID ${wire.remotePeerId.substring(0,8)} přes WebRTC`, 'ok');
-            document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
-
-            wire.use((w) => {
-                // Poslání historie
-                try {
-                    const syncData = JSON.stringify({ type: 'sync', data: chatHistory });
-                    wire.extended(0, syncData);
-                } catch(e) {}
-
-                // Příjem zpráv nebo historie
-                wire.on('extended', (code, data) => {
-                    try {
-                        const m = JSON.parse(data.toString());
-                        if (m.type === 'chat') {
-                            if (!chatHistory.find(msg => msg.id === m.id)) {
-                                chatHistory.push(m);
-                                saveAndRenderHistory();
-                            }
-                        } 
-                        else if (m.type === 'sync') {
-                            let added = 0;
-                            m.data.forEach(syncMsg => {
-                                if (!chatHistory.find(msg => msg.id === syncMsg.id)) {
-                                    chatHistory.push(syncMsg);
-                                    added++;
-                                }
-                            });
-                            if (added > 0) {
-                                log(`Sync: Staženo ${added} starších zpráv.`, 'info');
-                                saveAndRenderHistory();
-                            }
-                        }
-                    } catch(e) {}
-                });
-            });
-
-            wire.on('close', () => {
-                log(`--- PEER ODPOJEN`, 'err');
-                document.getElementById('peerCount').innerText = `Peers: ${torrent.numPeers}`;
-            });
-        });
-    });
-
-    // --- 5. ODESÍLÁNÍ ZPRÁV A MANUÁLNÍ PING ---
-    function sendChatMessage() {
-        const input = document.getElementById('messageInput');
-        const text = input.value.trim();
-        if(!text) return;
-
-        const newMsg = {
-            id: Math.random().toString(36).substring(2) + Date.now().toString(36),
-            type: 'chat',
-            sender: myName,
-            text: text,
-            time: Date.now()
-        };
-
-        const torrent = client.torrents[0];
-        if (torrent && torrent.numPeers > 0) {
-            try {
-                const payload = JSON.stringify(newMsg);
-                torrent.wires.forEach(w => w.extended(0, payload));
-                
-                chatHistory.push(newMsg);
-                saveAndRenderHistory();
-                input.value = '';
-                log(`Zpráva odeslána (${torrent.numPeers} peerům)`, 'ok');
-            } catch (e) {
-                log(`Chyba: ${e.message}`, 'err');
-            }
-        } else {
-            log(`Offline. Zpráva uložena do fronty.`, "err");
-            chatHistory.push(newMsg);
-            saveAndRenderHistory();
-            input.value = '';
-        }
+      };
     }
+  }
 
-    function forceAnnounce() {
-        log("Manuální dotaz na trackery (v1.5)...", "info");
-        failedTrackers.clear(); // Reset fail listu pro nový pokus
-        const torrent = client.torrents[0];
-        if (torrent && torrent.discovery && torrent.discovery.tracker) {
-            torrent.discovery.tracker.announce();
-        }
+  // ---------------------------
+  // 7) PROTOKOL (hello/getSince/msgs/chat)
+  // ---------------------------
+  const peerState = new Map(); // remotePeerId -> { lastHelloAt, lastSyncAt }
+
+  function normalizeIncoming(obj){
+    // základní validace
+    if(!obj || typeof obj !== 'object') return null;
+    if(typeof obj.type !== 'string') return null;
+    return obj;
+  }
+
+  function sendPacket(wire, obj){
+    try {
+      const s = JSON.stringify(obj);
+      const u8 = encodePayload(s);
+      wire.extended('p2pchat', u8);
+      return true;
+    } catch { return false; }
+  }
+
+  function broadcast(torrent, obj, exceptWire=null){
+    if(!torrent) return;
+    const s = JSON.stringify(obj);
+    const u8 = encodePayload(s);
+    for(const w of torrent.wires){
+      if(exceptWire && w === exceptWire) continue;
+      try { w.extended('p2pchat', u8); } catch {}
     }
+  }
 
-    document.getElementById('messageInput').addEventListener('keypress', function (e) {
-        if (e.key === 'Enter') sendChatMessage();
+  function sendHello(wire){
+    const hello = {
+      type: 'hello',
+      v: APP_VERSION,
+      deviceId,
+      name: myName,
+      lastTime: lastTime(),
+      tail: tailIds(20),
+      count: chatHistory.length
+    };
+    sendPacket(wire, hello);
+  }
+
+  function handleHello(torrent, wire, msg){
+    const remote = peerState.get(wire.remotePeerId) || {};
+    remote.lastHelloAt = Date.now();
+    peerState.set(wire.remotePeerId, remote);
+
+    // Pokud máme novější zprávy, nabídneme sync přes getSince.
+    const theirLast = typeof msg.lastTime === 'number' ? msg.lastTime : 0;
+    const ourLast = lastTime();
+
+    // Anti "sync storm": nereagovat příliš často jednomu peerovi
+    const now = Date.now();
+    if(remote.lastSyncAt && now - remote.lastSyncAt < 1500) return;
+
+    if(ourLast > theirLast){
+      remote.lastSyncAt = now;
+      peerState.set(wire.remotePeerId, remote);
+      // Peer si může vyžádat; pro jistotu pošleme přímo
+      sendMsgsSince(torrent, wire, theirLast);
+    } else if(ourLast < theirLast){
+      // My jsme pozadu – vyžádej si od nich
+      sendPacket(wire, {type:'getSince', since: ourLast, deviceId, name: myName});
+    }
+  }
+
+  function handleGetSince(torrent, wire, msg){
+    const since = typeof msg.since === 'number' ? msg.since : 0;
+    sendMsgsSince(torrent, wire, since);
+  }
+
+  function sendMsgsSince(torrent, wire, since){
+    // vyber zprávy novější než since
+    const msgs = chatHistory.filter(m => typeof m.time === 'number' && m.time > since);
+    const limited = msgs.slice(-MAX_SYNC_SEND);
+
+    if(limited.length === 0) return;
+
+    let offset = 0;
+    let part = 0;
+    while(offset < limited.length){
+      const chunk = limited.slice(offset, offset + SYNC_CHUNK);
+      offset += SYNC_CHUNK;
+      part += 1;
+      const packet = { type:'msgs', part, more: offset < limited.length, data: chunk };
+      sendPacket(wire, packet);
+    }
+    log(`Sync-> ${wire.remotePeerId?.substring(0,8) || 'peer'}: posláno ${limited.length} zpráv ve ${part} částech.`, 'info');
+  }
+
+  function handleMsgs(msg){
+    let added = 0;
+    if(Array.isArray(msg.data)){
+      for(const m of msg.data){
+        if(m && typeof m.id === 'string' && typeof m.text === 'string'){
+          if(addMessage(m)) added += 1;
+        }
+      }
+    }
+    if(added > 0){
+      persistHistory();
+      render();
+      log(`Sync: přidáno ${added} zpráv.`, 'ok');
+    }
+  }
+
+  function handleChat(msg){
+    // chat zpráva = single
+    if(!msg || typeof msg.id !== 'string' || typeof msg.text !== 'string') return;
+    if(addMessage(msg)){
+      persistHistory();
+      render();
+    }
+  }
+
+  function onPacket(torrent, wire, text){
+    let obj = null;
+    try { obj = JSON.parse(text); } catch { return; }
+    obj = normalizeIncoming(obj);
+    if(!obj) return;
+
+    switch(obj.type){
+      case 'hello':
+        handleHello(torrent, wire, obj);
+        break;
+      case 'getSince':
+        handleGetSince(torrent, wire, obj);
+        break;
+      case 'msgs':
+        handleMsgs(obj);
+        break;
+      case 'chat':
+        handleChat(obj);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // ---------------------------
+  // 8) SEED + WIRE HANDLING
+  // ---------------------------
+  let torrentRef = null;
+  let failedTrackers = new Set();
+
+  client.seed(roomBlob, {
+    name: `p2pchat_${ROOM_ID}.txt`,
+    announce: TRACKERS
+  }, (torrent) => {
+    torrentRef = torrent;
+    roomHintEl.textContent = `room: ${torrent.magnetURI}`;
+    roomHintEl.title = torrent.magnetURI;
+
+    log(`Místnost připojena. infoHash=${torrent.infoHash.substring(0,10)}…`, 'info');
+    log(`Trackery (browser): ${TRACKERS.join(', ') || 'žádné'}`, TRACKERS.length ? 'ok' : 'warn');
+
+    updatePeers(torrent);
+
+    // warning/error z torrentu
+    torrent.on('warning', (err) => {
+      const msg = err?.message || String(err);
+      if(msg.includes('unsupported tracker protocol')) return; // očekávané mimo wss
+      // pokus o extrakci URL
+      const m = msg.match(/(wss:\/\/[^\s'\"]+)/i);
+      if(m){ failedTrackers.add(m[1]); log(`Tracker varování: ${m[1]}`, 'warn'); }
+      else log(`Torrent warning: ${msg}`, 'warn');
     });
+    torrent.on('error', (err) => log(`Torrent error: ${err?.message || err}`, 'err'));
+
+    torrent.on('wire', (wire) => {
+      updatePeers(torrent);
+      log(`+++ PEER: ${wire.remotePeerId?.substring(0,8) || 'unknown'} (WebRTC)`, 'ok');
+
+      // nainstaluj extension
+      wire.use(P2PChatExtension((w, txt) => onPacket(torrent, w, txt)));
+
+      // po připojení: hello + flush outbox
+      setTimeout(() => {
+        try { sendHello(wire); } catch {}
+        try { flushOutbox(torrent); } catch {}
+      }, 200);
+
+      wire.on('close', () => {
+        updatePeers(torrent);
+        log(`--- PEER ODPOJEN`, 'err');
+      });
+    });
+
+    // keepalive announce (zlepšuje udržení roje)
+    setInterval(() => {
+      try {
+        if(!torrentRef) return;
+        const disc = torrentRef.discovery;
+        if(disc && disc.tracker && typeof disc.tracker.announce === 'function'){
+          disc.tracker.announce();
+          log('Keepalive: announce()', 'info');
+        }
+      } catch {}
+    }, ANNOUNCE_KEEPALIVE_MS);
+
+  });
+
+  function updatePeers(t){
+    peerCountEl.textContent = `Peers: ${t ? t.numPeers : 0}`;
+  }
+
+  // ---------------------------
+  // 9) OUTBOX FLUSH
+  // ---------------------------
+  function flushOutbox(torrent){
+    if(!torrent || torrent.numPeers === 0) return;
+    if(outbox.length === 0) return;
+
+    let sent = 0;
+    for(const msg of outbox){
+      // best-effort broadcast
+      broadcast(torrent, msg);
+      sent += 1;
+    }
+    outbox = [];
+    persistOutbox();
+    log(`Outbox: odesláno ${sent} čekajících zpráv.`, 'ok');
+  }
+
+  // ---------------------------
+  // 10) ODESÍLÁNÍ
+  // ---------------------------
+  function buildChatMessage(text){
+    return {
+      id: `${deviceId}_${Date.now().toString(36)}_${randId(6)}`,
+      type: 'chat',
+      senderId: deviceId,
+      sender: myName,
+      text: text,
+      time: Date.now(),
+      seq: nextSeq()
+    };
+  }
+
+  function sendChatMessage(){
+    const text = (inputEl.value || '').trim();
+    if(!text) return;
+
+    const msg = buildChatMessage(text);
+
+    // lokálně přidej vždy
+    addMessage(msg);
+    persistHistory();
+    render();
+    inputEl.value = '';
+
+    const torrent = torrentRef || client.torrents?.[0];
+    if(torrent && torrent.numPeers > 0){
+      try {
+        broadcast(torrent, msg);
+        log(`Zpráva odeslána (${torrent.numPeers} peerům)`, 'ok');
+      } catch(e){
+        outbox.push(msg);
+        persistOutbox();
+        log(`Chyba odesílání, uloženo do outbox: ${e?.message || e}`, 'err');
+      }
+    } else {
+      outbox.push(msg);
+      persistOutbox();
+      log('Offline / bez peerů. Zpráva uložena do outbox.', 'warn');
+    }
+  }
+
+  document.getElementById('sendBtn').addEventListener('click', sendChatMessage);
+  inputEl.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter') sendChatMessage();
+  });
+
+  // ---------------------------
+  // 11) MANUÁLNÍ RECONNECT / CLEAR
+  // ---------------------------
+  function forceAnnounce(){
+    log('Manuální dotaz na trackery…', 'info');
+    failedTrackers.clear();
+    const torrent = torrentRef || client.torrents?.[0];
+    try {
+      if(torrent && torrent.discovery && torrent.discovery.tracker && typeof torrent.discovery.tracker.announce === 'function'){
+        torrent.discovery.tracker.announce();
+        return;
+      }
+      log('Tracker API není dostupné v této verzi/runtime.', 'warn');
+    } catch(e){
+      log(`Announce chyba: ${e?.message || e}`, 'err');
+    }
+  }
+
+  document.getElementById('reconnectBtn').addEventListener('click', forceAnnounce);
+
+  document.getElementById('clearBtn').addEventListener('click', () => {
+    localStorage.removeItem(LS.history);
+    localStorage.removeItem(LS.outbox);
+    chatHistory = [];
+    msgIndex = new Set();
+    outbox = [];
+    render();
+    log('Lokální historie/outbox vymazány.', 'warn');
+  });
+
+  // ---------------------------
+  // 12) COPY ROOM
+  // ---------------------------
+  document.getElementById('copyRoomBtn').addEventListener('click', async () => {
+    const torrent = torrentRef || client.torrents?.[0];
+    const magnet = torrent ? torrent.magnetURI : '';
+    if(!magnet){ log('Magnet ještě není připraven.', 'warn'); return; }
+    try {
+      await navigator.clipboard.writeText(magnet);
+      log('Magnet URI zkopírován do schránky.', 'ok');
+    } catch {
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = magnet;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      log('Magnet URI zkopírován (fallback).', 'ok');
+    }
+  });
+
+  // ---------------------------
+  // 13) PERIODICKÉ UI UPDATE
+  // ---------------------------
+  setInterval(() => {
+    const t = torrentRef || client.torrents?.[0];
+    if(t) updatePeers(t);
+    setNetState();
+  }, 2000);
+
+})();
 </script>
 </body>
 </html>
