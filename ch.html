@@ -2,7 +2,7 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <title>P2P Pro Diagnostika</title>
+    <title>P2P Chat - Multi-Tracker</title>
     <script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
     <style>
         body { font-family: 'Consolas', monospace; background: #1a1a1a; color: #ccc; display: flex; flex-direction: column; height: 100vh; margin: 0; }
@@ -10,12 +10,9 @@
         #chat { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 8px; background: #222; }
         .msg { background: #333; padding: 8px 12px; border-radius: 8px; max-width: 80%; border: 1px solid #444; }
         .msg.me { background: #054740; align-self: flex-end; border-color: #075e54; }
-        
-        #debug { background: #000; color: #0f0; font-size: 11px; height: 200px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; line-height: 1.4; }
+        #debug { background: #000; color: #0f0; font-size: 11px; height: 200px; overflow-y: auto; padding: 10px; border-top: 2px solid #444; }
         .debug-err { color: #ff5555; }
-        .debug-info { color: #5555ff; }
-        .debug-success { color: #55ff55; }
-
+        .debug-ok { color: #55ff55; }
         .controls { padding: 15px; background: #222; display: flex; gap: 10px; border-top: 1px solid #444; }
         input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #111; color: white; outline: none; }
         button { padding: 10px 20px; border-radius: 5px; border: none; background: #075e54; color: white; cursor: pointer; }
@@ -31,72 +28,74 @@
 <div id="chat"></div>
 
 <div id="debug">
-    <div>=== P2P DIAGNOSTICKÝ KONZOL ===</div>
+    <div>=== P2P MULTI-TRACKER DIAGNOSTIKA ===</div>
 </div>
 
 <div class="controls">
-    <input type="text" id="messageInput" placeholder="Zadejte text zprávy...">
+    <input type="text" id="messageInput" placeholder="Napište zprávu...">
     <button onclick="sendMessage()">Odeslat</button>
 </div>
 
 <script>
+    // --- KONFIGURACE TRACKERŮ (Zde můžete měnit adresy) ---
+    // Poznámka: Prohlížeč vyžaduje protokol wss:// (WebSocket Secure)
+    const TRACKER_LIST = [
+        'wss://tracker.openwebtorrent.com',    // Globální standard
+        'wss://tracker.btorrent.xyz',          // Globální standard
+        'wss://tracker.files.fm:7073/announce', // Evropský uzel (populární v ČR)
+        'wss://tracker.gbitt.info',            // Stabilní uzel
+        'wss://tracker.fastcast.nz',           // Alternativní uzel
+        'wss://tracker.slow.li',               // Nízko-latenční uzel
+        'wss://tracker.burny.io',              // Novější uzel
+        'wss://tracker.quicksilver.it',        // Italský/Středoevropský uzel
+        'wss://tracker.iriseden.fr',           // Francouzský uzel
+        'wss://tracker.vraphim.com'            // Záložní uzel
+    ];
+
     const debugEl = document.getElementById('debug');
     function log(msg, type = '') {
         const div = document.createElement('div');
         if (type === 'err') div.className = 'debug-err';
-        if (type === 'info') div.className = 'debug-info';
-        if (type === 'ok') div.className = 'debug-success';
+        if (type === 'ok') div.className = 'debug-ok';
         div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
         debugEl.appendChild(div);
         debugEl.scrollTop = debugEl.scrollHeight;
     }
 
-    // 1. Identita
     const myName = "Uživatel_" + Math.floor(Math.random() * 999);
     const client = new WebTorrent();
     
-    // Zobrazení identity v záhlaví
     document.getElementById('headerName').innerText = myName;
     
-    // Počkejme na vygenerování Peer ID klientem
     client.on('ready', () => {
         document.getElementById('headerId').innerText = `ID: ${client.peerId.substring(0, 8)}...`;
-        log(`Můj Peer ID: ${client.peerId}`, 'info');
-        log(`Moje Jméno: ${myName}`, 'info');
+        log(`Moje Jméno: ${myName}`, 'ok');
+        log(`Můj Peer ID: ${client.peerId}`, 'ok');
     });
 
-    const trackers = [
-        'wss://tracker.openwebtorrent.com',
-        'wss://tracker.btorrent.xyz',
-        'wss://tracker.files.fm:7073/announce',
-        'wss://tracker.fastcast.nz'
-    ];
+    const ROOM_ID = 'p2p-multi-tracker-room-2026';
+    const blob = new Blob(['p2p_data_v3'], { type: 'text/plain' });
 
-    const ROOM_ID = 'debug-room-universal-2024';
-    const blob = new Blob(['p2p_chat_v2'], { type: 'text/plain' });
+    log(`Inicializace s ${TRACKER_LIST.length} trackery...`);
 
-    log("Startuji WebTorrent engine...", 'info');
+    client.seed(blob, { name: 'ChatSession', announce: TRACKER_LIST }, (torrent) => {
+        log(`Seeding aktivní. InfoHash: ${torrent.infoHash}`);
 
-    client.seed(blob, { name: 'ChatSession', announce: trackers }, (torrent) => {
-        log(`Seeding aktivní. InfoHash: ${torrent.infoHash}`, 'ok');
-
-        // Sledování stavu trackerů
-        torrent.on('trackerAnnounce', (announce) => {
-            // announce obsahuje URL trackeru, který právě odpověděl
-            log(`Tracker OK: ${torrent.discovery.tracker.announce.find(a => a.infoHash === torrent.infoHash).announceUrl}`, 'ok');
+        // Detekce odpovědi od trackeru
+        torrent.on('trackerAnnounce', () => {
+            log(`Tracker potvrdil spojení.`, 'ok');
         });
 
+        // Detekce chyb u konkrétních trackerů
         torrent.on('warning', err => {
-            if (err.message.includes('connect')) {
-                log(`Tracker nedostupný: ${err.message.split('connecting to ')[1] || 'neznámý'}`, 'err');
-            } else {
-                log(`Varování: ${err.message}`, 'err');
+            if (err.message.includes('connecting')) {
+                const url = err.message.split('connecting to ')[1] || 'neznámý';
+                log(`Tracker offline: ${url}`, 'err');
             }
         });
 
-        // Událost při nalezení nového peera
         torrent.on('wire', (wire) => {
-            log(`SPOJENÍ NAVÁZÁNO: Peer ${wire.remoteAddress || 'přes WebRTC'}`, 'ok');
+            log(`SPOJENÍ NAVÁZÁNO: Peer nalezen!`, 'ok');
             document.getElementById('peerCount').innerText = `Peers online: ${torrent.numPeers}`;
 
             wire.use((w) => {
@@ -104,9 +103,7 @@
                     try {
                         const m = JSON.parse(data.toString());
                         appendMessage(m.sender, m.text, false);
-                    } catch(e) {
-                        log("Přijata nečitelná data", "err");
-                    }
+                    } catch(e) {}
                 });
             });
         });
@@ -124,7 +121,7 @@
             appendMessage(myName, text, true);
             input.value = '';
         } else {
-            log("Nelze odeslat: Žádní peeri nejsou připojeni.", "err");
+            log("Chyba: Žádný aktivní peer pro odeslání zprávy.", "err");
         }
     }
 
