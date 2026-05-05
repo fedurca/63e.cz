@@ -104,7 +104,7 @@
 
 <script>
     // --- KONFIGURACE ---
-    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev"; // TVŮJ WORKER
+    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev"; 
     const MAX_HISTORY = 250;
     
     let myId = Math.random().toString(36).substr(2, 6);
@@ -114,12 +114,11 @@
     let channels = {}; 
     let networkGraph = {}; 
     
-    // Nástroje sítě (Deduplikace, Uzly, E2E)
-    let seenMessages = new Set(); // Ochrana proti smyčkám (Flood control)
-    let knownNodes = {}; // { id: { name, publicKeyJWK, derivedAesKey } }
-    let chatHistory = []; // Ukládáme lokálně v plaintextu
+    let seenMessages = new Set(); 
+    let knownNodes = {}; 
+    let chatHistory = []; 
 
-    let myKeyPair = null; // ECDH klíče
+    let myKeyPair = null; 
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -153,15 +152,14 @@
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
         
-        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk }; // Uložím si sebe
-        logDebug("✅ Klíče vygenerovány. Jsem připraven.", "success");
+        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk }; 
+        logDebug("Klíče vygenerovány. Jsem připraven.", "success");
         return myJwk;
     }
 
     async function deriveAesKey(peerId, peerJwk) {
         if(knownNodes[peerId] && knownNodes[peerId].derivedAesKey) return knownNodes[peerId].derivedAesKey;
         
-        logDebug(`Derivuji sdílený AES-GCM klíč pro uzel: ${peerId}`, "e2e");
         const importedPubKey = await crypto.subtle.importKey("jwk", peerJwk, { name: "ECDH", namedCurve: "P-256" }, true, []);
         const aesKey = await crypto.subtle.deriveKey(
             { name: "ECDH", public: importedPubKey }, myKeyPair.privateKey,
@@ -184,7 +182,6 @@
             const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
             return new TextDecoder().decode(plainBuf);
         } catch(e) {
-            logDebug(`Chyba dešifrování od ${senderId}!`, "error");
             return null;
         }
     }
@@ -216,9 +213,35 @@
         } catch(e) { return null; }
     }
 
+    // --- LOCAL STORAGE A HISTORIE ---
+    function loadHistory() {
+        const saved = localStorage.getItem('chat_history');
+        if(saved) {
+            chatHistory = JSON.parse(saved);
+            chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', false));
+        }
+    }
+
+    function saveMessage(msgObj) {
+        if(chatHistory.find(m => m.id === msgObj.id)) return false; 
+        chatHistory.push(msgObj);
+        if(chatHistory.length > MAX_HISTORY) chatHistory.shift();
+        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+        return true;
+    }
+
+    function renderMessage(author, text, type, scroll = true) {
+        const chat = document.getElementById('chat-area');
+        const div = document.createElement('div');
+        div.className = `msg msg-${type}`;
+        div.innerHTML = type !== 'system' ? `<div style="font-size:0.75rem;color:#777;margin-bottom:3px;"><b>${author}</b></div>${text}` : text;
+        chat.appendChild(div);
+        if(scroll) chat.scrollTop = chat.scrollHeight;
+    }
+
     // --- ROUTING (Záplavové směrování s deduplikací a TTL) ---
     function routeMessage(msgObj, sourceChannel = null) {
-        if (seenMessages.has(msgObj.id)) return; // Deduplikace (zprávu známe, zahodit)
+        if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
         
         if (seenMessages.size > 1000) {
@@ -226,10 +249,9 @@
             seenMessages.delete(firstItem);
         }
 
-        msgObj.ttl -= 1; // Snížení životnosti (Time-to-Live)
-        if (msgObj.ttl <= 0) return; // Zpráva umřela (prevence nekonečné smyčky)
+        msgObj.ttl -= 1; 
+        if (msgObj.ttl <= 0) return; 
 
-        // Forward na všechny přímé uzly KROMĚ toho, od koho to přišlo
         Object.values(channels).forEach(ch => {
             if (ch.readyState === 'open' && ch !== sourceChannel) {
                 ch.send(JSON.stringify(msgObj));
@@ -241,27 +263,49 @@
 
     async function processPayload(msg) {
         if (msg.type === 'announce') {
-            // Nový uzel v síti
             if (!knownNodes[msg.sender]) {
                 knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk };
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
                 renderMessage('System', `${msg.name} se objevil v síti.`, 'system');
                 
-                // Odpovím mu svým klíčem, aby mě taky znal
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
                 routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+
+                // --- TRUST THE HUB ---
+                if (isDnsHost && chatHistory.length > 0) {
+                    logDebug(`Šifruji historii pro nováčka ${msg.name}...`, "e2e");
+                    const historyJson = JSON.stringify(chatHistory);
+                    encryptE2E(historyJson, msg.sender).then(encryptedHistory => {
+                        routeMessage({
+                            id: Date.now() + myId + "sync", ttl: 2, 
+                            type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory
+                        });
+                    });
+                }
             }
-        } else if (msg.type === 'chat') {
-            // Pokusím se najít šifrovaný payload pro mě
+        } 
+        else if (msg.type === 'sync-history' && msg.target === myId) {
+            const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+            if (plaintextHistory) {
+                const historyArray = JSON.parse(plaintextHistory);
+                logDebug(`Historie úspěšně dešifrována a načtena!`, "success");
+                historyArray.forEach(histMsg => { 
+                    if(saveMessage(histMsg)) renderMessage(histMsg.author, histMsg.text, histMsg.author === myName ? 'self' : 'other');
+                });
+            }
+        } 
+        else if (msg.type === 'chat') {
             if (msg.payloads[myId]) {
                 const plaintext = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
                 if (plaintext) {
                     const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
-                    renderMessage(authorName, plaintext, 'other');
+                    const msgObjForStorage = { id: msg.id, author: authorName, text: plaintext };
+                    if(saveMessage(msgObjForStorage)) renderMessage(authorName, plaintext, 'other');
                 }
             }
-        } else if (msg.type === 'topo') {
+        } 
+        else if (msg.type === 'topo') {
             networkGraph[msg.sender] = msg.edges;
         }
     }
@@ -270,30 +314,22 @@
         const text = document.getElementById('chat-input').value.trim();
         if (!text) return;
         
-        logDebug("Šifruji zprávu pro všechny známé uzly v síti...", "e2e");
-        
-        // Vytvořím E2E payload pro KAŽDÉHO známého klienta zvlášť
         let encryptedPayloads = {};
         for (const peerId of Object.keys(knownNodes)) {
-            if (peerId !== myId) {
-                encryptedPayloads[peerId] = await encryptE2E(text, peerId);
-            }
+            if (peerId !== myId) encryptedPayloads[peerId] = await encryptE2E(text, peerId);
         }
 
-        const msgObj = {
-            id: Date.now() + myId, // Unikátní ID pro deduplikaci
-            ttl: 10, // Max 10 přeskoků stromem
-            type: 'chat',
-            sender: myId,
-            payloads: encryptedPayloads
-        };
+        const msgId = Date.now() + myId;
+        const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
 
+        const msgObjForStorage = { id: msgId, author: myName, text: text };
+        saveMessage(msgObjForStorage);
         renderMessage('Ty', text, 'self');
-        routeMessage(msgObj); // Pošle do sítě
+        routeMessage(msgObj); 
         document.getElementById('chat-input').value = '';
     }
 
-    // --- WEBRTC TREE LOGIKA ---
+    // --- WEBRTC TREE LOGIKA S OCHRANOU PROTI ZÁSEKU ---
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
         logDebug(`Zakládám linku na Hub: ${targetId}`, 'webrtc');
@@ -315,14 +351,25 @@
             bindDataChannel(ch, targetId);
             
             await pc.setLocalDescription(await pc.createOffer());
+            
+            // OPRAVA 1: Pojistka proti nekonečnému čekání na ICE (Zásek STUNu)
             const onGatheringComplete = async () => {
+                if (pc.gatheringDone) return;
+                pc.gatheringDone = true;
                 if (useDns) {
+                    logDebug("Zapisuji Offer do DNS a stoupám si do fronty...", "info");
                     await writeDns(`offer-${myId}`, pc.localDescription);
                     await writeDns('queue', { guestId: myId });
                 }
             };
-            if (pc.iceGatheringState === 'complete') onGatheringComplete();
-            else pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
+
+            if (pc.iceGatheringState === 'complete') {
+                onGatheringComplete();
+            } else {
+                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
+                // Pokud to nestihne do 3.5 vteřin, pošleme co máme!
+                setTimeout(onGatheringComplete, 3500); 
+            }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
         }
@@ -333,16 +380,15 @@
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
-            logDebug(`Linka otevřena!`, 'success');
+            logDebug(`P2P Linka s ${targetId} otevřena!`, 'success');
             
-            // Oznámím se celé síti (rozešlu svůj veřejný klíč)
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
             routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
         };
 
         channel.onmessage = (e) => {
             const msgObj = JSON.parse(e.data);
-            routeMessage(msgObj, channel); // Přijmi, zkontroluj TTL/Deduplikaci a přepošli dál
+            routeMessage(msgObj, channel); 
         };
     }
 
@@ -350,7 +396,7 @@
     function checkIsolation() {
         if (Object.keys(channels).length === 0) {
             logDebug("Ztratil jsem spojení se sítí (Jsem izolován)!", "error");
-            // Kdo přežije a má nejnižší ID, stane se novým Hubem
+            document.getElementById('ui-role').innerText = 'Izolován';
             const activeIds = Object.keys(knownNodes).sort();
             if (activeIds[0] === myId) {
                 logDebug("👑 Přebírám roli DNS Hubu!", "webrtc");
@@ -365,19 +411,21 @@
     // --- BOOTSTRAP (Spuštění) ---
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
+        document.getElementById('ui-role').innerText = "Kontroluji síť...";
         myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
         
-        document.getElementById('setup-screen').style.display = 'none'; // Odhal Debug
+        document.getElementById('setup-screen').style.display = 'none'; 
+        loadHistory();
         await initCrypto();
         
         logDebug(`Zjišťuji, zda existuje aktivní Hub...`, 'info');
         const hostAlive = await readDns('host-alive');
         
         if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-            logDebug(`Nalezen Hub. Jdu do fronty.`, 'success');
+            logDebug(`Nalezen záznam Hubu. Pokouším se připojit.`, 'info');
             joinViaDns();
         } else {
-            logDebug(`Síť je prázdná. Stávám se Hubem.`, 'webrtc');
+            logDebug(`Síť se zdá být prázdná. Stávám se Hubem.`, 'webrtc');
             startDnsHostLoop();
         }
     }
@@ -395,30 +443,52 @@
         let pollingGuests = new Set();
         dnsInterval = setInterval(async () => {
             const queue = await readDns('queue');
+            // OPRAVA 2: Čteme offer dřív, než ho přidáme do blacklistu pollingGuests
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && !pollingGuests.has(queue.guestId)) {
-                logDebug(`Nováček ve frontě: ${queue.guestId}`, 'webrtc');
-                pollingGuests.add(queue.guestId);
                 
-                await createP2PNode(queue.guestId, false);
                 const offer = await readDns(`offer-${queue.guestId}`);
                 if(offer) {
+                    logDebug(`Přijímám nováčka z DNS fronty: ${queue.guestId}`, 'webrtc');
+                    pollingGuests.add(queue.guestId); // Až teď ho označíme jako "zpracovaného"
+                    await createP2PNode(queue.guestId, false);
+                    
                     await connections[queue.guestId].setRemoteDescription(offer);
                     await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
                     
                     const sendDnsAnswer = async () => {
+                        if (connections[queue.guestId].answerDone) return;
+                        connections[queue.guestId].answerDone = true;
                         await writeDns(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
                         await writeDns('queue', { guestId: 'IDLE' }); 
                     };
+
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
-                    else connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
+                    else {
+                        connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
+                        setTimeout(sendDnsAnswer, 3500); // Timeout pojistka pro Hub
+                    }
                 }
             }
         }, 5000);
     }
 
     async function joinViaDns() {
+        document.getElementById('ui-role').innerText = "Spojuji se s Hubem...";
         await createP2PNode('hub', true, true); 
+        
+        let pokusy = 0;
         const iv = setInterval(async () => {
+            pokusy++;
+            
+            // OPRAVA 3: Pojistka proti "Ghost Hubu"
+            if (pokusy > 6) { // Čekáme maximálně 30 vteřin
+                clearInterval(iv);
+                logDebug("Hub dlouho neodpovídá. Pravděpodobně je mrtvý (Ghost Hub). Provádím převzetí sítě!", "error");
+                delete connections['hub'];
+                startDnsHostLoop();
+                return;
+            }
+
             const answer = await readDns(`answer-${myId}`);
             if (answer) {
                 clearInterval(iv);
@@ -431,7 +501,6 @@
     // --- VIZUALIZACE TOPOLOGIE (Canvas) ---
     setInterval(() => {
         networkGraph[myId] = Object.keys(channels);
-        // Vyšleme do sítě info o našich přímých linkách (TTL = 10 zabrání smyčce)
         routeMessage({ id: Date.now() + myId, ttl: 10, type: 'topo', sender: myId, edges: Object.keys(channels) });
         drawTopology();
     }, 2000);
@@ -448,9 +517,8 @@
         Object.keys(networkGraph).forEach(k => { nodes.add(k); networkGraph[k].forEach(p => nodes.add(p)); });
         const nodesArr = Array.from(nodes);
         
-        // Pro Tree vizualizaci: DNS Host je uprostřed, ostatní kolem
         const activeIds = Object.keys(knownNodes).sort();
-        const rootId = activeIds.length > 0 ? activeIds[0] : myId; // Náš odhad na Root
+        const rootId = activeIds.length > 0 ? activeIds[0] : myId; 
         
         const radius = Math.min(canvas.width, canvas.height) / 3;
         const cx = canvas.width / 2;
@@ -458,7 +526,7 @@
         const pos = {};
         
         nodesArr.forEach((n, i) => {
-            if (n === rootId) { pos[n] = { x: cx, y: cy }; } // Root do středu
+            if (n === rootId) { pos[n] = { x: cx, y: cy }; } 
             else {
                 const angle = (i / (nodesArr.length || 1)) * 2 * Math.PI;
                 pos[n] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
