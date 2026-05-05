@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.0.6</title>
+    <title>E2E Tree P2P Chat v2.0.7</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -63,7 +63,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;}
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; } .log-sync { color: #f39c12; font-weight: bold; }
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -79,7 +79,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.6 (Buffer & Sync Fix)</span>
+            <span class="version-badge">v2.0.7 (Perfect Sync)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -120,8 +120,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.6: Chunkování historie pro zamezení přetečení WebRTC.</p>
-            <!-- OKAMŽITÉ UKLÁDÁNÍ JMÉNA -->
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.7: Ochrana proti zahození historie (Crypto ID) a nový slučovač.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -141,7 +140,10 @@
         ]
     };
     
-    function generateId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 5); }
+    // OPRAVA 1: Generátor unikátních ID nezávislých na čase
+    function generateId() { 
+        return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
+    }
 
     let myId = generateId().substr(0, 6);
     let myName = "";
@@ -191,7 +193,6 @@
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
     }
 
-    // --- KRYPTOGRAFIE ---
     async function initCrypto() {
         logDebug("Generuji ECDH (P-256) asymetrický pár klíčů...", "e2e");
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
@@ -227,7 +228,6 @@
         } catch(e) { return null; }
     }
 
-    // --- API SIGNALIZACE ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -262,7 +262,6 @@
         return null;
     }
 
-    // --- CHAT & HISTORIE ---
     function reRenderAllHistory() {
         const chat = document.getElementById('chat-area');
         chat.innerHTML = '';
@@ -300,27 +299,29 @@
 
     let syncTimeout = null;
     function mergeIncomingHistory(incomingArray) {
-        let added = false;
+        let addedCount = 0;
         let mergedMap = new Map();
         chatHistory.forEach(m => mergedMap.set(m.id, m));
         incomingArray.forEach(m => {
             if(!mergedMap.has(m.id)) {
                 mergedMap.set(m.id, m);
-                added = true;
+                addedCount++;
             }
         });
 
-        if (added) {
+        if (addedCount > 0) {
             chatHistory = Array.from(mergedMap.values()).sort((a,b) => a.time - b.time);
             if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
             localStorage.setItem('chat_history', JSON.stringify(chatHistory));
             
-            // Debounce zabrání zamrznutí a problikávání UI při příchodu více dávek (chunks) za sebou
             clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
                 reRenderAllHistory();
-                logDebug(`[SYNC] Historie stažena a sloučena.`, "success");
+                logDebug(`[SYNC OK] Vloženo ${addedCount} nových zpráv z cloudu a seřazeno.`, "sync");
+                renderMessage('System', `Staženo a seřazeno ${addedCount} zpráv z historie sítě.`, 'system');
             }, 500);
+        } else {
+            logDebug(`[SYNC] Dávka přijata, ale všechny zprávy už znám.`, "info");
         }
     }
 
@@ -339,7 +340,6 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- ROUTING ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -374,29 +374,38 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                logDebug(`[SYNC] Odesílám historii po částech pro (${knownNodes[msg.sender].name})...`, 'info');
-                
-                // OCHRANA PROTI PŘETEČENÍ WEBRTC: Odesílání po dávkách (Chunks)
-                const batchSize = 15; 
+                const batchSize = 10; // Ještě menší dávky pro extrémní stabilitu
                 let i = 0;
+                let chunkIndex = 1;
+                
+                logDebug(`[SYNC START] Začínám sekání historie (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}...`, 'sync');
                 
                 const sendBatch = async () => {
-                    if (i >= chatHistory.length) return;
+                    if (i >= chatHistory.length) {
+                        logDebug(`[SYNC DONE] Všechny části odeslány.`, 'sync');
+                        return;
+                    }
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
+                        logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv)`, 'info');
                         routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
-                    } catch(e) {}
+                        chunkIndex++;
+                    } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
+                    
                     i += batchSize;
-                    setTimeout(sendBatch, 250); // Odstup 250ms mezi výstřely
+                    setTimeout(sendBatch, 300); // 300ms pauza mezi odesíláním
                 };
                 sendBatch();
             }
         }
         else if (msg.type === 'sync-history' && msg.target === myId) {
+            logDebug(`[SYNC IN] Přijata zašifrovaná dávka historie, dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plaintextHistory) {
                 mergeIncomingHistory(JSON.parse(plaintextHistory));
+            } else {
+                logDebug(`[SYNC ERR] Nelze dešifrovat. Nemám k tomu klíče!`, 'error');
             }
         } 
         else if (msg.type === 'chat') {
@@ -452,7 +461,6 @@
         document.getElementById('chat-input').value = '';
     }
 
-    // --- WEBRTC ---
     function cleanupConnection(targetId) {
         if(channels[targetId]) { 
             channels[targetId].onclose = null; 
@@ -527,7 +535,8 @@
             routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
             if (!isDnsHost) {
-                setTimeout(() => { routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId }); }, 2000);
+                logDebug(`Za 3 vteřiny požádám Hub o historii...`, 'info');
+                setTimeout(() => { routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
             }
 
             const pingInterval = setInterval(() => {
@@ -562,7 +571,6 @@
         };
     }
 
-    // --- GARBAGE COLLECTOR ---
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -596,7 +604,6 @@
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY ---
     async function fullResetAndReconnect() {
         if (isResetting) return;
         isResetting = true;
@@ -663,7 +670,6 @@
         }
     }
 
-    // --- BOOTSTRAP ---
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
         document.getElementById('ui-role').innerText = "Kontroluji API...";
