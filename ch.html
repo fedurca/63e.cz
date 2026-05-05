@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.0.7</title>
+    <title>E2E Tree P2P Chat v2.0.8</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -79,7 +79,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.7 (Perfect Sync)</span>
+            <span class="version-badge">v2.0.8 (Bulletproof Sync)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -120,7 +120,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.7: Ochrana proti zahození historie (Crypto ID) a nový slučovač.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.8: Bezpečné dávkování a robustní kryptografie.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -140,7 +140,6 @@
         ]
     };
     
-    // OPRAVA 1: Generátor unikátních ID nezávislých na čase
     function generateId() { 
         return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
     }
@@ -169,11 +168,24 @@
         if (savedName) document.getElementById('username').value = savedName;
     });
 
-    function buf2b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
+    // ZÁSADNÍ OPRAVA (Stack Overflow Eliminátor): Přepis převodníků Base64
+    function buf2b64(buf) {
+        let binary = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.byteLength; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+    
     function b642buf(b64) {
-        const bin = atob(b64); const ui8 = new Uint8Array(bin.length);
-        for (let i=0; i<bin.length; i++) ui8[i] = bin.charCodeAt(i);
-        return ui8.buffer;
+        const binary_string = window.atob(b64);
+        const len = binary_string.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binary_string.charCodeAt(i);
+        }
+        return bytes.buffer;
     }
 
     function logDebug(msg, type = 'info') {
@@ -225,7 +237,10 @@
             const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK);
             const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
             return new TextDecoder().decode(plainBuf);
-        } catch(e) { return null; }
+        } catch(e) { 
+            logDebug(`[E2E ERR] Selhalo dešifrování: ${e.message}`, 'error');
+            return null; 
+        }
     }
 
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
@@ -317,11 +332,10 @@
             clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
                 reRenderAllHistory();
-                logDebug(`[SYNC OK] Vloženo ${addedCount} nových zpráv z cloudu a seřazeno.`, "sync");
-                renderMessage('System', `Staženo a seřazeno ${addedCount} zpráv z historie sítě.`, 'system');
+                logDebug(`[SYNC OK] Do historie úspěšně vloženo ${addedCount} nových zpráv z cloudu.`, "sync");
             }, 500);
         } else {
-            logDebug(`[SYNC] Dávka přijata, ale všechny zprávy už znám.`, "info");
+            logDebug(`[SYNC] Dávka byla přijata, ale nepřinesla žádné nové zprávy.`, "info");
         }
     }
 
@@ -352,7 +366,13 @@
         msgObj.path.push(myId);
 
         Object.values(channels).forEach(ch => {
-            if (ch.readyState === 'open' && ch !== sourceChannel) ch.send(JSON.stringify(msgObj));
+            if (ch.readyState === 'open' && ch !== sourceChannel) {
+                try {
+                    ch.send(JSON.stringify(msgObj));
+                } catch(err) {
+                    logDebug(`[P2P ERR] Chyba odesílání do kanálu: ${err.message}`, 'error');
+                }
+            }
         });
 
         processPayload(msgObj);
@@ -373,16 +393,22 @@
             }
         } 
         else if (msg.type === 'request-history') {
-            if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 10; // Ještě menší dávky pro extrémní stabilitu
+            if (isDnsHost && chatHistory.length > 0) {
+                if (!knownNodes[msg.sender]) {
+                    logDebug(`[SYNC ERR] Neznám uzla ${msg.sender}, ignoruji požadavek o historii.`, 'error');
+                    return;
+                }
+                
+                // OCHRANA PROTI PŘETEČENÍ WEBRTC A SPAMU (5 zpráv na dávku, s prodlevou)
+                const batchSize = 5; 
                 let i = 0;
                 let chunkIndex = 1;
                 
-                logDebug(`[SYNC START] Začínám sekání historie (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}...`, 'sync');
+                logDebug(`[SYNC START] Začínám proces synchronizace (${chatHistory.length} zpráv) pro uzel ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Všechny části odeslány.`, 'sync');
+                        logDebug(`[SYNC DONE] Všechny dávky úspěšně odeslány.`, 'sync');
                         return;
                     }
                     const batch = chatHistory.slice(i, i + batchSize);
@@ -391,21 +417,24 @@
                         logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv)`, 'info');
                         routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
-                    } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
+                    } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    setTimeout(sendBatch, 300); // 300ms pauza mezi odesíláním
+                    // Prodloužená pauza na 500ms pro maximální spolehlivost přenosu
+                    setTimeout(sendBatch, 500); 
                 };
                 sendBatch();
             }
         }
-        else if (msg.type === 'sync-history' && msg.target === myId) {
-            logDebug(`[SYNC IN] Přijata zašifrovaná dávka historie, dešifruji...`, 'info');
-            const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
-            if (plaintextHistory) {
-                mergeIncomingHistory(JSON.parse(plaintextHistory));
-            } else {
-                logDebug(`[SYNC ERR] Nelze dešifrovat. Nemám k tomu klíče!`, 'error');
+        else if (msg.type === 'sync-history') {
+            if (msg.target === myId) {
+                logDebug(`[SYNC IN] Přijata zašifrovaná dávka historie od Mastera, dešifruji...`, 'info');
+                const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+                if (plaintextHistory) {
+                    mergeIncomingHistory(JSON.parse(plaintextHistory));
+                } else {
+                    logDebug(`[SYNC ERR] Nelze dešifrovat dávku. Nesouhlasí klíče.`, 'error');
+                }
             }
         } 
         else if (msg.type === 'chat') {
@@ -417,7 +446,7 @@
                     
                     if (msg.path && msg.path.length > 0) {
                         const pathNames = msg.path.map(id => knownNodes[id]?.name || id).join(" ➔ ");
-                        logDebug(`✉ Zpráva (${authorName}) šla cestou: ${pathNames} ➔ Ty`, 'log-path');
+                        logDebug(`✉ Zpráva (${authorName}) přišla cestou: ${pathNames} ➔ Ty`, 'log-path');
                     }
 
                     const msgObjForStorage = { id: msg.id, author: authorName, text: secretData.text, time: secretData.time };
@@ -535,7 +564,7 @@
             routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
             if (!isDnsHost) {
-                logDebug(`Za 3 vteřiny požádám Hub o historii...`, 'info');
+                logDebug(`Připojeno. Za 3 vteřiny požádám Hub o synchronizaci historie...`, 'info');
                 setTimeout(() => { routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
             }
 
@@ -553,21 +582,29 @@
             cleanupConnection(targetId);
         };
 
+        // SUROVÝ LOG PŘÍCHOZÍCH DAT PRO DIAGNOSTIKU
         channel.onmessage = (e) => {
-            const msgObj = JSON.parse(e.data);
-            if (msgObj.type === '_ping') {
-                channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t }));
-                if (knownNodes[targetId]) knownNodes[targetId].lastSeen = Date.now();
-                return;
-            }
-            if (msgObj.type === '_pong') {
-                if (knownNodes[targetId]) {
-                    knownNodes[targetId].ping = Date.now() - msgObj.t;
-                    knownNodes[targetId].lastSeen = Date.now();
+            try {
+                const msgObj = JSON.parse(e.data);
+                if (msgObj.type === '_ping') {
+                    channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t }));
+                    if (knownNodes[targetId]) knownNodes[targetId].lastSeen = Date.now();
+                    return;
                 }
-                return;
+                if (msgObj.type === '_pong') {
+                    if (knownNodes[targetId]) {
+                        knownNodes[targetId].ping = Date.now() - msgObj.t;
+                        knownNodes[targetId].lastSeen = Date.now();
+                    }
+                    return;
+                }
+                
+                // Loguje fyzický příjem všeho, co není ping
+                logDebug(`[P2P IN] Zpráva fyzicky dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
+                routeMessage(msgObj, channel); 
+            } catch (err) {
+                logDebug(`[P2P ERR] Fatální chyba při parsování příchozí zprávy: ${err.message}`, 'error');
             }
-            routeMessage(msgObj, channel); 
         };
     }
 
