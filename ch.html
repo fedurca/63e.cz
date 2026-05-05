@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v1.4.1 (Debug Edition)</title>
+    <title>E2E Tree P2P Chat v1.4.2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
@@ -69,7 +69,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v1.4.1 (Cache-Bust)</span>
+            <span class="version-badge">v1.4.2 (Split-Brain Fix)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -109,7 +109,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Oprava Split-Brain: Agresivní cache-busting DNS.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V1.4.2: Oprava Cloudflare Chunking parsování.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
             <button id="join-btn" onclick="initSystem()">Generovat klíče a připojit</button>
         </div>
@@ -117,7 +117,7 @@
 </div>
 
 <script>
-    // --- KONFIGURACE (Ověř svou URL) ---
+    // --- KONFIGURACE (Ověř URL) ---
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
@@ -204,7 +204,7 @@
         } catch(e) { return null; }
     }
 
-    // --- DNS SIGNALIZACE S CACHE BUSTINGEM ---
+    // --- DNS SIGNALIZACE ---
     function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
     function dekomprimovat(b64) {
         const str = atob(b64); const pole = new Uint8Array(str.length);
@@ -214,17 +214,26 @@
 
     async function writeDns(subdomena, data) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
-        logDebug(`[DNS OUT] Zapisuji: ${subdomena}.63e.cz`, 'dns');
+        logDebug(`[DNS OUT] Odesílám zápis pro: ${subdomena}.63e.cz`, 'dns');
         try {
             const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
-            if((await res.json()).success) { updateDebugStats('dns', 'OK'); return true; }
-        } catch (e) { logDebug(`[DNS ERROR] Zápis selhal: ${e.message}`, 'error'); } return false;
+            const out = await res.json();
+            if(out.success) { 
+                updateDebugStats('dns', 'OK'); 
+                return true; 
+            } else {
+                logDebug(`[DNS ERROR] Worker odmítl zápis! Payload moc velký? Detail: ${JSON.stringify(out)}`, 'error');
+                return false;
+            }
+        } catch (e) { 
+            logDebug(`[DNS ERROR] Fetch fail: ${e.message}`, 'error'); 
+            return false; 
+        }
     }
 
     async function readDns(subdomena) {
         updateDebugStats('dns', `ČTENÍ: ${subdomena}`);
         try {
-            // OPRAVA 1: Extrémní cache busting (časové razítko + no-store hlavičky)
             const cacheBuster = Date.now() + Math.floor(Math.random() * 1000);
             const res = await fetch(`https://cloudflare-dns.com/dns-query?name=${subdomena}.63e.cz&type=TXT&_cb=${cacheBuster}`, { 
                 headers: { 'Accept': 'application/dns-json', 'Cache-Control': 'no-cache' },
@@ -234,11 +243,18 @@
             if(!json.Answer) return null;
             
             updateDebugStats('dns', 'OK');
-            const data = dekomprimovat(json.Answer[0].data.replace(/"/g, ''));
-            // Odfiltrujeme čtení sebe sama z fronty z minulých životů
-            if(subdomena === 'queue' && data.guestId) logDebug(`[DNS IN] Přečtena fronta: ${data.guestId}`, 'dns');
+            
+            // OPRAVA 1.4.2: Odstranění všech mezer, nového řádkování a uvozovek z chunkovaných záznamů!
+            const rawData = json.Answer[0].data;
+            const cleanB64 = rawData.replace(/["\s\n\r]/g, ''); 
+            
+            const data = dekomprimovat(cleanB64);
+            if(subdomena === 'queue' && data.guestId) logDebug(`[DNS IN] Fronta obsahuje: ${data.guestId}`, 'dns');
             return data;
-        } catch(e) { return null; }
+        } catch(e) { 
+            logDebug(`[DNS PARSE ERROR] Selhalo čtení DNS (pravděpodobně rozbitý Base64): ${e.message}`, 'error');
+            return null; 
+        }
     }
 
     // --- CHAT & HISTORIE ---
@@ -362,7 +378,7 @@
     // --- WEBRTC ---
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
-        logDebug(`Zakládám linku: ${targetId} (STUN/TURN)`, 'webrtc');
+        logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
         
         const pc = new RTCPeerConnection(WEBRTC_CONFIG);
         connections[targetId] = pc;
@@ -386,8 +402,14 @@
                 if (pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
-                    await writeDns(`offer-${myId}`, pc.localDescription);
-                    await writeDns('queue', { guestId: myId });
+                    // Atomický zápis: Nejprve Offer, pokud projde, tak Queue
+                    logDebug(`Iniciuji zápis SDP klíčů do DNS...`, 'info');
+                    const ok = await writeDns(`offer-${myId}`, pc.localDescription);
+                    if (ok) {
+                        await writeDns('queue', { guestId: myId });
+                    } else {
+                        logDebug(`Zápis Offeru selhal. Fronta nebyla zapsána, aby nedošlo k záseku.`, 'error');
+                    }
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
@@ -405,7 +427,7 @@
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
-            logDebug(`P2P Spojeno: ${targetId}`, 'success');
+            logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success');
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
             routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
@@ -460,10 +482,10 @@
         list.innerHTML = html;
     }, 1000);
 
-    // --- RECOVERY (Vylepšená volba lídra) ---
+    // --- RECOVERY ---
     function checkIsolation() {
         if (Object.keys(channels).length === 0) {
-            logDebug("Ztratil jsem spojení! Inicializuji volbu nového Mastera...", "error");
+            logDebug("Ztratil jsem spojení! Inicializuji re-election...", "error");
             document.getElementById('ui-role').innerText = 'Izolován';
             
             const now = Date.now();
@@ -472,17 +494,17 @@
             aliveIds.sort();
 
             if (aliveIds[0] === myId) {
-                logDebug(`👑 Jsem nejvyšší autorita. Přebírám DNS Mastera!`, "webrtc");
+                logDebug(`👑 Jsem nejvyšší autorita. Přebírám roli DNS Hub!`, "webrtc");
                 startDnsHostLoop();
             } else {
                 const jitter = Math.floor(Math.random() * 3000) + 3000; 
-                logDebug(`Novým Masterem by se měl stát uzel [${aliveIds[0]}]. Vyčkávám ${jitter}ms...`, "info");
+                logDebug(`Hubem by se měl stát uzel [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
                 setTimeout(() => joinViaDns(), jitter);
             }
         }
     }
 
-    // --- BOOTSTRAP (Spuštění) ---
+    // --- BOOTSTRAP ---
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
         document.getElementById('ui-role').innerText = "Kontroluji...";
@@ -510,13 +532,12 @@
         
         let pollingGuests = new Set();
         dnsInterval = setInterval(async () => {
-            logDebug(`[DNS Polling] Kontroluji frontu...`, 'info');
             const queue = await readDns('queue');
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
                 
                 const offer = await readDns(`offer-${queue.guestId}`);
                 if(offer) {
-                    logDebug(`[DNS] Zpracovávám Offer od: ${queue.guestId}`, 'success');
+                    logDebug(`[DNS] Přečten Offer od: ${queue.guestId}, generuji Answer...`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -525,7 +546,7 @@
                     const sendDnsAnswer = async () => {
                         if (connections[queue.guestId].answerDone) return;
                         connections[queue.guestId].answerDone = true;
-                        logDebug(`[DNS] Odesílám Answer pro: ${queue.guestId}`, 'info');
+                        logDebug(`[DNS OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
                         await writeDns(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
                         await writeDns('queue', { guestId: 'IDLE' }); 
                     };
@@ -535,6 +556,8 @@
                         connections[queue.guestId].onicegatheringstatechange = () => { if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); };
                         setTimeout(sendDnsAnswer, 4000);
                     }
+                } else {
+                    logDebug(`[DNS] Ve frontě je ${queue.guestId}, ale Offer chybí. Asi problém se zápisem.`, 'error');
                 }
             }
         }, 5000);
@@ -547,25 +570,24 @@
         let pokusy = 0;
         const iv = setInterval(async () => {
             pokusy++;
-            // OPRAVA 2: Čekáme déle (45 vteřin), Cloudflare DNS propagace může být pomalejší
             if (pokusy > 9) { 
                 clearInterval(iv);
-                logDebug("DNS Master dlouho neodpovídá. Vynucuji re-election!", "error");
+                logDebug("Master neodpovídá. Vynucuji re-election!", "error");
                 delete connections['hub'];
                 checkIsolation(); 
                 return;
             }
-            logDebug(`[DNS] Hledám Answer pro sebe (Pokus ${pokusy}/9)...`, 'info');
+            logDebug(`[DNS] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
             const answer = await readDns(`answer-${myId}`);
             if (answer) {
                 clearInterval(iv);
-                logDebug(`[DNS] Answer nalezen, spojuji přes WebRTC!`, 'success');
+                logDebug(`[DNS] Answer nalezen, aplikuji...`, 'success');
                 await connections['hub'].setRemoteDescription(answer);
             }
         }, 5000);
     }
 
-    // --- VIZUALIZACE TOPOLOGIE (Canvas) ---
+    // --- VIZUALIZACE TOPOLOGIE ---
     setInterval(() => {
         if (isDnsHost) {
             networkGraph = { root: myId, edges: Object.keys(channels) };
