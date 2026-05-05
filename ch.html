@@ -3,26 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E2E Tree P2P Chat v2.0.1</title>
+    <title>E2E Tree P2P Chat v2.0.2</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        body, html { height: 100%; background-color: var(--bg-color); overflow: hidden; }
-        #app { display: flex; flex-direction: column; height: 100vh; max-width: 1200px; margin: 0 auto; background: var(--chat-bg); box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; }
+        
+        /* FIX PRO MOBILY: 100dvh dynamicky reaguje na lišty a klávesnice */
+        body, html { 
+            height: 100dvh; height: -webkit-fill-available;
+            background-color: var(--bg-color); overflow: hidden; 
+        }
+        
+        #app { 
+            display: flex; flex-direction: column; 
+            height: 100dvh; height: -webkit-fill-available;
+            max-width: 1200px; margin: 0 auto; background: var(--chat-bg); 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1); position: relative; 
+        }
 
-        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; }
         .status-dot.online { background: #2ed573; }
         .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
         .secure-badge { background: #2ed573; color: #000; font-size: 0.7rem; padding: 3px 6px; border-radius: 10px; font-weight: bold; margin-left: 10px; }
         .version-badge { font-size: 0.75rem; opacity: 0.8; margin-left: 10px; }
         
-        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; }
+        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
         @media (min-width: 800px) { .main-content { flex-direction: row; } }
 
         /* CHAT */
-        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; }
+        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; min-height: 0; }
         #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
         .msg { max-width: 80%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
         .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
@@ -31,32 +42,35 @@
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
-        /* INPUT AREA WITH NICKNAME */
-        #input-area { display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; }
+        /* INPUT AREA WITH FIX FOR iOS */
+        #input-area { 
+            display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
+            padding-bottom: calc(10px + env(safe-area-inset-bottom)); flex-shrink: 0;
+        }
         #ui-my-name { font-weight: bold; color: #333; margin-right: 10px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
         #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
-        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; }
+        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
         #input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* DEBUG PANELS */
-        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 50vh; border-left: 1px solid #333; }
+        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
         @media (min-width: 800px) { #debug-panel { width: 450px; height: 100%; } }
         
-        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; }
-        .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; }
+        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; }
+        .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
-        #topo-container { height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #topo-container { height: 160px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; }
         #topo-canvas { width: 100%; height: 100%; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
 
-        #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #net-health-panel { height: 120px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; }
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
-        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; }
+        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; }
 
         /* SETUP SCREEN */
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -73,7 +87,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.0.1 (UI + API Fixes)</span>
+            <span class="version-badge">v2.0.2 (Path Routing & Sync Fix)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -101,7 +115,7 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (CONTINUOUS TEST)</div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (GARBAGE COLLECTED)</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -114,9 +128,9 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.1: Stabilizace fronty a paměť jmen.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.0.2: Zpřesněná synchronizace a stopař zpráv.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka">
-            <button id="join-btn" onclick="initSystem()">Připojit</button>
+            <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
     </div>
 </div>
@@ -135,7 +149,11 @@
         ]
     };
     
-    let myId = Math.random().toString(36).substr(2, 6);
+    function generateId() {
+        return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    }
+
+    let myId = generateId().substr(0, 6);
     let myName = "";
     let isDnsHost = false;
     let connections = {}; 
@@ -152,9 +170,7 @@
     // --- PŘEDVYPLNĚNÍ JMÉNA Z LOCAL STORAGE ---
     window.addEventListener('DOMContentLoaded', () => {
         const savedName = localStorage.getItem('chat_nickname');
-        if (savedName) {
-            document.getElementById('username').value = savedName;
-        }
+        if (savedName) document.getElementById('username').value = savedName;
     });
 
     function buf2b64(buf) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))); }
@@ -181,6 +197,7 @@
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
     }
 
+    // --- KRYPTOGRAFIE (E2EE) ---
     async function initCrypto() {
         logDebug("Generuji ECDH (P-256) asymetrický pár klíčů...", "e2e");
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
@@ -209,10 +226,17 @@
 
     async function decryptE2E(ivB64, cipherB64, senderId) {
         try {
+            if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) {
+                logDebug(`[E2E ERR] Chybí veřejný klíč odesílatele (${senderId}).`, 'error');
+                return null;
+            }
             const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK);
             const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
             return new TextDecoder().decode(plainBuf);
-        } catch(e) { return null; }
+        } catch(e) { 
+            logDebug(`[E2E ERR] Dešifrování selhalo: ${e.message}`, 'error');
+            return null; 
+        }
     }
 
     // --- PŘÍMÉ API SPOJENÍ (Bypass DNS) ---
@@ -225,25 +249,13 @@
 
     async function writeSignal(subdomena, data, retry = 2) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
-        logDebug(`[API OUT] Odesílám signál pro: ${subdomena}`, 'api');
-        
         while (retry > 0) {
             try {
-                const res = await fetch(WORKER_URL, { 
-                    method: "POST", 
-                    headers: { "Content-Type": "application/json" }, 
-                    body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) 
-                });
+                const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
                 const out = await res.json();
-                if(out.success) { 
-                    updateDebugStats('dns', 'OK'); 
-                    return true; 
-                }
-            } catch (e) { 
-                logDebug(`[API ERR] Pokus o zápis selhal: ${e.message}`, 'error'); 
-            }
-            retry--;
-            if(retry > 0) await new Promise(r => setTimeout(r, 1000)); // Krátká pauza před dalším pokusem
+                if(out.success) { updateDebugStats('dns', 'OK'); return true; }
+            } catch (e) { }
+            retry--; if(retry > 0) await new Promise(r => setTimeout(r, 1000)); 
         }
         return false;
     }
@@ -256,9 +268,7 @@
             if(json.success && json.content) {
                 updateDebugStats('dns', 'OK');
                 const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
-                const data = dekomprimovat(cleanB64);
-                if(subdomena === 'queue' && data.guestId && data.guestId !== 'IDLE') logDebug(`[API IN] Fronta obsahuje: ${data.guestId}`, 'api');
-                return data;
+                return dekomprimovat(cleanB64);
             }
         } catch(e) { } 
         return null;
@@ -268,9 +278,7 @@
     function reRenderAllHistory() {
         const chat = document.getElementById('chat-area');
         chat.innerHTML = '';
-        chatHistory.forEach(msg => {
-            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
-        });
+        chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false));
         chat.scrollTop = chat.scrollHeight;
     }
 
@@ -317,7 +325,7 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- ROUTING A ZPRACOVÁNÍ ---
+    // --- ROUTING A ZPRACOVÁNÍ S PATH TRACKINGEM ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id);
@@ -325,6 +333,10 @@
 
         msgObj.ttl -= 1; 
         if (msgObj.ttl <= 0) return; 
+
+        // Stopař zpráv (Path Tracker)
+        if (!msgObj.path) msgObj.path = [];
+        msgObj.path.push(myId);
 
         Object.values(channels).forEach(ch => {
             if (ch.readyState === 'open' && ch !== sourceChannel) ch.send(JSON.stringify(msgObj));
@@ -344,16 +356,19 @@
                 renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
-
-                if (isDnsHost && chatHistory.length > 0) {
-                    const historyJson = JSON.stringify(chatHistory);
-                    encryptE2E(historyJson, msg.sender).then(encryptedHistory => {
-                        routeMessage({ id: Date.now() + myId + "sync", ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory });
-                    });
-                }
+                routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
             }
         } 
+        else if (msg.type === 'request-history') {
+            // EXPLICITNÍ HANDSHAKE: Pokud jsem Hub, odpovím cíleně historií.
+            if (isDnsHost && chatHistory.length > 0) {
+                logDebug(`[SYNC] Generuji historii pro nováčka...`, 'info');
+                const historyJson = JSON.stringify(chatHistory);
+                encryptE2E(historyJson, msg.sender).then(encryptedHistory => {
+                    routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encryptedHistory });
+                }).catch(e => logDebug(`[E2E ERR] Historie šifrování selhalo: ${e.message}`, 'error'));
+            }
+        }
         else if (msg.type === 'sync-history' && msg.target === myId) {
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plaintextHistory) {
@@ -362,7 +377,7 @@
                 historyArray.forEach(histMsg => { if(saveMessage(histMsg)) added = true; });
                 
                 if (added) {
-                    logDebug(`Historie z cloudu sloučena a seřazena. Překresluji...`, "success");
+                    logDebug(`[SYNC] Historie z cloudu sloučena a seřazena!`, "success");
                     reRenderAllHistory();
                     renderMessage('System', 'Historie chatu byla úspěšně synchronizována.', 'system');
                 }
@@ -374,6 +389,13 @@
                 if (plainJson) {
                     const secretData = JSON.parse(plainJson);
                     const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
+                    
+                    // VYPSÁNÍ STOPAŘE DO LOGU
+                    if (msg.path && msg.path.length > 0) {
+                        const pathNames = msg.path.map(id => knownNodes[id]?.name || id).join(" ➔ ");
+                        logDebug(`✉ Zpráva (${authorName}) šla cestou: ${pathNames}`, 'log-path');
+                    }
+
                     const msgObjForStorage = { id: msg.id, author: authorName, text: secretData.text, time: secretData.time };
                     if(saveMessage(msgObjForStorage)) renderMessage(authorName, secretData.text, 'other', secretData.time);
                 }
@@ -382,6 +404,14 @@
         else if (msg.type === 'topo-sync') {
             networkGraph = msg.graph;
             drawTopology();
+        }
+        else if (msg.type === 'node-left') {
+            if (knownNodes[msg.target]) {
+                logDebug(`Uzel ${knownNodes[msg.target].name} opustil síť.`, 'error');
+                delete knownNodes[msg.target];
+                updateDebugStats('nodes', Object.keys(knownNodes).length);
+                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
+            }
         }
     }
 
@@ -398,7 +428,7 @@
             }
         }
 
-        const msgId = Date.now() + myId;
+        const msgId = generateId();
         const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
 
         saveMessage({ id: msgId, author: myName, text: text, time: timeNow });
@@ -425,10 +455,10 @@
                 if (!isDnsHost) {
                     checkIsolation(); 
                 } else {
-                    logDebug(`Guest ${targetId} se odpojil z mého Hubu.`, 'info');
-                    // OPRAVA: Master okamžitě vyčistí queue, pokud mu spojení spadne ještě před dokončením
+                    logDebug(`Guest ${targetId} se odpojil z Hubu.`, 'info');
                     if(targetId !== 'hub') {
-                        writeSignal('queue', { guestId: 'IDLE' });
+                        writeSignal('queue', { guestId: 'IDLE' }); 
+                        routeMessage({ id: generateId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
                     }
                 }
             }
@@ -445,7 +475,6 @@
                 if (useDns) {
                     const ok = await writeSignal(`offer-${myId}`, pc.localDescription);
                     if (ok) await writeSignal('queue', { guestId: myId });
-                    else logDebug(`[API ERR] Nepodařilo se zapsat SDP klíče! Fronta zablokována.`, 'error');
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
@@ -459,19 +488,31 @@
     }
 
     function bindDataChannel(channel, targetId) {
-        channel.onopen = async () => {
+        const setupChannel = async () => {
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
             logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success');
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-            routeMessage({ id: Date.now() + myId, ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+            routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
-            setInterval(() => {
+            // Pokud jsem Spoke (Host), po chvíli explicitně poprosím o historii (vyhne se to Race Conditions)
+            if (!isDnsHost) {
+                setTimeout(() => {
+                    routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId });
+                }, 1500);
+            }
+
+            const pingInterval = setInterval(() => {
                 if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
+                else clearInterval(pingInterval);
             }, 3000);
         };
+
+        // Fix WebRTC záseku: Pokud je už kanál otevřený, spustit hned
+        if (channel.readyState === 'open') setupChannel();
+        else channel.onopen = setupChannel;
 
         channel.onmessage = (e) => {
             const msgObj = JSON.parse(e.data);
@@ -491,6 +532,7 @@
         };
     }
 
+    // --- ZDRAVÍ SÍTĚ (GARBAGE COLLECTED) ---
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -503,10 +545,18 @@
             const node = knownNodes[id];
             const isMe = id === myId;
             const isMaster = (networkGraph.root === id);
+            
+            const lastSeenDiff = now - (node.lastSeen || now);
+            
+            // Garbage Collector (Loví duchy starší než 30s)
+            if (!isMe && lastSeenDiff > 30000) {
+                delete knownNodes[id];
+                return; 
+            }
+
             const role = isMaster ? 'Master (Hub)' : 'Spoke';
             const pingStr = isMe ? '<span style="color:#aaa">Local</span>' : (node.ping !== undefined ? `${node.ping} ms` : '<span style="color:#aaa">Nepřímý</span>');
             
-            const lastSeenDiff = now - (node.lastSeen || now);
             let status = '<span style="color:#2ed573">Aktivní</span>';
             if (!isMe && lastSeenDiff > 20000) status = '<span style="color:#ff4757">Odpojen</span>';
             else if (!isMe && lastSeenDiff > 7000) status = '<span style="color:#feca57">Zpoždění</span>';
@@ -552,8 +602,8 @@
         document.getElementById('ui-role').innerText = "Kontroluji API...";
         
         myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
-        localStorage.setItem('chat_nickname', myName); // Uložení jména pro příště
-        document.getElementById('ui-my-name').innerText = myName; // Zobrazení vedle inputu
+        localStorage.setItem('chat_nickname', myName); 
+        document.getElementById('ui-my-name').innerText = myName; 
 
         document.getElementById('setup-screen').style.display = 'none'; 
         loadHistory();
@@ -583,7 +633,6 @@
                 
                 const offer = await readSignal(`offer-${queue.guestId}`);
                 if(offer) {
-                    logDebug(`[API IN] Zpracovávám nováčka: ${queue.guestId}`, 'success');
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     await connections[queue.guestId].setRemoteDescription(offer);
@@ -595,7 +644,6 @@
                         logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
                         const ok = await writeSignal(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
                         if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
-                        else logDebug(`[API ERR] Zápis Answeru selhal! Fronta zůstane zablokovaná.`, 'error');
                     };
 
                     if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
@@ -635,7 +683,7 @@
     setInterval(() => {
         if (isDnsHost) {
             networkGraph = { root: myId, edges: Object.keys(channels) };
-            routeMessage({ id: Date.now() + myId, ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
+            routeMessage({ id: generateId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
             drawTopology();
         }
     }, 2000);
