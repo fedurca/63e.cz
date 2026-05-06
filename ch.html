@@ -3,9 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.1</title>
+    <title>E2E Tree P2P Chat v2.1.2</title>
     
-    <!-- LOKÁLNÍ NAČTENÍ PAKO S CDN FALLBACKEM -->
     <script src="./pako.min.js"></script>
     <script>
         if (typeof pako === 'undefined') {
@@ -88,7 +87,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.1 (CORS & Local Pako)</span>
+            <span class="version-badge">v2.1.2 (Deterministic ID & Crypto Fix)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -129,7 +128,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.1: Fix blokování CDN a Cloudflare CORS politiky.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.2: Fix ztráty šifrovacích klíčů a stabilní ID zařízení.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -149,11 +148,29 @@
         ]
     };
     
-    function generateId() { 
+    // --- GENERÁTORY ID ---
+    
+    // 1. Deterministické ID uzlu (Zůstane stejné celý den pro daný prohlížeč a zařízení)
+    function generateNodeId() {
+        const dateStr = new Date().toISOString().split('T')[0]; // Např. "2026-05-06"
+        const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
+        
+        let hash = 0;
+        for (let i = 0; i < fingerprint.length; i++) {
+            hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
+            hash |= 0; 
+        }
+        let id = Math.abs(hash).toString(36);
+        while(id.length < 6) id += '0'; // Bezpečné doplnění
+        return id.substr(0, 6);
+    }
+
+    // 2. Unikátní ID zpráv (Nutné pro anti-spam deduplikační filtr!)
+    function generateMsgId() { 
         return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
     }
 
-    let myId = generateId().substr(0, 6);
+    let myId = generateNodeId(); // Použití fixního ID
     let myName = "";
     let isDnsHost = false;
     let connections = {}; 
@@ -333,8 +350,8 @@
             clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
                 reRenderAllHistory();
-                logDebug(`[SYNC OK] Úspěšně vloženo a vykresleno ${addedCount} historických zpráv.`, "success");
-            }, 300); // 300ms debounce
+                logDebug(`[SYNC OK] Úspěšně vloženo a vykresleno ${addedCount} historických zpráv z cloudu.`, "success");
+            }, 300);
         }
     }
 
@@ -372,21 +389,33 @@
             }
         });
 
-        processPayload(msgObj);
+        processPayload(msgObj); // Lokální zpracování
     }
 
     async function processPayload(msg) {
         if (msg.sender && knownNodes[msg.sender]) knownNodes[msg.sender].lastSeen = Date.now();
 
         if (msg.type === 'announce') {
-            if (!knownNodes[msg.sender]) {
+            const isNewNode = !knownNodes[msg.sender];
+            // KRYPTOGRAFICKÝ FIX: Kontrola, zda uzel se stejným ID neobnovil stránku a nemá tak nový veřejný klíč!
+            const isKeyChanged = knownNodes[msg.sender] && JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk);
+
+            if (isNewNode || isKeyChanged) {
                 knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now() };
+                
+                // Pokud změnil klíč, MUSÍME smazat starý AES šifrovací klíč z paměti
+                if (isKeyChanged) {
+                    delete knownNodes[msg.sender].derivedAesKey;
+                    logDebug(`Uzel ${msg.name} (${msg.sender}) obnovil své kryptografické klíče.`, 'info');
+                }
+
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
-                renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
+                
+                if (isNewNode) renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
             }
         } 
         else if (msg.type === 'request-history') {
@@ -395,20 +424,20 @@
                 let i = 0;
                 let chunkIndex = 1;
                 
-                logDebug(`[SYNC START] Začínám proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Začínám sekání historie (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Všechny dávky úspěšně odeslány.`, 'sync');
+                        logDebug(`[SYNC DONE] Všechny dávky pro ${knownNodes[msg.sender].name} úspěšně odeslány.`, 'sync');
                         return;
                     }
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
                         logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv)`, 'info');
-                        routeMessage({ id: generateId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
+                        routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
-                    } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo!`, 'error'); }
+                    } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
                     setTimeout(sendBatch, 500); 
@@ -417,13 +446,16 @@
             }
         }
         else if (msg.type === 'sync-history') {
-            logDebug(`[SYNC IN] Dorazil paket s historií z uzlu ${msg.sender}. Dešifruji...`, 'info');
+            // FIX SCHIZOFRENIE: Ignoruj paket, pokud byl odeslán tebou (např. Hub vidí svůj vlastní odchozí chunk)
+            // Ale naopak ignoruj msg.target check, protože lokálně zpracováváme jen to, co dorazilo
+            if (msg.target !== myId) return; 
+
+            logDebug(`[SYNC IN] Dorazil paket s historií od ${msg.sender}. Dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
-                    
                     const extractedTexts = historyArray.map(m => `[${m.author}]: ${m.text}`).join('<br> &nbsp; &nbsp; ');
                     logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
                     
@@ -479,7 +511,7 @@
             }
         }
 
-        const msgId = generateId();
+        const msgId = generateMsgId(); // FIX: Zpráva musí mít náhodné ID, ne statické ID uzlu!
         const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
 
         saveMessage({ id: msgId, author: myName, text: text, time: timeNow });
@@ -505,7 +537,7 @@
             logDebug(`Odstraňuji mrtvé spojení: ${targetId}`, 'info');
             writeSignal('queue', { guestId: 'IDLE' }); 
             if(knownNodes[targetId]) {
-                routeMessage({ id: generateId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
                 delete knownNodes[targetId];
             }
         } else if (!isDnsHost && targetId === 'hub') {
@@ -559,11 +591,11 @@
             logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success');
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-            routeMessage({ id: generateId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
             if (!isDnsHost) {
                 logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
-                setTimeout(() => { routeMessage({ id: generateId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
+                setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
             }
 
             const pingInterval = setInterval(() => {
@@ -639,7 +671,7 @@
         if (isResetting) return;
         isResetting = true;
 
-        logDebug("Provádím kompletní reset identity a znovupřipojení...", "info");
+        logDebug("Provádím kompletní reset připojení (ID zachováno)...", "info");
         
         if (joinInterval) clearInterval(joinInterval);
         if (dnsInterval) clearInterval(dnsInterval);
@@ -650,8 +682,7 @@
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
         isDnsHost = false;
         
-        myId = generateId().substr(0, 6); 
-        document.getElementById('dbg-id').innerText = myId;
+        // ZÁSADNÍ OPRAVA PRO DETERMINISTICKÉ ID: Generujeme pouze nové kryptografické klíče, ID ZŮSTÁVÁ
         await initCrypto();
         
         isResetting = false;
@@ -672,7 +703,7 @@
         
         const hostAlive = await readSignal('host-alive');
         if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-            logDebug("Hub v API stále žije! Zahazuji staré ID a připojuji se znovu...", "info");
+            logDebug("Hub v API stále žije! Restartuji lokální spojení...", "info");
             setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 2000);
             return; 
         }
@@ -795,7 +826,7 @@
     setInterval(() => {
         if (isDnsHost) {
             networkGraph = { root: myId, edges: Object.keys(channels) };
-            routeMessage({ id: generateId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
             drawTopology();
         }
     }, 2000);
