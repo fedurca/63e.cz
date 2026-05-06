@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.6</title>
+    <title>E2E Tree P2P Chat v2.2.0</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -39,21 +39,30 @@
 
         #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; min-height: 0; }
         #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
-        .msg { max-width: 80%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
+        .msg { max-width: 80%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
         .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
         .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
         .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
+        .file-attachment { display: flex; align-items: center; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; margin-top: 5px; text-decoration: none; color: #333;}
+        .file-attachment:hover { background: rgba(0,0,0,0.1); }
+        .file-icon { font-size: 1.5rem; margin-right: 10px; }
+        .file-name { font-size: 0.85rem; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;}
+        .file-size { font-size: 0.7rem; color: #777; }
+
         #input-area { 
             display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
             padding-bottom: calc(10px + env(safe-area-inset-bottom)); flex-shrink: 0;
         }
         #ui-my-name { font-weight: bold; color: #333; margin-right: 10px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
-        #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
-        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
-        #input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #file-input { display: none; }
+        .btn-attach { background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 0 10px; opacity: 0.6; transition: 0.2s; }
+        .btn-attach:hover { opacity: 1; }
+        #chat-input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
+        #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
+        #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
 
         #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
         @media (min-width: 800px) { #debug-panel { width: 450px; height: 100%; } }
@@ -72,7 +81,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -88,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.6 (Anti-Ghost Session ID)</span>
+            <span class="version-badge">v2.2.0 (File Share)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -99,6 +108,10 @@
             <div id="chat-area"></div>
             <div id="input-area">
                 <div id="ui-my-name">...</div>
+                
+                <input type="file" id="file-input" onchange="handleFileUpload(event)">
+                <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-input').click()" disabled title="Poslat soubor">📎</button>
+                
                 <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
                 <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
             </div>
@@ -117,9 +130,7 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">
-                📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)
-            </div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -132,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.6: Ochrana proti závadám z cachování (Session ID).</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.0: Oprava čtení SDP a plná podpora přenosu souborů.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -181,11 +192,11 @@
     let dnsInterval = null;
     let isResetting = false;
     let isCheckingIsolation = false;
-    
     let pollingGuests = new Set();
-    
-    // Globální uchování aktuálního Session ID pro připojování
     let currentSessionId = null;
+
+    // Buffer pro příjem souborů
+    let fileBuffers = {};
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -199,6 +210,14 @@
         return String(str).replace(/[&<>'"]/g, tag => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
         }[tag] || tag));
+    }
+    function formatBytes(bytes, decimals = 2) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const dm = decimals < 0 ? 0 : decimals;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
 
     function buf2b64(buf) {
@@ -240,6 +259,7 @@
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('chat-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
+        document.getElementById('btn-attach').disabled = false;
         document.getElementById('btn-clear-history').style.display = 'inline-block';
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
@@ -312,7 +332,7 @@
         chat.innerHTML = ''; 
         
         chatHistory.forEach(msg => {
-            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
+            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file);
         });
 
         const div = document.createElement('div');
@@ -386,7 +406,7 @@
         }
     }
 
-    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true) {
+    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null) {
         const chat = document.getElementById('chat-area');
         const div = document.createElement('div');
         div.className = `msg msg-${type}`;
@@ -394,13 +414,26 @@
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
         
         const safeAuthor = escapeHTML(author);
-        const safeText = escapeHTML(text);
+        let contentHtml = escapeHTML(text);
+
+        // Vykreslení File Attachmentu (Pokud je zpráva soubor)
+        if (fileObj) {
+            contentHtml += `
+                <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
+                    <div class="file-icon">📁</div>
+                    <div>
+                        <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
+                        <div class="file-size">${formatBytes(fileObj.size)}</div>
+                    </div>
+                </a>
+            `;
+        }
 
         if (type !== 'system') {
             div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;">
-                <b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${safeText}`;
+                <b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${contentHtml}`;
         } else {
-            div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${safeText}`;
+            div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${contentHtml}`;
         }
         
         chat.appendChild(div);
@@ -408,7 +441,7 @@
     }
 
     function routeMessage(msgObj, sourceChannel = null) {
-        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history') {
+        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk') {
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id);
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
@@ -458,7 +491,7 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 3; // Nízký počet zpráv pro minimalizaci zátěže WebRTC
+                const batchSize = 3; 
                 let i = 0;
                 let chunkIndex = 1;
                 
@@ -479,7 +512,7 @@
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    setTimeout(sendBatch, 800); // Backpressure mezera 800ms
+                    setTimeout(sendBatch, 800); 
                 };
                 sendBatch();
             }
@@ -493,7 +526,7 @@
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
-                    const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)}`).join('<br> &nbsp; &nbsp; ');
+                    const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)} ${m.file ? '(📎 Soubor)' : ''}`).join('<br> &nbsp; &nbsp; ');
                     logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
                     
                     mergeIncomingHistory(historyArray);
@@ -507,6 +540,43 @@
         else if (msg.type === 'clear-history') {
             logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error');
             clearLocalHistory();
+        }
+        // --- PŘÍJEM KOUSKŮ SOUBORU ---
+        else if (msg.type === 'file-chunk') {
+            if (msg.target !== myId) return; 
+            
+            const plainChunk = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+            if (plainChunk) {
+                const chunkData = JSON.parse(plainChunk);
+                const fileId = chunkData.fileId;
+                
+                if (!fileBuffers[fileId]) {
+                    fileBuffers[fileId] = { chunks: [], received: 0, total: chunkData.totalChunks, meta: chunkData.meta };
+                    logDebug(`[FILE IN] Začínám stahovat soubor: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file');
+                }
+                
+                fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data;
+                fileBuffers[fileId].received++;
+                
+                // Všechny kousky dorazily
+                if (fileBuffers[fileId].received === fileBuffers[fileId].total) {
+                    logDebug(`[FILE IN] Soubor ${chunkData.meta.name} kompletně stažen! Sestavuji...`, 'success');
+                    
+                    const fullBase64 = fileBuffers[fileId].chunks.join('');
+                    const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fullBase64}`;
+                    
+                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
+                    const timeNow = Date.now();
+                    
+                    const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl };
+                    const msgObjForStorage = { id: fileId, author: authorName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
+                    
+                    if(saveMessage(msgObjForStorage)) {
+                        renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj);
+                    }
+                    delete fileBuffers[fileId]; // Vyčisti paměť
+                }
+            }
         }
         else if (msg.type === 'chat') {
             if (msg.payloads[myId]) {
@@ -559,6 +629,74 @@
         renderMessage('Ty', text, 'self', timeNow);
         routeMessage(msgObj); 
         document.getElementById('chat-input').value = '';
+    }
+
+    // --- FUNKCE PRO ODESLÁNÍ SOUBORU ---
+    async function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        // Omezení velikosti na cca 5 MB, aby se nezasekl prohlížeč na šifrování
+        if (file.size > 5 * 1024 * 1024) {
+            alert("Soubor je příliš velký. Max 5 MB pro bezpečný P2P přenos.");
+            return;
+        }
+
+        logDebug(`[FILE] Načítám soubor ${file.name} (${formatBytes(file.size)})...`, 'file');
+        const reader = new FileReader();
+        
+        reader.onload = async (e) => {
+            const result = e.target.result; // Vrací "data:MIME;base64,DATA"
+            const base64Data = result.split(',')[1]; // Chceme jen čistá Base64 data
+            
+            const fileId = "FILE_" + generateMsgId();
+            const timeNow = Date.now();
+            const chunkSize = 16384; // 16KB je bezpečný limit pro WebRTC datový kanál
+            const totalChunks = Math.ceil(base64Data.length / chunkSize);
+            
+            const fileMeta = { name: file.name, size: file.size, type: file.type };
+            
+            logDebug(`[FILE] Rozsekáno na ${totalChunks} kousků. Šifruji a odesílám...`, 'file');
+            
+            // Lokální vykreslení pro odesílatele
+            const fileObj = { name: file.name, size: file.size, dataUrl: result };
+            const msgObjForStorage = { id: fileId, author: myName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
+            saveMessage(msgObjForStorage);
+            renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj);
+
+            // Zabalení a odeslání každého chunku
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
+                
+                for (const peerId of Object.keys(knownNodes)) {
+                    if (peerId !== myId) {
+                        const chunkObj = {
+                            fileId: fileId,
+                            chunkIndex: i,
+                            totalChunks: totalChunks,
+                            meta: fileMeta,
+                            data: chunkData
+                        };
+                        const encryptedChunk = await encryptE2E(JSON.stringify(chunkObj), peerId);
+                        
+                        routeMessage({
+                            id: generateMsgId(),
+                            ttl: 10,
+                            type: 'file-chunk',
+                            sender: myId,
+                            target: peerId,
+                            payload: encryptedChunk
+                        });
+                    }
+                }
+                // Krátká pauza proti ucpání sítě (Backpressure)
+                await new Promise(r => setTimeout(r, 50)); 
+            }
+            logDebug(`[FILE] Odesílání dokončeno.`, 'success');
+        };
+        
+        reader.readAsDataURL(file);
+        event.target.value = ''; // Reset inputu
     }
 
     function cleanupConnection(targetId) {
@@ -620,9 +758,15 @@
                 if (pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
-                    // OPRAVA GHOST ANSWER: Připojení Session ID k nabídce
                     currentSessionId = generateMsgId();
-                    const payload = { sdp: pc.localDescription, sid: currentSessionId };
+                    
+                    // OPRAVA IRON ROUTER (Jasný typ a formát do DNS kontejneru)
+                    const sdpData = {
+                        type: pc.localDescription.type,
+                        sdp: pc.localDescription.sdp
+                    };
+                    const payload = { sdp: sdpData, sid: currentSessionId };
+                    
                     const ok = await writeSignal(`offer-${myId}`, payload);
                     if (ok) await writeSignal('queue', { guestId: myId });
                 }
@@ -642,9 +786,8 @@
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
-            logDebug(`P2P Datový kanál s ${targetId} otevřen 🚀`, 'success');
+            logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success');
             
-            // Prodleva před zahájením komunikace pro ustálení ICE
             setTimeout(async () => {
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
@@ -653,7 +796,7 @@
                     logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
                     setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
                 }
-            }, 500);
+            }, 1000); // 1 sekunda pro ustálení linek
 
             const pingInterval = setInterval(() => {
                 if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
@@ -685,7 +828,9 @@
                     return;
                 }
                 
-                if (msgObj.type !== 'chat') logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
+                if (msgObj.type !== 'chat' && msgObj.type !== 'file-chunk') {
+                    logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
+                }
                 routeMessage(msgObj, channel); 
             } catch (err) { }
         };
@@ -823,16 +968,17 @@
                 if(connections[queue.guestId]) cleanupConnection(queue.guestId);
 
                 const offerPayload = await readSignal(`offer-${queue.guestId}`);
-                // Kompatibilita s novým formátem (obsahuje Session ID) i starým
-                const offer = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
+                const offerData = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
                 const offerSid = offerPayload?.sid ? offerPayload.sid : null;
 
-                if(offer) {
+                if(offerData) {
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     
                     if(connections[queue.guestId]) {
-                        await connections[queue.guestId].setRemoteDescription(offer);
+                        // OPRAVA IRON ROUTER (Převedení raw JSON objektu zpět na objekt RTCSessionDescription)
+                        const rtcOffer = new RTCSessionDescription(offerData);
+                        await connections[queue.guestId].setRemoteDescription(rtcOffer);
                         await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
                         
                         const sendDnsAnswer = async () => {
@@ -840,8 +986,12 @@
                             connections[queue.guestId].answerDone = true;
                             logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
                             
-                            // Hub připojí Session ID do odpovědi
-                            const payload = { sdp: connections[queue.guestId].localDescription, sid: offerSid };
+                            const sdpData = {
+                                type: connections[queue.guestId].localDescription.type,
+                                sdp: connections[queue.guestId].localDescription.sdp
+                            };
+                            const payload = { sdp: sdpData, sid: offerSid };
+                            
                             const ok = await writeSignal(`answer-${queue.guestId}`, payload);
                             if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
                         };
@@ -877,20 +1027,21 @@
             logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
             const answerPayload = await readSignal(`answer-${myId}`);
             
-            // OCHRANA PROTI "DUCHŮM" (Ghost Answer)
             if (answerPayload && connections['hub']) {
-                const answer = answerPayload.sdp ? answerPayload.sdp : answerPayload;
+                const answerData = answerPayload.sdp ? answerPayload.sdp : answerPayload;
                 const answerSid = answerPayload.sid ? answerPayload.sid : null;
 
                 if (currentSessionId && answerSid !== currentSessionId) {
                     logDebug(`[API WARN] Ignoruji starý Answer z cache (nesouhlasí Session ID). Čekám na nový...`, 'error');
-                    return; // Čeká dál v intervalu
+                    return; 
                 }
 
                 clearInterval(joinInterval);
                 logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
                 try {
-                    await connections['hub'].setRemoteDescription(answer);
+                    // OPRAVA IRON ROUTER (Zabalení přijatého JSONu do třídy, kterou WebRTC zná)
+                    const rtcAnswer = new RTCSessionDescription(answerData);
+                    await connections['hub'].setRemoteDescription(rtcAnswer);
                 } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
             }
         }, 5000);
