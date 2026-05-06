@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.2</title>
+    <title>E2E Tree P2P Chat v2.2.3</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.2 (Ghost Lock Fix)</span>
+            <span class="version-badge">v2.2.3 (Deadlock Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.2: Ochrana proti uvíznutí na mrtvém Hubu a oprava konstruktoru SDP.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.3: Odstraněn Race Condition a zasekávání sítě při restartu uzlu.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -157,6 +157,7 @@
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
@@ -192,13 +193,9 @@
     let dnsInterval = null;
     let isResetting = false;
     let isCheckingIsolation = false;
-    let pollingGuests = new Set();
     let currentSessionId = null;
     
-    // Globální obrana proti zamrznutí (Pokud Hub neodpoví, ignorujeme ho na 2 minuty)
     let ignoreHostAliveUntil = 0;
-
-    // Buffer pro příjem souborů
     let fileBuffers = {};
 
     document.getElementById('dbg-id').innerText = myId;
@@ -700,16 +697,15 @@
         if(connections[targetId]) { 
             connections[targetId].oniceconnectionstatechange = null; 
             connections[targetId].ondatachannel = null;
+            connections[targetId].onicegatheringstatechange = null;
             connections[targetId].close(); 
             delete connections[targetId]; 
         }
         
-        pollingGuests.delete(targetId);
         updateDebugStats('peers', Object.keys(channels).length);
 
         if (isDnsHost && targetId !== 'hub') {
             logDebug(`Odstraňuji mrtvé spojení: ${targetId}`, 'info');
-            writeSignal('queue', { guestId: 'IDLE' }); 
             if(knownNodes[targetId]) {
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
                 delete knownNodes[targetId];
@@ -744,10 +740,11 @@
             await pc.setLocalDescription(await pc.createOffer());
             
             const onGatheringComplete = async () => {
-                if (pc.gatheringDone) return;
+                if (!pc || pc.signalingState === 'closed' || pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
                     currentSessionId = generateMsgId();
+                    pc.offerSid = currentSessionId;
                     
                     const sdpData = {
                         type: pc.localDescription.type,
@@ -755,6 +752,7 @@
                     };
                     const payload = { sdp: sdpData, sid: currentSessionId };
                     
+                    logDebug(`[API OUT] Odesílám Offer do sítě...`, 'info');
                     const ok = await writeSignal(`offer-${myId}`, payload);
                     if (ok) await writeSignal('queue', { guestId: myId });
                 }
@@ -762,7 +760,7 @@
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(() => { if (!pc.gatheringDone) onGatheringComplete(); }, 12000); 
+                setTimeout(() => onGatheringComplete(), 10000); 
             }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
@@ -866,7 +864,6 @@
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
-        pollingGuests.clear(); 
         isDnsHost = false;
         
         await initCrypto();
@@ -887,7 +884,6 @@
         document.getElementById('ui-role').innerText = 'Izolován';
         
         const hostAlive = await readSignal('host-alive');
-        // Ochrana: Nesmí věřit Hubu, který jsme právě pro neresponsivitu ignorovali
         if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) {
             logDebug("Hub v API stále žije! Restartuji lokální spojení...", "info");
             setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 2000);
@@ -948,51 +944,64 @@
         
         dnsInterval = setInterval(async () => {
             const queue = await readSignal('queue');
-            if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
+            if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId) {
                 
-                if(connections[queue.guestId]) cleanupConnection(queue.guestId);
-
                 const offerPayload = await readSignal(`offer-${queue.guestId}`);
-                const offerData = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
-                const offerSid = offerPayload?.sid ? offerPayload.sid : null;
+                if (!offerPayload) return;
+                
+                const offerData = offerPayload.sdp ? offerPayload.sdp : offerPayload;
+                const offerSid = offerPayload.sid ? offerPayload.sid : null;
+
+                // HLAVNÍ OCHRANA PROTI DEADLOCKU
+                const currentPc = connections[queue.guestId];
+                if (currentPc && currentPc.offerSid === offerSid) {
+                    return; // Tento požadavek už zpracováváme
+                }
+
+                if (currentPc) {
+                    logDebug(`[API] Detekován nový pokus od ${queue.guestId}. Ruším staré spojení...`, 'info');
+                    cleanupConnection(queue.guestId);
+                }
 
                 if(offerData && offerData.sdp && offerData.type) {
-                    pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
+                    const pc = connections[queue.guestId]; // Odchytneme konkrétní instanci pro uzávěry (closures)
+                    if (!pc) return;
+                    pc.offerSid = offerSid;
                     
-                    if(connections[queue.guestId]) {
-                        try {
-                            // Striktní ochrana proti chybám z prohlížeče (vždy převede na lowerCase enum a ověří)
-                            const safeType = String(offerData.type).toLowerCase().trim();
-                            if (safeType !== 'offer') throw new Error(`SDP Typ musí být 'offer', přijato: '${safeType}'`);
+                    try {
+                        const safeType = String(offerData.type).toLowerCase().trim();
+                        if (safeType !== 'offer') throw new Error(`SDP Typ musí být 'offer', přijato: '${safeType}'`);
 
-                            const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
-                            await connections[queue.guestId].setRemoteDescription(rtcOffer);
-                            await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
+                        const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
+                        await pc.setRemoteDescription(rtcOffer);
+                        await pc.setLocalDescription(await pc.createAnswer());
+                        
+                        const sendDnsAnswer = async () => {
+                            if (!pc || pc.signalingState === 'closed' || pc.answerDone) return;
+                            pc.answerDone = true;
+                            logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
                             
-                            const sendDnsAnswer = async () => {
-                                if (!connections[queue.guestId] || connections[queue.guestId].answerDone) return;
-                                connections[queue.guestId].answerDone = true;
-                                logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
-                                
-                                const sdpData = {
-                                    type: connections[queue.guestId].localDescription.type,
-                                    sdp: connections[queue.guestId].localDescription.sdp
-                                };
-                                const payload = { sdp: sdpData, sid: offerSid };
-                                
-                                const ok = await writeSignal(`answer-${queue.guestId}`, payload);
-                                if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
+                            const sdpData = {
+                                type: pc.localDescription.type,
+                                sdp: pc.localDescription.sdp
                             };
+                            const payload = { sdp: sdpData, sid: offerSid };
+                            
+                            const ok = await writeSignal(`answer-${queue.guestId}`, payload);
+                            if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
+                        };
 
-                            if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
-                            else {
-                                connections[queue.guestId].onicegatheringstatechange = () => { 
-                                    if (connections[queue.guestId] && connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); 
-                                };
-                                setTimeout(() => { if(connections[queue.guestId] && !connections[queue.guestId].answerDone) sendDnsAnswer(); }, 8000); 
-                            }
-                        } catch(e) { logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error'); }
+                        if (pc.iceGatheringState === 'complete') sendDnsAnswer();
+                        else {
+                            pc.onicegatheringstatechange = () => { 
+                                if (pc.iceGatheringState === 'complete') sendDnsAnswer(); 
+                            };
+                            setTimeout(() => sendDnsAnswer(), 8000); 
+                        }
+                    } catch(e) { 
+                        logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error'); 
+                        cleanupConnection(queue.guestId);
                     }
                 }
             }
@@ -1011,7 +1020,6 @@
             if (pokusy > 9) { 
                 clearInterval(joinInterval);
                 logDebug("Spojení vypršelo (Hub neodpovídá). Ignoruji jeho signál pro další 2 minuty.", "error");
-                // Klíčová oprava: Pokud hub po 45s nedodá Answer, prohlásíme ho za "Ghost Hub" a 2 minuty ho budeme ignorovat
                 ignoreHostAliveUntil = Date.now() + 120000;
                 cleanupConnection('hub'); 
                 return;
@@ -1032,7 +1040,6 @@
                     clearInterval(joinInterval);
                     logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
                     try {
-                        // Striktní ochrana
                         const safeType = String(answerData.type).toLowerCase().trim();
                         if (safeType !== 'answer' && safeType !== 'pranswer') throw new Error(`SDP Typ musí být 'answer', přijato: '${safeType}'`);
                         
