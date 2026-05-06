@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.1</title>
+    <title>E2E Tree P2P Chat v2.2.2</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.1 (SDP Fix)</span>
+            <span class="version-badge">v2.2.2 (Ghost Lock Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.1: Oprava inicializace SDP popisu.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.2: Ochrana proti uvíznutí na mrtvém Hubu a oprava konstruktoru SDP.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -194,6 +194,9 @@
     let isCheckingIsolation = false;
     let pollingGuests = new Set();
     let currentSessionId = null;
+    
+    // Globální obrana proti zamrznutí (Pokud Hub neodpoví, ignorujeme ho na 2 minuty)
+    let ignoreHostAliveUntil = 0;
 
     // Buffer pro příjem souborů
     let fileBuffers = {};
@@ -416,7 +419,6 @@
         const safeAuthor = escapeHTML(author);
         let contentHtml = escapeHTML(text);
 
-        // Vykreslení File Attachmentu (Pokud je zpráva soubor)
         if (fileObj) {
             contentHtml += `
                 <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
@@ -495,7 +497,7 @@
                 let i = 0;
                 let chunkIndex = 1;
                 
-                logDebug(`[SYNC START] Začínám bezpečný proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Začínám synchronizaci (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
@@ -506,7 +508,6 @@
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
                         const payloadStr = JSON.stringify(encrypted);
-                        logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv, ${Math.round(payloadStr.length / 1024)} KB)`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
@@ -526,9 +527,6 @@
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
-                    const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)} ${m.file ? '(📎 Soubor)' : ''}`).join('<br> &nbsp; &nbsp; ');
-                    logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
-                    
                     mergeIncomingHistory(historyArray);
                 } catch(e) {
                     logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
@@ -541,7 +539,6 @@
             logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error');
             clearLocalHistory();
         }
-        // --- PŘÍJEM KOUSKŮ SOUBORU ---
         else if (msg.type === 'file-chunk') {
             if (msg.target !== myId) return; 
             
@@ -558,7 +555,6 @@
                 fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data;
                 fileBuffers[fileId].received++;
                 
-                // Všechny kousky dorazily
                 if (fileBuffers[fileId].received === fileBuffers[fileId].total) {
                     logDebug(`[FILE IN] Soubor ${chunkData.meta.name} kompletně stažen! Sestavuji...`, 'success');
                     
@@ -574,7 +570,7 @@
                     if(saveMessage(msgObjForStorage)) {
                         renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj);
                     }
-                    delete fileBuffers[fileId]; // Vyčisti paměť
+                    delete fileBuffers[fileId];
                 }
             }
         }
@@ -631,12 +627,10 @@
         document.getElementById('chat-input').value = '';
     }
 
-    // --- FUNKCE PRO ODESLÁNÍ SOUBORU ---
     async function handleFileUpload(event) {
         const file = event.target.files[0];
         if (!file) return;
 
-        // Omezení velikosti na cca 5 MB, aby se nezasekl prohlížeč na šifrování
         if (file.size > 5 * 1024 * 1024) {
             alert("Soubor je příliš velký. Max 5 MB pro bezpečný P2P přenos.");
             return;
@@ -646,25 +640,22 @@
         const reader = new FileReader();
         
         reader.onload = async (e) => {
-            const result = e.target.result; // Vrací "data:MIME;base64,DATA"
-            const base64Data = result.split(',')[1]; // Chceme jen čistá Base64 data
+            const result = e.target.result; 
+            const base64Data = result.split(',')[1]; 
             
             const fileId = "FILE_" + generateMsgId();
             const timeNow = Date.now();
-            const chunkSize = 16384; // 16KB je bezpečný limit pro WebRTC datový kanál
+            const chunkSize = 16384; 
             const totalChunks = Math.ceil(base64Data.length / chunkSize);
             
             const fileMeta = { name: file.name, size: file.size, type: file.type };
-            
             logDebug(`[FILE] Rozsekáno na ${totalChunks} kousků. Šifruji a odesílám...`, 'file');
             
-            // Lokální vykreslení pro odesílatele
             const fileObj = { name: file.name, size: file.size, dataUrl: result };
             const msgObjForStorage = { id: fileId, author: myName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
             saveMessage(msgObjForStorage);
             renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj);
 
-            // Zabalení a odeslání každého chunku
             for (let i = 0; i < totalChunks; i++) {
                 const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
                 
@@ -689,14 +680,13 @@
                         });
                     }
                 }
-                // Krátká pauza proti ucpání sítě (Backpressure)
                 await new Promise(r => setTimeout(r, 50)); 
             }
             logDebug(`[FILE] Odesílání dokončeno.`, 'success');
         };
         
         reader.readAsDataURL(file);
-        event.target.value = ''; // Reset inputu
+        event.target.value = ''; 
     }
 
     function cleanupConnection(targetId) {
@@ -715,7 +705,6 @@
         }
         
         pollingGuests.delete(targetId);
-        
         updateDebugStats('peers', Object.keys(channels).length);
 
         if (isDnsHost && targetId !== 'hub') {
@@ -792,10 +781,9 @@
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
                 if (!isDnsHost) {
-                    logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
                     setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
                 }
-            }, 1000); // 1 sekunda pro ustálení linek
+            }, 1000);
 
             const pingInterval = setInterval(() => {
                 if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
@@ -827,9 +815,6 @@
                     return;
                 }
                 
-                if (msgObj.type !== 'chat' && msgObj.type !== 'file-chunk') {
-                    logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
-                }
                 routeMessage(msgObj, channel); 
             } catch (err) { }
         };
@@ -888,7 +873,7 @@
         isResetting = false;
 
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) joinViaDns();
         else startDnsHostLoop();
     }
 
@@ -902,7 +887,8 @@
         document.getElementById('ui-role').innerText = 'Izolován';
         
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
+        // Ochrana: Nesmí věřit Hubu, který jsme právě pro neresponsivitu ignorovali
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) {
             logDebug("Hub v API stále žije! Restartuji lokální spojení...", "info");
             setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 2000);
             return; 
@@ -923,7 +909,7 @@
             
             setTimeout(async () => {
                 const checkAgain = await readSignal('host-alive');
-                if (checkAgain && (Date.now() - checkAgain.timestamp < 60000)) {
+                if (checkAgain && (Date.now() - checkAgain.timestamp < 60000) && Date.now() > ignoreHostAliveUntil) {
                     logDebug("Někdo mě předběhl. Sklápím uši a připojuji se jako Spoke.", "info");
                 }
                 isCheckingIsolation = false;
@@ -945,7 +931,7 @@
         await initCrypto();
         
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) joinViaDns();
         else startDnsHostLoop();
     }
 
@@ -976,10 +962,11 @@
                     
                     if(connections[queue.guestId]) {
                         try {
-                            const rtcOffer = new RTCSessionDescription({
-                                type: offerData.type,
-                                sdp: offerData.sdp
-                            });
+                            // Striktní ochrana proti chybám z prohlížeče (vždy převede na lowerCase enum a ověří)
+                            const safeType = String(offerData.type).toLowerCase().trim();
+                            if (safeType !== 'offer') throw new Error(`SDP Typ musí být 'offer', přijato: '${safeType}'`);
+
+                            const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
                             await connections[queue.guestId].setRemoteDescription(rtcOffer);
                             await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
                             
@@ -1023,7 +1010,9 @@
             pokusy++;
             if (pokusy > 9) { 
                 clearInterval(joinInterval);
-                logDebug("Spojení vypršelo (Timeout API).", "error");
+                logDebug("Spojení vypršelo (Hub neodpovídá). Ignoruji jeho signál pro další 2 minuty.", "error");
+                // Klíčová oprava: Pokud hub po 45s nedodá Answer, prohlásíme ho za "Ghost Hub" a 2 minuty ho budeme ignorovat
+                ignoreHostAliveUntil = Date.now() + 120000;
                 cleanupConnection('hub'); 
                 return;
             }
@@ -1043,10 +1032,11 @@
                     clearInterval(joinInterval);
                     logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
                     try {
-                        const rtcAnswer = new RTCSessionDescription({
-                            type: answerData.type,
-                            sdp: answerData.sdp
-                        });
+                        // Striktní ochrana
+                        const safeType = String(answerData.type).toLowerCase().trim();
+                        if (safeType !== 'answer' && safeType !== 'pranswer') throw new Error(`SDP Typ musí být 'answer', přijato: '${safeType}'`);
+                        
+                        const rtcAnswer = new RTCSessionDescription({ type: safeType, sdp: String(answerData.sdp) });
                         await connections['hub'].setRemoteDescription(rtcAnswer);
                     } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
                 }
