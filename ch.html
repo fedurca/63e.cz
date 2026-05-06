@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.0</title>
+    <title>E2E Tree P2P Chat v2.2.1</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.0 (File Share)</span>
+            <span class="version-badge">v2.2.1 (SDP Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.0: Oprava čtení SDP a plná podpora přenosu souborů.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.1: Oprava inicializace SDP popisu.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -760,7 +760,6 @@
                 if (useDns) {
                     currentSessionId = generateMsgId();
                     
-                    // OPRAVA IRON ROUTER (Jasný typ a formát do DNS kontejneru)
                     const sdpData = {
                         type: pc.localDescription.type,
                         sdp: pc.localDescription.sdp
@@ -971,38 +970,42 @@
                 const offerData = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
                 const offerSid = offerPayload?.sid ? offerPayload.sid : null;
 
-                if(offerData) {
+                if(offerData && offerData.sdp && offerData.type) {
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
                     
                     if(connections[queue.guestId]) {
-                        // OPRAVA IRON ROUTER (Převedení raw JSON objektu zpět na objekt RTCSessionDescription)
-                        const rtcOffer = new RTCSessionDescription(offerData);
-                        await connections[queue.guestId].setRemoteDescription(rtcOffer);
-                        await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
-                        
-                        const sendDnsAnswer = async () => {
-                            if (!connections[queue.guestId] || connections[queue.guestId].answerDone) return;
-                            connections[queue.guestId].answerDone = true;
-                            logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
+                        try {
+                            const rtcOffer = new RTCSessionDescription({
+                                type: offerData.type,
+                                sdp: offerData.sdp
+                            });
+                            await connections[queue.guestId].setRemoteDescription(rtcOffer);
+                            await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
                             
-                            const sdpData = {
-                                type: connections[queue.guestId].localDescription.type,
-                                sdp: connections[queue.guestId].localDescription.sdp
+                            const sendDnsAnswer = async () => {
+                                if (!connections[queue.guestId] || connections[queue.guestId].answerDone) return;
+                                connections[queue.guestId].answerDone = true;
+                                logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
+                                
+                                const sdpData = {
+                                    type: connections[queue.guestId].localDescription.type,
+                                    sdp: connections[queue.guestId].localDescription.sdp
+                                };
+                                const payload = { sdp: sdpData, sid: offerSid };
+                                
+                                const ok = await writeSignal(`answer-${queue.guestId}`, payload);
+                                if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
                             };
-                            const payload = { sdp: sdpData, sid: offerSid };
-                            
-                            const ok = await writeSignal(`answer-${queue.guestId}`, payload);
-                            if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
-                        };
 
-                        if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
-                        else {
-                            connections[queue.guestId].onicegatheringstatechange = () => { 
-                                if (connections[queue.guestId] && connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); 
-                            };
-                            setTimeout(() => { if(connections[queue.guestId] && !connections[queue.guestId].answerDone) sendDnsAnswer(); }, 8000); 
-                        }
+                            if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
+                            else {
+                                connections[queue.guestId].onicegatheringstatechange = () => { 
+                                    if (connections[queue.guestId] && connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); 
+                                };
+                                setTimeout(() => { if(connections[queue.guestId] && !connections[queue.guestId].answerDone) sendDnsAnswer(); }, 8000); 
+                            }
+                        } catch(e) { logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error'); }
                     }
                 }
             }
@@ -1036,13 +1039,17 @@
                     return; 
                 }
 
-                clearInterval(joinInterval);
-                logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
-                try {
-                    // OPRAVA IRON ROUTER (Zabalení přijatého JSONu do třídy, kterou WebRTC zná)
-                    const rtcAnswer = new RTCSessionDescription(answerData);
-                    await connections['hub'].setRemoteDescription(rtcAnswer);
-                } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
+                if (answerData && answerData.sdp && answerData.type) {
+                    clearInterval(joinInterval);
+                    logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
+                    try {
+                        const rtcAnswer = new RTCSessionDescription({
+                            type: answerData.type,
+                            sdp: answerData.sdp
+                        });
+                        await connections['hub'].setRemoteDescription(rtcAnswer);
+                    } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
+                }
             }
         }, 5000);
     }
