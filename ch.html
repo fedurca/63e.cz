@@ -1,959 +1,228 @@
 <!DOCTYPE html>
 <html lang="cs">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.6</title>
-    
-    <script src="./pako.min.js"></script>
-    <script>
-        if (typeof pako === 'undefined') {
-            console.warn("Lokální pako.min.js nenalezeno, stahuji z CDN jako zálohu.");
-            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"><\/script>');
-        }
-    </script>
-
-    <style>
-        :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
-        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-        
-        body, html { background-color: var(--bg-color); overflow: hidden; height: 100%; width: 100%; }
-        
-        #app { 
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            display: flex; flex-direction: column; 
-            max-width: 1200px; margin: 0 auto; background: var(--chat-bg); 
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-        }
-
-        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
-        .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; }
-        .status-dot.online { background: #2ed573; }
-        .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
-        .secure-badge { background: #2ed573; color: #000; font-size: 0.7rem; padding: 3px 6px; border-radius: 10px; font-weight: bold; margin-left: 10px; }
-        .version-badge { font-size: 0.75rem; opacity: 0.8; margin-left: 10px; }
-        .btn-danger { background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: bold; margin-left: 15px; }
-        
-        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
-        @media (min-width: 800px) { .main-content { flex-direction: row; } }
-
-        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; min-height: 0; }
-        #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
-        .msg { max-width: 80%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
-        .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
-        .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
-        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
-        .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
-        .history-divider span { background: #e5ddd5; padding: 0 10px; }
-        
-        #input-area { 
-            display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
-            padding-bottom: calc(10px + env(safe-area-inset-bottom)); flex-shrink: 0;
-        }
-        #ui-my-name { font-weight: bold; color: #333; margin-right: 10px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
-        #input-area input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
-        #input-area button { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
-        #input-area button:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
-        @media (min-width: 800px) { #debug-panel { width: 450px; height: 100%; } }
-        
-        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
-        .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
-        .debug-stats span { color: #00ff00; font-weight: bold; }
-        
-        #topo-container { height: 160px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; }
-        #topo-canvas { width: 100%; height: 100%; }
-        .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
-
-        #net-health-panel { height: 120px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
-        #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
-        #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; }
-        #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
-
-        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
-
-        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
-        .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
-        .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center;}
-        .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
-    </style>
+<meta charset="UTF-8">
+<title>P2P Gossip Chat v2.2</title>
+<style>
+body { font-family: sans-serif; margin:0; }
+#chat { height: 80vh; overflow:auto; padding:10px; background:#eee; }
+#input { display:flex; }
+input { flex:1; padding:10px; }
+button { padding:10px; }
+</style>
 </head>
 <body>
 
-<div id="app">
-    <header>
-        <div>
-            <span id="status-dot" class="status-dot"></span>
-            <h1 style="display:inline;">Tree P2P</h1>
-            <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.6 (Anti-Ghost Session ID)</span>
-            <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
-        </div>
-        <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
-    </header>
-
-    <div class="main-content">
-        <div id="chat-container">
-            <div id="chat-area"></div>
-            <div id="input-area">
-                <div id="ui-my-name">...</div>
-                <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
-                <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
-            </div>
-        </div>
-
-        <div id="debug-panel">
-            <div id="topo-container">
-                <div class="topo-label">STROMOVÁ TOPOLOGIE (HUB & SPOKE)</div>
-                <canvas id="topo-canvas"></canvas>
-            </div>
-            
-            <div class="debug-stats">
-                <div>Moje ID: <span id="dbg-id"></span></div>
-                <div>Stav API: <span id="dbg-dns">IDLE</span></div>
-                <div>Přímé linky: <span id="dbg-peers">0</span></div>
-                <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
-            </div>
-
-            <div class="debug-header">
-                📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)
-            </div>
-            <div id="net-health-panel">
-                <div id="net-health-list"></div>
-            </div>
-
-            <div class="debug-header">📜 SYSTÉMOVÝ LOG</div>
-            <div id="debug-log"></div>
-        </div>
-    </div>
-
-    <div id="setup-screen">
-        <div class="setup-box">
-            <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.6: Ochrana proti závadám z cachování (Session ID).</p>
-            <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
-            <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
-        </div>
-    </div>
+<div id="chat"></div>
+<div id="input">
+<input id="msg" placeholder="Zpráva...">
+<button onclick="sendMsg()">Send</button>
 </div>
 
 <script>
-    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
-    const MAX_HISTORY = 250;
-    
-    const WEBRTC_CONFIG = {
-        iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-        ]
+const WORKER = "https://webrtc-dns-signal.63ecz.workers.dev";
+const peers = {};
+const channels = {};
+const seen = new Set();
+let myId = Math.random().toString(36).substr(2,6);
+let keyPair;
+
+function log(t){ chat.innerHTML += t+"<br>"; chat.scrollTop=chat.scrollHeight; }
+
+// ---------- CRYPTO (FORWARD SECRECY) ----------
+async function initCrypto(){
+    keyPair = await crypto.subtle.generateKey(
+        {name:"ECDH",namedCurve:"P-256"},true,["deriveKey"]
+    );
+}
+
+async function encryptFS(text, pubJwk){
+    const eph = await crypto.subtle.generateKey(
+        {name:"ECDH",namedCurve:"P-256"},true,["deriveKey"]
+    );
+
+    const pub = await crypto.subtle.importKey("jwk", pubJwk,{name:"ECDH",namedCurve:"P-256"},true,[]);
+    const aes = await crypto.subtle.deriveKey(
+        {name:"ECDH", public:pub}, eph.privateKey,
+        {name:"AES-GCM", length:256}, false, ["encrypt"]
+    );
+
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = await crypto.subtle.encrypt({name:"AES-GCM", iv}, aes, new TextEncoder().encode(text));
+
+    return {
+        eph: await crypto.subtle.exportKey("jwk", eph.publicKey),
+        iv: btoa(String.fromCharCode(...iv)),
+        c: btoa(String.fromCharCode(...new Uint8Array(enc)))
     };
-    
-    function generateNodeId() {
-        const dateStr = new Date().toISOString().split('T')[0]; 
-        const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
-        let hash = 0;
-        for (let i = 0; i < fingerprint.length; i++) {
-            hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
-            hash |= 0; 
+}
+
+async function decryptFS(data){
+    const pub = await crypto.subtle.importKey("jwk", data.eph,{name:"ECDH",namedCurve:"P-256"},true,[]);
+    const aes = await crypto.subtle.deriveKey(
+        {name:"ECDH", public:pub}, keyPair.privateKey,
+        {name:"AES-GCM", length:256}, false, ["decrypt"]
+    );
+
+    const iv = Uint8Array.from(atob(data.iv), c=>c.charCodeAt(0));
+    const buf = Uint8Array.from(atob(data.c), c=>c.charCodeAt(0));
+
+    const dec = await crypto.subtle.decrypt({name:"AES-GCM", iv}, aes, buf);
+    return new TextDecoder().decode(dec);
+}
+
+// ---------- GOSSIP ----------
+function gossip(msg, src=null){
+    if(seen.has(msg.id)) return;
+    seen.add(msg.id);
+
+    msg.ttl--;
+    if(msg.ttl<=0) return;
+
+    Object.entries(channels).forEach(([id,ch])=>{
+        if(ch!==src && ch.readyState==="open"){
+            safeSend(ch, JSON.stringify(msg), id);
         }
-        let id = Math.abs(hash).toString(36);
-        while(id.length < 6) id += '0'; 
-        return id.substr(0, 6);
-    }
-    function generateMsgId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); }
-
-    let myId = generateNodeId(); 
-    let myName = "";
-    let isDnsHost = false;
-    let connections = {}; 
-    let channels = {}; 
-    let networkGraph = { root: myId, edges: [] }; 
-    
-    let seenMessages = new Set(); 
-    let knownNodes = {}; 
-    let chatHistory = []; 
-    let myKeyPair = null; 
-
-    let joinInterval = null; 
-    let dnsInterval = null;
-    let isResetting = false;
-    let isCheckingIsolation = false;
-    
-    let pollingGuests = new Set();
-    
-    // Globální uchování aktuálního Session ID pro připojování
-    let currentSessionId = null;
-
-    document.getElementById('dbg-id').innerText = myId;
-
-    window.addEventListener('DOMContentLoaded', () => {
-        const savedName = localStorage.getItem('chat_nickname');
-        if (savedName) document.getElementById('username').value = savedName;
     });
 
-    function escapeHTML(str) {
-        if (!str) return '';
-        return String(str).replace(/[&<>'"]/g, tag => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-        }[tag] || tag));
+    handle(msg);
+}
+
+// ---------- SAFE SEND ----------
+const queues = {};
+
+function safeSend(ch,data,id){
+    if(!queues[id]) queues[id]=[];
+    queues[id].push(data);
+    flush(ch,id);
+}
+
+function flush(ch,id){
+    const q=queues[id];
+    if(!q) return;
+
+    while(q.length && ch.bufferedAmount<65536){
+        ch.send(q.shift());
     }
 
-    function buf2b64(buf) {
-        let binary = '';
-        const bytes = new Uint8Array(buf);
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        return window.btoa(binary);
-    }
-    function b642buf(b64) {
-        const binary_string = window.atob(b64);
-        const len = binary_string.length;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) bytes[i] = binary_string.charCodeAt(i);
-        return bytes.buffer;
-    }
-    function komprimovat(data) {
-        const deflated = pako.deflate(JSON.stringify(data));
-        let binary = '';
-        for (let i = 0; i < deflated.length; i++) binary += String.fromCharCode(deflated[i]);
-        return window.btoa(binary);
-    }
-    function dekomprimovat(b64) {
-        const str = window.atob(b64); 
-        const pole = new Uint8Array(str.length);
-        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
-        return JSON.parse(pako.inflate(pole, { to: 'string' }));
-    }
+    if(q.length) setTimeout(()=>flush(ch,id),50);
+}
 
-    function logDebug(msg, type = 'info') {
-        const logWindow = document.getElementById('debug-log');
-        const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-        logWindow.innerHTML += `<div><span style="color:#555">[${time}] [ID: ${myId}]</span> <span class="log-${type}">${msg}</span></div>`;
-        logWindow.scrollTop = logWindow.scrollHeight;
-    }
-    
-    function updateDebugStats(stat, value) { document.getElementById(`dbg-${stat}`).innerText = value; }
-    
-    function unlockChat() {
-        document.getElementById('setup-screen').style.display = 'none';
-        document.getElementById('chat-input').disabled = false;
-        document.getElementById('send-btn').disabled = false;
-        document.getElementById('btn-clear-history').style.display = 'inline-block';
-        document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
-        document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
-    }
+// ---------- SIGNALING ----------
+async function write(key,val){
+    await fetch(WORKER,{
+        method:"POST",
+        body:JSON.stringify({subdomain:key,content:btoa(JSON.stringify(val))})
+    });
+}
 
-    async function initCrypto() {
-        logDebug("Generuji ECDH (P-256) asymetrický pár klíčů...", "e2e");
-        myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
-        const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk, lastSeen: Date.now() }; 
-        return myJwk;
-    }
+async function read(key){
+    const r=await fetch(WORKER+"?key="+key);
+    const j=await r.json();
+    if(j.content) return JSON.parse(atob(j.content));
+}
 
-    async function deriveAesKey(peerId, peerJwk) {
-        if(knownNodes[peerId] && knownNodes[peerId].derivedAesKey) return knownNodes[peerId].derivedAesKey;
-        const importedPubKey = await crypto.subtle.importKey("jwk", peerJwk, { name: "ECDH", namedCurve: "P-256" }, true, []);
-        const aesKey = await crypto.subtle.deriveKey(
-            { name: "ECDH", public: importedPubKey }, myKeyPair.privateKey,
-            { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
-        );
-        knownNodes[peerId] = { ...knownNodes[peerId], derivedAesKey: aesKey };
-        return aesKey;
-    }
+// ---------- WEBRTC ----------
+async function connect(target){
+    if(peers[target]) return;
 
-    async function encryptE2E(plaintext, targetId) {
-        const aesKey = await deriveAesKey(targetId, knownNodes[targetId].publicKeyJWK);
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-        const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, new TextEncoder().encode(plaintext));
-        return { iv: buf2b64(iv), cipher: buf2b64(cipherBuf) };
-    }
+    const pc=new RTCPeerConnection();
+    peers[target]=pc;
 
-    async function decryptE2E(ivB64, cipherB64, senderId) {
-        try {
-            if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) return null;
-            const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK);
-            const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
-            return new TextDecoder().decode(plainBuf);
-        } catch(e) { return null; }
-    }
+    const ch=pc.createDataChannel("d");
+    bind(ch,target);
 
-    async function writeSignal(subdomena, data, retry = 2) {
-        updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
-        while (retry > 0) {
-            try {
-                const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
-                const out = await res.json();
-                if(out.success) { updateDebugStats('dns', 'OK'); return true; }
-            } catch (e) { }
-            retry--; if(retry > 0) await new Promise(r => setTimeout(r, 1000)); 
+    const offer=await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    setTimeout(async()=>{
+        await write("offer-"+target,{from:myId,offer});
+    },1000);
+
+    setInterval(async()=>{
+        const ans=await read("answer-"+myId);
+        if(ans){
+            await pc.setRemoteDescription(ans.answer);
         }
-        return false;
+    },2000);
+}
+
+function bind(ch,id){
+    channels[id]=ch;
+
+    ch.onmessage=e=>{
+        const msg=JSON.parse(e.data);
+        gossip(msg,ch);
+    };
+
+    ch.onopen=()=>{
+        log("connected "+id);
+    };
+}
+
+// ---------- MESSAGE ----------
+async function sendMsg(){
+    const text=msg.value;
+    msg.value="";
+
+    const payloads={};
+
+    for(const id in peers){
+        const pub = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        payloads[id]=await encryptFS(text,pub);
     }
 
-    async function readSignal(subdomena) {
-        updateDebugStats('dns', `ČTENÍ: ${subdomena}`);
-        try {
-            const res = await fetch(`${WORKER_URL}?key=${subdomena}&_t=${Date.now()}`);
-            const json = await res.json();
-            if(json.success && json.content) {
-                updateDebugStats('dns', 'OK');
-                const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
-                return dekomprimovat(cleanB64);
-            }
-        } catch(e) { } 
-        return null;
-    }
+    gossip({
+        id:Date.now()+Math.random(),
+        type:"chat",
+        payloads,
+        sender:myId,
+        ttl:6
+    });
+}
 
-    function reRenderAllHistory() {
-        const chat = document.getElementById('chat-area');
-        chat.innerHTML = ''; 
-        
-        chatHistory.forEach(msg => {
-            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
-        });
-
-        const div = document.createElement('div');
-        div.className = "history-divider";
-        div.innerHTML = `<span>Konec sjednocené historie</span>`;
-        chat.appendChild(div);
-        
-        chat.scrollTop = chat.scrollHeight; 
-    }
-
-    function loadHistory() {
-        const saved = localStorage.getItem('chat_history');
-        if(saved) {
-            try {
-                chatHistory = JSON.parse(saved);
-                chatHistory.sort((a,b) => a.time - b.time); 
-                reRenderAllHistory();
-            } catch(e) {
-                logDebug("Lokální historie byla poškozena. Byla vymazána.", "error");
-                clearLocalHistory();
-            }
+async function handle(msg){
+    if(msg.type==="chat"){
+        if(msg.payloads[myId]){
+            const t=await decryptFS(msg.payloads[myId]);
+            log("<b>"+msg.sender+":</b> "+t);
         }
     }
+}
 
-    function saveMessage(msgObj) {
-        if(chatHistory.some(m => m.id === msgObj.id)) return false; 
-        chatHistory.push(msgObj);
-        chatHistory.sort((a,b) => a.time - b.time); 
-        if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
-        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
-        return true;
-    }
+// ---------- DISCOVERY ----------
+setInterval(()=>{
+    gossip({
+        id:Math.random(),
+        type:"peer",
+        peers:Object.keys(peers),
+        ttl:4
+    });
+},5000);
 
-    function clearLocalHistory() {
-        chatHistory = [];
-        localStorage.removeItem('chat_history');
-        reRenderAllHistory();
-        logDebug("Lokální historie chatu byla zcela vymazána.", "error");
-    }
+// ---------- START ----------
+(async()=>{
+    await initCrypto();
+    log("ID: "+myId);
 
-    function broadcastClearHistory() {
-        if(confirm("Opravdu vymazat historii sítě? Smaže se u tebe i u všech aktuálně připojených uživatelů.")) {
-            clearLocalHistory();
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'clear-history', sender: myId });
+    // bootstrap přes DNS
+    setInterval(async()=>{
+        const offer=await read("offer-"+myId);
+        if(offer){
+            const pc=new RTCPeerConnection();
+            peers[offer.from]=pc;
+
+            pc.ondatachannel=e=>bind(e.channel,offer.from);
+
+            await pc.setRemoteDescription(offer.offer);
+            const ans=await pc.createAnswer();
+            await pc.setLocalDescription(ans);
+
+            await write("answer-"+offer.from,{answer:ans});
         }
-    }
+    },2000);
 
-    let syncTimeout = null;
-    function mergeIncomingHistory(incomingArray) {
-        let addedCount = 0;
-        let mergedMap = new Map();
-        chatHistory.forEach(m => mergedMap.set(m.id, m));
-        
-        incomingArray.forEach(m => {
-            if(!mergedMap.has(m.id)) {
-                mergedMap.set(m.id, m);
-                addedCount++;
-            }
-        });
-
-        if (addedCount > 0) {
-            chatHistory = Array.from(mergedMap.values()).sort((a,b) => a.time - b.time);
-            if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
-            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
-            
-            clearTimeout(syncTimeout);
-            syncTimeout = setTimeout(() => {
-                reRenderAllHistory();
-                logDebug(`[SYNC OK] Do okna úspěšně vloženo ${addedCount} nových historických zpráv.`, "success");
-            }, 300);
-        }
-    }
-
-    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true) {
-        const chat = document.getElementById('chat-area');
-        const div = document.createElement('div');
-        div.className = `msg msg-${type}`;
-        
-        const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
-        
-        const safeAuthor = escapeHTML(author);
-        const safeText = escapeHTML(text);
-
-        if (type !== 'system') {
-            div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;">
-                <b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${safeText}`;
-        } else {
-            div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${safeText}`;
-        }
-        
-        chat.appendChild(div);
-        if(scroll) chat.scrollTop = chat.scrollHeight;
-    }
-
-    function routeMessage(msgObj, sourceChannel = null) {
-        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history') {
-            if (seenMessages.has(msgObj.id)) return; 
-            seenMessages.add(msgObj.id);
-            if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
-        }
-
-        msgObj.ttl -= 1; 
-        if (msgObj.ttl <= 0) return; 
-
-        if (!msgObj.path) msgObj.path = [];
-        msgObj.path.push(myId);
-
-        Object.values(channels).forEach(ch => {
-            if (ch.readyState === 'open' && ch !== sourceChannel) {
-                try { 
-                    const str = JSON.stringify(msgObj);
-                    if (ch.bufferedAmount > 65535) {
-                        logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB), hrozí přetečení!`, 'error');
-                    }
-                    ch.send(str); 
-                } catch(err) {
-                    logDebug(`[P2P ERR] Chyba odesílání do kanálu: ${err.message}`, 'error');
-                }
-            }
-        });
-
-        processPayload(msgObj);
-    }
-
-    async function processPayload(msg) {
-        if (msg.sender && knownNodes[msg.sender]) knownNodes[msg.sender].lastSeen = Date.now();
-
-        if (msg.type === 'announce') {
-            const isNewNode = !knownNodes[msg.sender];
-            const isKeyChanged = knownNodes[msg.sender] && JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk);
-
-            if (isNewNode || isKeyChanged) {
-                knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now() };
-                if (isKeyChanged) delete knownNodes[msg.sender].derivedAesKey;
-
-                updateDebugStats('nodes', Object.keys(knownNodes).length);
-                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
-                if (isNewNode) renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
-                
-                const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
-            }
-        } 
-        else if (msg.type === 'request-history') {
-            if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 3; // Nízký počet zpráv pro minimalizaci zátěže WebRTC
-                let i = 0;
-                let chunkIndex = 1;
-                
-                logDebug(`[SYNC START] Začínám bezpečný proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
-                
-                const sendBatch = async () => {
-                    if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Všechny dávky úspěšně odeslány.`, 'sync');
-                        return;
-                    }
-                    const batch = chatHistory.slice(i, i + batchSize);
-                    try {
-                        const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        const payloadStr = JSON.stringify(encrypted);
-                        logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv, ${Math.round(payloadStr.length / 1024)} KB)`, 'info');
-                        routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
-                        chunkIndex++;
-                    } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
-                    
-                    i += batchSize;
-                    setTimeout(sendBatch, 800); // Backpressure mezera 800ms
-                };
-                sendBatch();
-            }
-        }
-        else if (msg.type === 'sync-history') {
-            if (msg.target !== myId) return; 
-
-            logDebug(`[SYNC IN] Dorazil paket s historií od ${msg.sender}. Dešifruji...`, 'info');
-            const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
-            
-            if (plaintextHistory) {
-                try {
-                    const historyArray = JSON.parse(plaintextHistory);
-                    const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)}`).join('<br> &nbsp; &nbsp; ');
-                    logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
-                    
-                    mergeIncomingHistory(historyArray);
-                } catch(e) {
-                    logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
-                }
-            } else {
-                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč).`, 'error');
-            }
-        } 
-        else if (msg.type === 'clear-history') {
-            logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error');
-            clearLocalHistory();
-        }
-        else if (msg.type === 'chat') {
-            if (msg.payloads[myId]) {
-                const plainJson = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
-                if (plainJson) {
-                    const secretData = JSON.parse(plainJson);
-                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
-                    
-                    if (msg.path && msg.path.length > 0) {
-                        const pathNames = msg.path.map(id => knownNodes[id]?.name || id).join(" ➔ ");
-                        logDebug(`✉ Zpráva (${authorName}) šla cestou: ${pathNames} ➔ Ty`, 'log-path');
-                    }
-
-                    const msgObjForStorage = { id: msg.id, author: authorName, text: secretData.text, time: secretData.time };
-                    if(saveMessage(msgObjForStorage)) renderMessage(authorName, secretData.text, 'other', secretData.time);
-                }
-            }
-        } 
-        else if (msg.type === 'topo-sync') {
-            networkGraph = msg.graph;
-            drawTopology();
-        }
-        else if (msg.type === 'node-left') {
-            if (knownNodes[msg.target]) {
-                logDebug(`Uzel ${knownNodes[msg.target].name} opustil síť.`, 'error');
-                delete knownNodes[msg.target];
-                updateDebugStats('nodes', Object.keys(knownNodes).length);
-                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
-            }
-        }
-    }
-
-    async function sendMsg() {
-        const text = document.getElementById('chat-input').value.trim();
-        if (!text) return;
-        
-        const timeNow = Date.now();
-        let encryptedPayloads = {};
-        for (const peerId of Object.keys(knownNodes)) {
-            if (peerId !== myId) {
-                const secretPayload = JSON.stringify({ text: text, time: timeNow });
-                encryptedPayloads[peerId] = await encryptE2E(secretPayload, peerId);
-            }
-        }
-
-        const msgId = generateMsgId(); 
-        const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
-
-        saveMessage({ id: msgId, author: myName, text: text, time: timeNow });
-        renderMessage('Ty', text, 'self', timeNow);
-        routeMessage(msgObj); 
-        document.getElementById('chat-input').value = '';
-    }
-
-    function cleanupConnection(targetId) {
-        if(channels[targetId]) { 
-            channels[targetId].onclose = null; 
-            channels[targetId].onerror = null;
-            channels[targetId].onmessage = null;
-            channels[targetId].close(); 
-            delete channels[targetId]; 
-        }
-        if(connections[targetId]) { 
-            connections[targetId].oniceconnectionstatechange = null; 
-            connections[targetId].ondatachannel = null;
-            connections[targetId].close(); 
-            delete connections[targetId]; 
-        }
-        
-        pollingGuests.delete(targetId);
-        
-        updateDebugStats('peers', Object.keys(channels).length);
-
-        if (isDnsHost && targetId !== 'hub') {
-            logDebug(`Odstraňuji mrtvé spojení: ${targetId}`, 'info');
-            writeSignal('queue', { guestId: 'IDLE' }); 
-            if(knownNodes[targetId]) {
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'node-left', sender: myId, target: targetId });
-                delete knownNodes[targetId];
-            }
-        } else if (!isDnsHost && targetId === 'hub') {
-            if (joinInterval) clearInterval(joinInterval); 
-            checkIsolation();
-        }
-    }
-
-    async function createP2PNode(targetId, isInitiator, useDns = false) {
-        if (connections[targetId]) return; 
-        logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
-        
-        const pc = new RTCPeerConnection(WEBRTC_CONFIG);
-        connections[targetId] = pc;
-
-        pc.oniceconnectionstatechange = () => {
-            const state = pc.iceConnectionState;
-            const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57');
-            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}">${state}</span>`, 'info');
-            
-            if (state === 'disconnected' || state === 'failed') {
-                logDebug(`[P2P] ICE Spojení s ${targetId} padlo.`, 'error');
-                cleanupConnection(targetId);
-            }
-        };
-
-        if (isInitiator) {
-            const ch = pc.createDataChannel('chat');
-            bindDataChannel(ch, targetId);
-            await pc.setLocalDescription(await pc.createOffer());
-            
-            const onGatheringComplete = async () => {
-                if (pc.gatheringDone) return;
-                pc.gatheringDone = true;
-                if (useDns) {
-                    // OPRAVA GHOST ANSWER: Připojení Session ID k nabídce
-                    currentSessionId = generateMsgId();
-                    const payload = { sdp: pc.localDescription, sid: currentSessionId };
-                    const ok = await writeSignal(`offer-${myId}`, payload);
-                    if (ok) await writeSignal('queue', { guestId: myId });
-                }
-            };
-            if (pc.iceGatheringState === 'complete') onGatheringComplete();
-            else {
-                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(() => { if (!pc.gatheringDone) onGatheringComplete(); }, 12000); 
-            }
-        } else {
-            pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
-        }
-    }
-
-    function bindDataChannel(channel, targetId) {
-        const setupChannel = async () => {
-            channels[targetId] = channel;
-            updateDebugStats('peers', Object.keys(channels).length);
-            unlockChat();
-            logDebug(`P2P Datový kanál s ${targetId} otevřen 🚀`, 'success');
-            
-            // Prodleva před zahájením komunikace pro ustálení ICE
-            setTimeout(async () => {
-                const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
-
-                if (!isDnsHost) {
-                    logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
-                    setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
-                }
-            }, 500);
-
-            const pingInterval = setInterval(() => {
-                if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
-                else clearInterval(pingInterval);
-            }, 10000); 
-        };
-
-        if (channel.readyState === 'open') setupChannel();
-        else channel.onopen = setupChannel;
-
-        channel.onclose = () => {
-            logDebug(`[P2P] Datový kanál s ${targetId} se uzavřel.`, 'error');
-            cleanupConnection(targetId);
-        };
-
-        channel.onmessage = (e) => {
-            try {
-                const msgObj = JSON.parse(e.data);
-                if (msgObj.type === '_ping') {
-                    channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t }));
-                    if (knownNodes[targetId]) knownNodes[targetId].lastSeen = Date.now();
-                    return;
-                }
-                if (msgObj.type === '_pong') {
-                    if (knownNodes[targetId]) {
-                        knownNodes[targetId].ping = Date.now() - msgObj.t;
-                        knownNodes[targetId].lastSeen = Date.now();
-                    }
-                    return;
-                }
-                
-                if (msgObj.type !== 'chat') logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
-                routeMessage(msgObj, channel); 
-            } catch (err) { }
-        };
-    }
-
-    setInterval(() => {
-        const list = document.getElementById('net-health-list');
-        if(!list) return;
-        let html = '<table><tr><th>Uzel</th><th>Role</th><th>Ping</th><th>Status</th></tr>';
-        
-        const now = Date.now();
-        const activeIds = Object.keys(knownNodes).sort();
-
-        activeIds.forEach(id => {
-            const node = knownNodes[id];
-            const isMe = id === myId;
-            const isMaster = (networkGraph.root === id);
-            const lastSeenDiff = now - (node.lastSeen || now);
-            
-            if (!isMe && lastSeenDiff > 45000) {
-                if (isDnsHost) cleanupConnection(id);
-                else if (isMaster) cleanupConnection('hub');
-                else if (lastSeenDiff > 60000) delete knownNodes[id];
-            }
-
-            const role = isMaster ? 'Master (Hub)' : 'Spoke';
-            const pingStr = isMe ? '<span style="color:#aaa">Local</span>' : (node.ping !== undefined ? `${node.ping} ms` : '<span style="color:#aaa">Nepřímý</span>');
-            
-            let status = '<span style="color:#2ed573">Aktivní</span>';
-            if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>';
-            else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
-
-            if(knownNodes[id]) html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
-        });
-        html += '</table>';
-        list.innerHTML = html;
-    }, 1000);
-
-    async function fullResetAndReconnect() {
-        if (isResetting) return;
-        isResetting = true;
-
-        logDebug("Provádím kompletní reset připojení (ID zachováno)...", "info");
-        
-        if (joinInterval) clearInterval(joinInterval);
-        if (dnsInterval) clearInterval(dnsInterval);
-        
-        Object.values(channels).forEach(ch => { ch.onclose = null; if(ch.readyState==='open') ch.close(); });
-        Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
-        
-        connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
-        pollingGuests.clear(); 
-        isDnsHost = false;
-        
-        await initCrypto();
-        isResetting = false;
-
-        const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
-        else startDnsHostLoop();
-    }
-
-    async function checkIsolation() {
-        if (isCheckingIsolation || isResetting) return;
-        isCheckingIsolation = true;
-
-        if (joinInterval) clearInterval(joinInterval);
-
-        logDebug("Ztratil jsem Hub. Kontroluji stav sítě...", "error");
-        document.getElementById('ui-role').innerText = 'Izolován';
-        
-        const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) {
-            logDebug("Hub v API stále žije! Restartuji lokální spojení...", "info");
-            setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 2000);
-            return; 
-        }
-
-        const now = Date.now();
-        let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 45000);
-        if (!aliveIds.includes(myId)) aliveIds.push(myId);
-        aliveIds.sort();
-
-        if (aliveIds[0] === myId) {
-            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
-            isCheckingIsolation = false;
-            startDnsHostLoop();
-        } else {
-            const jitter = Math.floor(Math.random() * 3000) + 3000; 
-            logDebug(`Novým Hubem bude asi [${aliveIds[0]}]. Čekám ${jitter}ms...`, "info");
-            
-            setTimeout(async () => {
-                const checkAgain = await readSignal('host-alive');
-                if (checkAgain && (Date.now() - checkAgain.timestamp < 60000)) {
-                    logDebug("Někdo mě předběhl. Sklápím uši a připojuji se jako Spoke.", "info");
-                }
-                isCheckingIsolation = false;
-                fullResetAndReconnect();
-            }, jitter);
-        }
-    }
-
-    async function initSystem() {
-        document.getElementById('join-btn').disabled = true;
-        document.getElementById('ui-role').innerText = "Kontroluji API...";
-        
-        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
-        localStorage.setItem('chat_nickname', myName); 
-        document.getElementById('ui-my-name').innerText = escapeHTML(myName); 
-
-        document.getElementById('setup-screen').style.display = 'none'; 
-        loadHistory();
-        await initCrypto();
-        
-        const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
-        else startDnsHostLoop();
-    }
-
-    async function startDnsHostLoop() {
-        isDnsHost = true;
-        networkGraph.root = myId; 
-        unlockChat();
-        
-        await writeSignal('queue', { guestId: 'IDLE' });
-        await writeSignal('host-alive', { timestamp: Date.now() });
-        setInterval(() => writeSignal('host-alive', { timestamp: Date.now() }), 60000);
-
-        if (dnsInterval) clearInterval(dnsInterval);
-        
-        dnsInterval = setInterval(async () => {
-            const queue = await readSignal('queue');
-            if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
-                
-                if(connections[queue.guestId]) cleanupConnection(queue.guestId);
-
-                const offerPayload = await readSignal(`offer-${queue.guestId}`);
-                // Kompatibilita s novým formátem (obsahuje Session ID) i starým
-                const offer = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
-                const offerSid = offerPayload?.sid ? offerPayload.sid : null;
-
-                if(offer) {
-                    pollingGuests.add(queue.guestId);
-                    await createP2PNode(queue.guestId, false);
-                    
-                    if(connections[queue.guestId]) {
-                        await connections[queue.guestId].setRemoteDescription(offer);
-                        await connections[queue.guestId].setLocalDescription(await connections[queue.guestId].createAnswer());
-                        
-                        const sendDnsAnswer = async () => {
-                            if (!connections[queue.guestId] || connections[queue.guestId].answerDone) return;
-                            connections[queue.guestId].answerDone = true;
-                            logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
-                            
-                            // Hub připojí Session ID do odpovědi
-                            const payload = { sdp: connections[queue.guestId].localDescription, sid: offerSid };
-                            const ok = await writeSignal(`answer-${queue.guestId}`, payload);
-                            if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
-                        };
-
-                        if (connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer();
-                        else {
-                            connections[queue.guestId].onicegatheringstatechange = () => { 
-                                if (connections[queue.guestId] && connections[queue.guestId].iceGatheringState === 'complete') sendDnsAnswer(); 
-                            };
-                            setTimeout(() => { if(connections[queue.guestId] && !connections[queue.guestId].answerDone) sendDnsAnswer(); }, 8000); 
-                        }
-                    }
-                }
-            }
-        }, 5000);
-    }
-
-    async function joinViaDns() {
-        document.getElementById('ui-role').innerText = "Spojuji se...";
-        await createP2PNode('hub', true, true); 
-        
-        if (joinInterval) clearInterval(joinInterval);
-        
-        let pokusy = 0;
-        joinInterval = setInterval(async () => {
-            pokusy++;
-            if (pokusy > 9) { 
-                clearInterval(joinInterval);
-                logDebug("Spojení vypršelo (Timeout API).", "error");
-                cleanupConnection('hub'); 
-                return;
-            }
-            logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
-            const answerPayload = await readSignal(`answer-${myId}`);
-            
-            // OCHRANA PROTI "DUCHŮM" (Ghost Answer)
-            if (answerPayload && connections['hub']) {
-                const answer = answerPayload.sdp ? answerPayload.sdp : answerPayload;
-                const answerSid = answerPayload.sid ? answerPayload.sid : null;
-
-                if (currentSessionId && answerSid !== currentSessionId) {
-                    logDebug(`[API WARN] Ignoruji starý Answer z cache (nesouhlasí Session ID). Čekám na nový...`, 'error');
-                    return; // Čeká dál v intervalu
-                }
-
-                clearInterval(joinInterval);
-                logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
-                try {
-                    await connections['hub'].setRemoteDescription(answer);
-                } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
-            }
-        }, 5000);
-    }
-
-    setInterval(() => {
-        if (isDnsHost) {
-            networkGraph = { root: myId, edges: Object.keys(channels) };
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
-            drawTopology();
-        }
-    }, 2000);
-
-    function drawTopology() {
-        const canvas = document.getElementById('topo-canvas');
-        if(!canvas) return;
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        const rootId = networkGraph.root || myId;
-        const edges = networkGraph.edges || [];
-        
-        let nodesArr = [rootId, ...edges];
-        if (!nodesArr.includes(myId)) nodesArr.push(myId); 
-        nodesArr = [...new Set(nodesArr)]; 
-        
-        const radius = Math.min(canvas.width, canvas.height) / 3;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const pos = {};
-        
-        nodesArr.forEach((n, i) => {
-            if (n === rootId) { pos[n] = { x: cx, y: cy }; } 
-            else {
-                const spokeIndex = nodesArr.indexOf(n) - (nodesArr.indexOf(rootId) < nodesArr.indexOf(n) ? 1 : 0);
-                const spokeCount = Math.max(1, nodesArr.length - 1);
-                const angle = (spokeIndex / spokeCount) * 2 * Math.PI - Math.PI / 2;
-                pos[n] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
-            }
-        });
-
-        ctx.lineWidth = 2;
-        if (pos[rootId]) {
-            edges.forEach(target => {
-                if (pos[target]) {
-                    ctx.beginPath(); ctx.moveTo(pos[rootId].x, pos[rootId].y); ctx.lineTo(pos[target].x, pos[target].y);
-                    ctx.strokeStyle = '#555'; ctx.stroke();
-                }
-            });
-        }
-
-        nodesArr.forEach(n => {
-            ctx.beginPath(); ctx.arc(pos[n].x, pos[n].y, 18, 0, 2 * Math.PI);
-            ctx.fillStyle = (n === myId) ? '#0078FF' : (n === rootId ? '#feca57' : '#333');
-            ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
-            
-            ctx.fillStyle = '#fff'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
-            const shortName = knownNodes[n] ? knownNodes[n].name.substr(0,4) : n.substr(0,4);
-            ctx.fillText(escapeHTML(shortName), pos[n].x, pos[n].y + 4);
-        });
-    }
+})();
 </script>
 </body>
 </html>
