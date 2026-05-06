@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.5</title>
+    <title>E2E Tree P2P Chat v2.2.6</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.5 (Queue & TTL Fix)</span>
+            <span class="version-badge">v2.2.6 (Loop & Lock Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.5: Atomické TTL zpracování fronty a rychlý fallback ICE.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.6: Oprava nekonečného Split-Brain loopu a uvolňování zámků.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -154,7 +154,6 @@
     const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
     const MAX_HISTORY = 250;
     
-    // Vylepšené ICE Servery (Přidán Google jako spolehlivější fallback pro STUN)
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.cloudflare.com:3478' },
@@ -194,11 +193,11 @@
     let isResetting = false;
     let isCheckingIsolation = false;
     let currentSessionId = null;
-    
-    let ignoreHostAliveUntil = 0;
     let fileBuffers = {};
     
-    // Ochrana Mastera proti vícenásobnému zpracování stejného SID
+    // Ochrana proti uvíznutí na mrtvých uzlech (Adresný blacklist)
+    let blacklistedHubId = null;
+    let blacklistedHubTimeout = 0;
     let processingOffers = new Set();
 
     document.getElementById('dbg-id').innerText = myId;
@@ -462,9 +461,7 @@
                         logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB), hrozí přetečení!`, 'error');
                     }
                     ch.send(str); 
-                } catch(err) {
-                    logDebug(`[P2P ERR] Chyba odesílání do kanálu: ${err.message}`, 'error');
-                }
+                } catch(err) {}
             }
         });
 
@@ -501,7 +498,6 @@
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        const payloadStr = JSON.stringify(encrypted);
                         routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
                     } catch(e) { }
@@ -705,7 +701,6 @@
         }
     }
 
-    // RYCHLÝ ICE GATHERING (Agresivní fallback, max 3 sekundy)
     function waitForIce(pc, callback) {
         if (pc.iceGatheringState === 'complete') {
             callback();
@@ -725,13 +720,11 @@
         pc.onicecandidate = (e) => {
             if (e.candidate) {
                 clearTimeout(candidateTimer);
-                // Dáme WebRTC max 500ms na nalezení dalšího kandidáta, jinak jdeme dál
                 candidateTimer = setTimeout(finish, 500); 
             } else {
                 finish(); 
             }
         };
-        // Tvrdý fallback po 3 vteřinách (místo starých 10s)
         setTimeout(finish, 3000); 
     }
 
@@ -768,13 +761,11 @@
                         type: pc.localDescription.type,
                         sdp: pc.localDescription.sdp
                     };
-                    // TTL: Přidáváme přesný timestamp odeslání
                     const payload = { sdp: sdpData, sid: currentSessionId, ts: Date.now() };
                     
                     logDebug(`[API OUT] Odesílám Offer...`, 'info');
                     const ok = await writeSignal(`offer-${myId}`, payload);
                     if (ok) {
-                        // Přidání do pole fronty (Queue Nudging)
                         const qPayload = await readSignal('queue');
                         let qArr = Array.isArray(qPayload) ? qPayload : [];
                         if(!qArr.includes(myId)) {
@@ -885,14 +876,17 @@
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
-        processingOffers.clear(); // Očištění session paměti Mastera
+        processingOffers.clear(); 
         isDnsHost = false;
         
         await initCrypto();
         isResetting = false;
 
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) joinViaDns();
+        // KONTROLA ADRESNÉHO BLACKLISTU PŘED PŘIPOJENÍM
+        const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
+        
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) joinViaDns();
         else startDnsHostLoop();
     }
 
@@ -904,7 +898,9 @@
         document.getElementById('ui-role').innerText = 'Izolován';
         
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && hostAlive.id !== myId && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) {
+        const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
+        
+        if (hostAlive && hostAlive.id !== myId && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
             setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 1500);
             return; 
         }
@@ -940,7 +936,9 @@
         await initCrypto();
         
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) joinViaDns();
+        const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
+        
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) joinViaDns();
         else startDnsHostLoop();
     }
 
@@ -949,7 +947,7 @@
         networkGraph.root = myId; 
         unlockChat();
         
-        await writeSignal('queue', []); // Promaž frontu při startu Mastera
+        await writeSignal('queue', []); 
         await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
         
         if (dnsInterval) clearInterval(dnsInterval);
@@ -960,6 +958,8 @@
             const aliveCheck = await readSignal('host-alive');
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && aliveCheck.id < myId && (Date.now() - aliveCheck.timestamp < 60000)) {
                 logDebug(`Nalezen silnější Hub (${aliveCheck.id}). Ústup do Spoke režimu.`, "error");
+                // OKAMŽITÝ VÝMAZ BLACKLISTU - Tím se zaručí, že se k němu připojíme a nespadneme do smyčky
+                blacklistedHubId = null;
                 fullResetAndReconnect();
                 return;
             }
@@ -968,32 +968,29 @@
             let queueArr = Array.isArray(queuePayload) ? queuePayload : [];
             
             if (queueArr.length > 0) {
-                // Vezmeme prvního zájemce z fronty
                 const guestId = queueArr[0];
                 
-                // Aktualizujeme frontu pro další
                 const newQueue = queueArr.filter(id => id !== guestId);
                 await writeSignal('queue', newQueue);
 
                 const offerPayload = await readSignal(`offer-${guestId}`);
                 if (!offerPayload) return;
                 
-                // EXPIRACE: Zahození starých dat
                 if (offerPayload.ts && (Date.now() - offerPayload.ts > 30000)) {
                     logDebug(`Ignoruji prastarý Offer od ${guestId} (TTL vypršelo)`, 'error');
-                    // "Smažeme" prošlý offer
                     await writeSignal(`offer-${guestId}`, { consumed: true, ts: 0 });
                     return;
                 }
 
-                if (offerPayload.consumed) return; // Již zpracováno v minulosti
+                if (offerPayload.consumed) return;
                 
                 const offerData = offerPayload.sdp ? offerPayload.sdp : offerPayload;
                 const offerSid = offerPayload.sid ? offerPayload.sid : null;
 
-                // ATOMICKÝ ZÁMEK: Už toto Session ID zpracováváme?
                 if (processingOffers.has(offerSid)) return;
                 processingOffers.add(offerSid);
+                // POJISTKA MRTVÉHO OFFERU: Pokud spojení spadne během navazování, za 30s zámek uvolníme
+                setTimeout(() => processingOffers.delete(offerSid), 30000);
 
                 const currentPc = connections[guestId];
                 if (currentPc) {
@@ -1013,7 +1010,6 @@
                         const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
                         await pc.setRemoteDescription(rtcOffer);
                         
-                        // Značka: "Consume once" pro API (aby to Master nečetl znovu)
                         await writeSignal(`offer-${guestId}`, { consumed: true, ts: 0 });
                         
                         await pc.setLocalDescription(await pc.createAnswer());
@@ -1027,7 +1023,6 @@
                                 type: pc.localDescription.type,
                                 sdp: pc.localDescription.sdp
                             };
-                            // Posíláme Answer s jasným Timestampem pro expiraci u klienta
                             const payload = { sdp: sdpData, sid: offerSid, ts: Date.now() };
                             await writeSignal(`answer-${guestId}`, payload);
                         });
@@ -1048,20 +1043,27 @@
         if (joinInterval) clearInterval(joinInterval);
         
         let pokusy = 0;
-        // ZKRÁCENÝ INTERVAL: z 5s na 2s
+        let knownHubId = null; // Zachytíme ID Hubu pro případný blacklist
+        
         joinInterval = setInterval(async () => {
             pokusy++;
             if (pokusy > 10) { 
                 clearInterval(joinInterval);
-                logDebug("Spojení vypršelo (Timeout 20s). Ignoruji jeho signál pro další 2 minuty.", "error");
-                ignoreHostAliveUntil = Date.now() + 120000;
+                logDebug(`Spojení vypršelo. Ignoruji zlobivý Hub pro další 2 minuty.`, "error");
+                blacklistedHubId = knownHubId; // Blokujeme pouze KONKRÉTNÍ Hub
+                blacklistedHubTimeout = Date.now() + 120000;
                 cleanupConnection('hub'); 
                 checkIsolation(); 
                 return;
             }
             logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/10)...`, 'info');
             
-            // QUEUE NUDGE: frontu plníme každou 4. vteřinu (pokus 2, 4, 6...)
+            // Zachytíme, ke komu se vůbec snažíme připojit
+            if (!knownHubId) {
+                const alive = await readSignal('host-alive');
+                if (alive && alive.id) knownHubId = alive.id;
+            }
+            
             if (pokusy % 2 === 0) {
                 const qPayload = await readSignal('queue');
                 let qArr = Array.isArray(qPayload) ? qPayload : [];
@@ -1074,9 +1076,7 @@
             const answerPayload = await readSignal(`answer-${myId}`);
             if (answerPayload && !answerPayload.consumed && connections['hub']) {
                 
-                // OCHRANA PŘED CACHE SMRTI (TTL Expirace)
                 if (answerPayload.ts && (Date.now() - answerPayload.ts > 30000)) {
-                    logDebug(`[API WARN] Ignoruji Answer (starší než 30 vteřin)`, 'error');
                     return;
                 }
 
@@ -1096,7 +1096,6 @@
                         const rtcAnswer = new RTCSessionDescription({ type: safeType, sdp: String(answerData.sdp) });
                         await connections['hub'].setRemoteDescription(rtcAnswer);
                         
-                        // KLIČOVÉ: "Consume-Once" -> Odstřelím Answer z Workeru
                         await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
                         
                     } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
