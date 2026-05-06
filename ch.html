@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.6</title>
+    <title>E2E Tree P2P Chat v2.2.7</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.6 (Loop & Lock Fix)</span>
+            <span class="version-badge">v2.2.7 (History Sync Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.6: Oprava nekonečného Split-Brain loopu a uvolňování zámků.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.7: Opraveno ztrácení historie, vráceny Sync Logy.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -195,7 +195,6 @@
     let currentSessionId = null;
     let fileBuffers = {};
     
-    // Ochrana proti uvíznutí na mrtvých uzlech (Adresný blacklist)
     let blacklistedHubId = null;
     let blacklistedHubTimeout = 0;
     let processingOffers = new Set();
@@ -440,13 +439,19 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
+    // ROBUSTNÍ SMĚROVACÍ ENGINE (Oprava TTL dropů)
     function routeMessage(msgObj, sourceChannel = null) {
+        // Kontrola duplicit
         if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk') {
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id);
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
         }
 
+        // KLÍČOVÁ OPRAVA: Zprávu vždy ZPRACUJEME LOKÁLNĚ dřív, než ji zahodíme kvůli vypršení sítě
+        processPayload(msgObj);
+
+        // Nyní zkontrolujeme, zda má zpráva ještě životnost (TTL) jít dál k dalším uzlům
         msgObj.ttl -= 1; 
         if (msgObj.ttl <= 0) return; 
 
@@ -464,8 +469,6 @@
                 } catch(err) {}
             }
         });
-
-        processPayload(msgObj);
     }
 
     async function processPayload(msg) {
@@ -493,14 +496,21 @@
                 let i = 0;
                 let chunkIndex = 1;
                 
+                logDebug(`[SYNC START] Začínám synchronizaci (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                
                 const sendBatch = async () => {
-                    if (i >= chatHistory.length) return;
+                    if (i >= chatHistory.length) {
+                        logDebug(`[SYNC DONE] Všechny historické dávky úspěšně odeslány.`, 'sync');
+                        return;
+                    }
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
+                        logDebug(`[SYNC OUT] Odesílám dávku #${chunkIndex} pro ${knownNodes[msg.sender].name}...`, 'info');
+                        // TTL zvýšeno z 2 na 5 pro případné delší skoky
+                        routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
-                    } catch(e) { }
+                    } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
                     setTimeout(sendBatch, 800); 
@@ -511,12 +521,18 @@
         else if (msg.type === 'sync-history') {
             if (msg.target !== myId) return; 
 
+            logDebug(`[SYNC IN] Dorazila dávka s historií. Dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+            
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     mergeIncomingHistory(historyArray);
-                } catch(e) {}
+                } catch(e) {
+                    logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
+                }
+            } else {
+                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč).`, 'error');
             }
         } 
         else if (msg.type === 'clear-history') {
@@ -792,7 +808,11 @@
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
                 if (!isDnsHost) {
-                    setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
+                    // KLIČOVÝ KROK: Žádost o historii 3 vteřiny po oznámení nového uzlu
+                    setTimeout(() => { 
+                        logDebug(`Požaduji historii od Mastera...`, 'info');
+                        routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                    }, 3000);
                 }
             }, 1000);
 
@@ -883,7 +903,6 @@
         isResetting = false;
 
         const hostAlive = await readSignal('host-alive');
-        // KONTROLA ADRESNÉHO BLACKLISTU PŘED PŘIPOJENÍM
         const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
         
         if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) joinViaDns();
@@ -958,7 +977,6 @@
             const aliveCheck = await readSignal('host-alive');
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && aliveCheck.id < myId && (Date.now() - aliveCheck.timestamp < 60000)) {
                 logDebug(`Nalezen silnější Hub (${aliveCheck.id}). Ústup do Spoke režimu.`, "error");
-                // OKAMŽITÝ VÝMAZ BLACKLISTU - Tím se zaručí, že se k němu připojíme a nespadneme do smyčky
                 blacklistedHubId = null;
                 fullResetAndReconnect();
                 return;
@@ -977,7 +995,6 @@
                 if (!offerPayload) return;
                 
                 if (offerPayload.ts && (Date.now() - offerPayload.ts > 30000)) {
-                    logDebug(`Ignoruji prastarý Offer od ${guestId} (TTL vypršelo)`, 'error');
                     await writeSignal(`offer-${guestId}`, { consumed: true, ts: 0 });
                     return;
                 }
@@ -989,7 +1006,6 @@
 
                 if (processingOffers.has(offerSid)) return;
                 processingOffers.add(offerSid);
-                // POJISTKA MRTVÉHO OFFERU: Pokud spojení spadne během navazování, za 30s zámek uvolníme
                 setTimeout(() => processingOffers.delete(offerSid), 30000);
 
                 const currentPc = connections[guestId];
@@ -1043,14 +1059,14 @@
         if (joinInterval) clearInterval(joinInterval);
         
         let pokusy = 0;
-        let knownHubId = null; // Zachytíme ID Hubu pro případný blacklist
+        let knownHubId = null; 
         
         joinInterval = setInterval(async () => {
             pokusy++;
             if (pokusy > 10) { 
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo. Ignoruji zlobivý Hub pro další 2 minuty.`, "error");
-                blacklistedHubId = knownHubId; // Blokujeme pouze KONKRÉTNÍ Hub
+                blacklistedHubId = knownHubId; 
                 blacklistedHubTimeout = Date.now() + 120000;
                 cleanupConnection('hub'); 
                 checkIsolation(); 
@@ -1058,7 +1074,6 @@
             }
             logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/10)...`, 'info');
             
-            // Zachytíme, ke komu se vůbec snažíme připojit
             if (!knownHubId) {
                 const alive = await readSignal('host-alive');
                 if (alive && alive.id) knownHubId = alive.id;
