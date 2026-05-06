@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.2</title>
+    <title>E2E Tree P2P Chat v2.1.3</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -71,7 +71,9 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; }
+        
+        .sync-box { color: #fff; background: rgba(243,156,18,0.15); padding: 8px; border-radius: 5px; margin-top: 5px; border-left: 4px solid #f39c12; font-family: monospace; font-size: 0.7rem; }
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -87,7 +89,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.2 (Deterministic ID & Crypto Fix)</span>
+            <span class="version-badge">v2.1.3 (Titanium Sync)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -128,7 +130,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.2: Fix ztráty šifrovacích klíčů a stabilní ID zařízení.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.3: Ochrana proti přetečení paměti + Hardcore Sync Log.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -148,29 +150,22 @@
         ]
     };
     
-    // --- GENERÁTORY ID ---
-    
-    // 1. Deterministické ID uzlu (Zůstane stejné celý den pro daný prohlížeč a zařízení)
+    // Generátory
     function generateNodeId() {
-        const dateStr = new Date().toISOString().split('T')[0]; // Např. "2026-05-06"
+        const dateStr = new Date().toISOString().split('T')[0]; 
         const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
-        
         let hash = 0;
         for (let i = 0; i < fingerprint.length; i++) {
             hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
             hash |= 0; 
         }
         let id = Math.abs(hash).toString(36);
-        while(id.length < 6) id += '0'; // Bezpečné doplnění
+        while(id.length < 6) id += '0'; 
         return id.substr(0, 6);
     }
+    function generateMsgId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); }
 
-    // 2. Unikátní ID zpráv (Nutné pro anti-spam deduplikační filtr!)
-    function generateMsgId() { 
-        return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
-    }
-
-    let myId = generateNodeId(); // Použití fixního ID
+    let myId = generateNodeId(); 
     let myName = "";
     let isDnsHost = false;
     let connections = {}; 
@@ -194,6 +189,7 @@
         if (savedName) document.getElementById('username').value = savedName;
     });
 
+    // ZÁSADNÍ OPRAVA (Zabránění kolapsu Stacku při šifrování velkých historií)
     function buf2b64(buf) {
         let binary = '';
         const bytes = new Uint8Array(buf);
@@ -206,6 +202,19 @@
         const bytes = new Uint8Array(len);
         for (let i = 0; i < len; i++) bytes[i] = binary_string.charCodeAt(i);
         return bytes.buffer;
+    }
+    // ZÁSADNÍ OPRAVA (Komprese Cloudflare)
+    function komprimovat(data) {
+        const deflated = pako.deflate(JSON.stringify(data));
+        let binary = '';
+        for (let i = 0; i < deflated.length; i++) binary += String.fromCharCode(deflated[i]);
+        return window.btoa(binary);
+    }
+    function dekomprimovat(b64) {
+        const str = window.atob(b64); 
+        const pole = new Uint8Array(str.length);
+        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
+        return JSON.parse(pako.inflate(pole, { to: 'string' }));
     }
 
     function logDebug(msg, type = 'info') {
@@ -260,13 +269,6 @@
         } catch(e) { return null; }
     }
 
-    function komprimovat(data) { return btoa(String.fromCharCode.apply(null, pako.deflate(JSON.stringify(data)))); }
-    function dekomprimovat(b64) {
-        const str = atob(b64); const pole = new Uint8Array(str.length);
-        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
-        return JSON.parse(pako.inflate(pole, { to: 'string' }));
-    }
-
     async function writeSignal(subdomena, data, retry = 2) {
         updateDebugStats('dns', `ZÁPIS: ${subdomena}`);
         while (retry > 0) {
@@ -294,20 +296,21 @@
         return null;
     }
 
+    // --- AGRESIVNÍ VYKRESLOVAČ CHATU ---
     function reRenderAllHistory() {
         const chat = document.getElementById('chat-area');
-        chat.innerHTML = '';
-        chatHistory.forEach(msg => renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false));
-        chat.scrollTop = chat.scrollHeight;
-    }
+        chat.innerHTML = ''; // Vymaže celé okno
+        
+        chatHistory.forEach(msg => {
+            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
+        });
 
-    function renderDivider(text) {
-        const chat = document.getElementById('chat-area');
         const div = document.createElement('div');
         div.className = "history-divider";
-        div.innerHTML = `<span>${text}</span>`;
+        div.innerHTML = `<span>Konec sjednocené historie</span>`;
         chat.appendChild(div);
-        chat.scrollTop = chat.scrollHeight;
+        
+        chat.scrollTop = chat.scrollHeight; // Odrotuje dolů
     }
 
     function loadHistory() {
@@ -316,7 +319,6 @@
             chatHistory = JSON.parse(saved);
             chatHistory.sort((a,b) => a.time - b.time); 
             reRenderAllHistory();
-            renderDivider("Konec lokální historie");
         }
     }
 
@@ -350,7 +352,7 @@
             clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
                 reRenderAllHistory();
-                logDebug(`[SYNC OK] Úspěšně vloženo a vykresleno ${addedCount} historických zpráv z cloudu.`, "success");
+                logDebug(`[SYNC OK] Do okna úspěšně vloženo ${addedCount} nových historických zpráv.`, "success");
             }, 300);
         }
     }
@@ -389,7 +391,7 @@
             }
         });
 
-        processPayload(msgObj); // Lokální zpracování
+        processPayload(msgObj);
     }
 
     async function processPayload(msg) {
@@ -397,21 +399,14 @@
 
         if (msg.type === 'announce') {
             const isNewNode = !knownNodes[msg.sender];
-            // KRYPTOGRAFICKÝ FIX: Kontrola, zda uzel se stejným ID neobnovil stránku a nemá tak nový veřejný klíč!
             const isKeyChanged = knownNodes[msg.sender] && JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk);
 
             if (isNewNode || isKeyChanged) {
                 knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now() };
-                
-                // Pokud změnil klíč, MUSÍME smazat starý AES šifrovací klíč z paměti
-                if (isKeyChanged) {
-                    delete knownNodes[msg.sender].derivedAesKey;
-                    logDebug(`Uzel ${msg.name} (${msg.sender}) obnovil své kryptografické klíče.`, 'info');
-                }
+                if (isKeyChanged) delete knownNodes[msg.sender].derivedAesKey;
 
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
-                
                 if (isNewNode) renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
@@ -424,7 +419,7 @@
                 let i = 0;
                 let chunkIndex = 1;
                 
-                logDebug(`[SYNC START] Začínám sekání historie (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Začínám proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
@@ -446,8 +441,7 @@
             }
         }
         else if (msg.type === 'sync-history') {
-            // FIX SCHIZOFRENIE: Ignoruj paket, pokud byl odeslán tebou (např. Hub vidí svůj vlastní odchozí chunk)
-            // Ale naopak ignoruj msg.target check, protože lokálně zpracováváme jen to, co dorazilo
+            // Bez ohledu na to co je v target, pokud to dešifrujeme, je to pro nás!
             if (msg.target !== myId) return; 
 
             logDebug(`[SYNC IN] Dorazil paket s historií od ${msg.sender}. Dešifruji...`, 'info');
@@ -456,15 +450,17 @@
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
-                    const extractedTexts = historyArray.map(m => `[${m.author}]: ${m.text}`).join('<br> &nbsp; &nbsp; ');
-                    logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
+                    
+                    // KRÁSNÝ VÝPIS TEXTŮ ZPRÁV DO DEBUG OKNA
+                    const extractedTexts = historyArray.map(m => `<b>[${m.author}]:</b> ${m.text}`).join('<br>');
+                    logDebug(`[SYNC DATA] Dávka dešifrována! Zprávy uvnitř:<div class="sync-box">${extractedTexts}</div>`, 'sync');
                     
                     mergeIncomingHistory(historyArray);
                 } catch(e) {
                     logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
                 }
             } else {
-                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč?).`, 'error');
+                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč).`, 'error');
             }
         } 
         else if (msg.type === 'chat') {
@@ -511,7 +507,7 @@
             }
         }
 
-        const msgId = generateMsgId(); // FIX: Zpráva musí mít náhodné ID, ne statické ID uzlu!
+        const msgId = generateMsgId(); 
         const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
 
         saveMessage({ id: msgId, author: myName, text: text, time: timeNow });
@@ -627,8 +623,6 @@
                     }
                     return;
                 }
-                
-                if (msgObj.type !== 'chat') logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
                 routeMessage(msgObj, channel); 
             } catch (err) { }
         };
@@ -682,9 +676,7 @@
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
         isDnsHost = false;
         
-        // ZÁSADNÍ OPRAVA PRO DETERMINISTICKÉ ID: Generujeme pouze nové kryptografické klíče, ID ZŮSTÁVÁ
         await initCrypto();
-        
         isResetting = false;
 
         const hostAlive = await readSignal('host-alive');
