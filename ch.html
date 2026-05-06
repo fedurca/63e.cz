@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.3</title>
+    <title>E2E Tree P2P Chat v2.2.4</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.3 (Deadlock Fix)</span>
+            <span class="version-badge">v2.2.4 (Fast-ICE & SplitBrain Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.3: Odstraněn Race Condition a zasekávání sítě při restartu uzlu.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.4: Oprava kolizí Masterů a zrychlení připojení pomocí Fast ICE.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -157,7 +157,7 @@
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun.cloudflare.com:3478' }, // Přidán stabilní Cloudflare STUN
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
@@ -716,6 +716,36 @@
         }
     }
 
+    // Pomocná funkce pro zrychlený (Fast) ICE gathering
+    function waitForIce(pc, callback) {
+        if (pc.iceGatheringState === 'complete') {
+            callback();
+            return;
+        }
+        let isDone = false;
+        let candidateTimer = null;
+        
+        const finish = () => {
+            if (isDone) return;
+            isDone = true;
+            clearTimeout(candidateTimer);
+            pc.onicecandidate = null;
+            callback();
+        };
+
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                clearTimeout(candidateTimer);
+                // Místo čekání 10s počkáme jen 1.5s po nalezení posledního kandidáta
+                candidateTimer = setTimeout(finish, 1500); 
+            } else {
+                finish(); // null = dokončeno prohlížečem
+            }
+        };
+        // Absolutní pojistka proti zaseknutí (max 6 vteřin místo 12s)
+        setTimeout(finish, 6000); 
+    }
+
     async function createP2PNode(targetId, isInitiator, useDns = false) {
         if (connections[targetId]) return; 
         logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
@@ -739,7 +769,7 @@
             bindDataChannel(ch, targetId);
             await pc.setLocalDescription(await pc.createOffer());
             
-            const onGatheringComplete = async () => {
+            waitForIce(pc, async () => {
                 if (!pc || pc.signalingState === 'closed' || pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
@@ -756,12 +786,7 @@
                     const ok = await writeSignal(`offer-${myId}`, payload);
                     if (ok) await writeSignal('queue', { guestId: myId });
                 }
-            };
-            if (pc.iceGatheringState === 'complete') onGatheringComplete();
-            else {
-                pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(() => onGatheringComplete(), 10000); 
-            }
+            });
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
         }
@@ -884,7 +909,7 @@
         document.getElementById('ui-role').innerText = 'Izolován';
         
         const hostAlive = await readSignal('host-alive');
-        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) {
+        if (hostAlive && hostAlive.id !== myId && (Date.now() - hostAlive.timestamp < 120000) && Date.now() > ignoreHostAliveUntil) {
             logDebug("Hub v API stále žije! Restartuji lokální spojení...", "info");
             setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 2000);
             return; 
@@ -905,7 +930,7 @@
             
             setTimeout(async () => {
                 const checkAgain = await readSignal('host-alive');
-                if (checkAgain && (Date.now() - checkAgain.timestamp < 60000) && Date.now() > ignoreHostAliveUntil) {
+                if (checkAgain && checkAgain.id !== myId && (Date.now() - checkAgain.timestamp < 60000) && Date.now() > ignoreHostAliveUntil) {
                     logDebug("Někdo mě předběhl. Sklápím uši a připojuji se jako Spoke.", "info");
                 }
                 isCheckingIsolation = false;
@@ -937,12 +962,22 @@
         unlockChat();
         
         await writeSignal('queue', { guestId: 'IDLE' });
-        await writeSignal('host-alive', { timestamp: Date.now() });
-        setInterval(() => writeSignal('host-alive', { timestamp: Date.now() }), 60000);
-
+        // Přidán identifikátor Hubu pro řešení Split-Brain situací
+        await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
+        
         if (dnsInterval) clearInterval(dnsInterval);
         
         dnsInterval = setInterval(async () => {
+            // Každých 5s zapisujeme, že žijeme, ale také KONTROLUJEME, jestli nejsme ve Split-Brain s jiným Hubem
+            await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
+            
+            const aliveCheck = await readSignal('host-alive');
+            if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && aliveCheck.id < myId && (Date.now() - aliveCheck.timestamp < 60000)) {
+                logDebug(`Nalezen silnější Hub (${aliveCheck.id}). Sklápím uši a připojuji se jako Spoke.`, "error");
+                fullResetAndReconnect();
+                return;
+            }
+
             const queue = await readSignal('queue');
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId) {
                 
@@ -952,7 +987,6 @@
                 const offerData = offerPayload.sdp ? offerPayload.sdp : offerPayload;
                 const offerSid = offerPayload.sid ? offerPayload.sid : null;
 
-                // HLAVNÍ OCHRANA PROTI DEADLOCKU
                 const currentPc = connections[queue.guestId];
                 if (currentPc && currentPc.offerSid === offerSid) {
                     return; // Tento požadavek už zpracováváme
@@ -965,7 +999,7 @@
 
                 if(offerData && offerData.sdp && offerData.type) {
                     await createP2PNode(queue.guestId, false);
-                    const pc = connections[queue.guestId]; // Odchytneme konkrétní instanci pro uzávěry (closures)
+                    const pc = connections[queue.guestId]; 
                     if (!pc) return;
                     pc.offerSid = offerSid;
                     
@@ -977,7 +1011,8 @@
                         await pc.setRemoteDescription(rtcOffer);
                         await pc.setLocalDescription(await pc.createAnswer());
                         
-                        const sendDnsAnswer = async () => {
+                        // Zrychlený ICE Gathering i pro tvorbu Answeru
+                        waitForIce(pc, async () => {
                             if (!pc || pc.signalingState === 'closed' || pc.answerDone) return;
                             pc.answerDone = true;
                             logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
@@ -990,15 +1025,8 @@
                             
                             const ok = await writeSignal(`answer-${queue.guestId}`, payload);
                             if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
-                        };
-
-                        if (pc.iceGatheringState === 'complete') sendDnsAnswer();
-                        else {
-                            pc.onicegatheringstatechange = () => { 
-                                if (pc.iceGatheringState === 'complete') sendDnsAnswer(); 
-                            };
-                            setTimeout(() => sendDnsAnswer(), 8000); 
-                        }
+                        });
+                        
                     } catch(e) { 
                         logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error'); 
                         cleanupConnection(queue.guestId);
@@ -1022,17 +1050,23 @@
                 logDebug("Spojení vypršelo (Hub neodpovídá). Ignoruji jeho signál pro další 2 minuty.", "error");
                 ignoreHostAliveUntil = Date.now() + 120000;
                 cleanupConnection('hub'); 
+                checkIsolation(); // Okamžitě vyhodnotí novou roli (nestojí na místě)
                 return;
             }
             logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
-            const answerPayload = await readSignal(`answer-${myId}`);
             
+            // QUEUE NUDGING: Připomeneme se Masterovi, pokud přeslechl naši první žádost
+            if (pokusy % 2 === 0) {
+                await writeSignal('queue', { guestId: myId });
+            }
+
+            const answerPayload = await readSignal(`answer-${myId}`);
             if (answerPayload && connections['hub']) {
                 const answerData = answerPayload.sdp ? answerPayload.sdp : answerPayload;
                 const answerSid = answerPayload.sid ? answerPayload.sid : null;
 
                 if (currentSessionId && answerSid !== currentSessionId) {
-                    logDebug(`[API WARN] Ignoruji starý Answer z cache (nesouhlasí Session ID). Čekám na nový...`, 'error');
+                    logDebug(`[API WARN] Ignoruji starý Answer z cache...`, 'error');
                     return; 
                 }
 
