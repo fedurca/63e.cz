@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.4</title>
+    <title>E2E Tree P2P Chat v2.1.5</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -88,7 +88,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.4 (XSS Armor & Loop Fix)</span>
+            <span class="version-badge">v2.1.5 (Robust Sync & Backpressure)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -130,7 +130,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.4: Ochrana proti XSS a oprava cyklící fronty.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.5: Pokročilá diagnostika Webrtc a ochrana proti pádu Bufferu.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -180,7 +180,6 @@
     let isResetting = false;
     let isCheckingIsolation = false;
     
-    // ZÁSADNÍ OPRAVA PRO CYKLÍCÍ SPOKE: Proměnná pro uchování rozpracovaných hostů mimo interval
     let pollingGuests = new Set();
 
     document.getElementById('dbg-id').innerText = myId;
@@ -190,7 +189,6 @@
         if (savedName) document.getElementById('username').value = savedName;
     });
 
-    // OCHRANA PROTI XSS (Očištění textu)
     function escapeHTML(str) {
         if (!str) return '';
         return String(str).replace(/[&<>'"]/g, tag => ({
@@ -227,7 +225,6 @@
     function logDebug(msg, type = 'info') {
         const logWindow = document.getElementById('debug-log');
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-        // OPRAVA LOGU: Přidáno [ID: myId] do každého řádku
         logWindow.innerHTML += `<div><span style="color:#555">[${time}] [ID: ${myId}]</span> <span class="log-${type}">${msg}</span></div>`;
         logWindow.scrollTop = logWindow.scrollHeight;
     }
@@ -344,7 +341,6 @@
         return true;
     }
 
-    // --- FUNKCE PRO VYMAZÁNÍ HISTORIE (Z PŘÍKAZU NEBO TLAČÍTKA) ---
     function clearLocalHistory() {
         chatHistory = [];
         localStorage.removeItem('chat_history');
@@ -392,7 +388,6 @@
         
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
         
-        // APLIKACE OCHRANY PROTI XSS PŘED VYKRESLENÍM!
         const safeAuthor = escapeHTML(author);
         const safeText = escapeHTML(text);
 
@@ -422,7 +417,16 @@
 
         Object.values(channels).forEach(ch => {
             if (ch.readyState === 'open' && ch !== sourceChannel) {
-                try { ch.send(JSON.stringify(msgObj)); } catch(err) { }
+                // BEZPEČNÉ ODESÍLÁNÍ PROTI PÁDŮM WEBRTC
+                try { 
+                    const str = JSON.stringify(msgObj);
+                    if (ch.bufferedAmount > 65535) {
+                        logDebug(`[P2P WARN] Kanál do sítě je plný (${Math.round(ch.bufferedAmount/1024)} KB), hrozí přetečení!`, 'error');
+                    }
+                    ch.send(str); 
+                } catch(err) {
+                    logDebug(`[P2P ERR] Chyba odesílání do kanálu: ${err.message}`, 'error');
+                }
             }
         });
 
@@ -450,11 +454,12 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 10; 
+                // EXTRÉMNÍ OCHRANA PROTI BUFFER OVERFLOW WEBRTC: Dávky po 3 zprávách, s velkou mezerou
+                const batchSize = 3; 
                 let i = 0;
                 let chunkIndex = 1;
                 
-                logDebug(`[SYNC START] Začínám proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Začínám bezpečný proces synchronizace (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
@@ -464,13 +469,15 @@
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv)`, 'info');
+                        const payloadStr = JSON.stringify(encrypted);
+                        logDebug(`[SYNC OUT] Odesílám Chunk #${chunkIndex} (${batch.length} zpráv, ${Math.round(payloadStr.length / 1024)} KB)`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 2, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    setTimeout(sendBatch, 500); 
+                    // Delší pauza 800ms pro vyprázdnění WebRTC bufferů v mobilních prohlížečích
+                    setTimeout(sendBatch, 800); 
                 };
                 sendBatch();
             }
@@ -484,8 +491,6 @@
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
-                    
-                    // XSS Safe výpis pro Log okno
                     const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)}`).join('<br> &nbsp; &nbsp; ');
                     logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
                     
@@ -557,16 +562,18 @@
     function cleanupConnection(targetId) {
         if(channels[targetId]) { 
             channels[targetId].onclose = null; 
+            channels[targetId].onerror = null;
+            channels[targetId].onmessage = null;
             channels[targetId].close(); 
             delete channels[targetId]; 
         }
         if(connections[targetId]) { 
             connections[targetId].oniceconnectionstatechange = null; 
+            connections[targetId].ondatachannel = null;
             connections[targetId].close(); 
             delete connections[targetId]; 
         }
         
-        // ZÁSADNÍ OPRAVA CYKLENÍ: Smazání hosta z globálního seznamu rozpracovaných, pokud spojení padne
         pollingGuests.delete(targetId);
         
         updateDebugStats('peers', Object.keys(channels).length);
@@ -592,6 +599,7 @@
         connections[targetId] = pc;
 
         pc.oniceconnectionstatechange = () => {
+            logDebug(`[WebRTC] ICE stav pro ${targetId}: ${pc.iceConnectionState}`, 'webrtc');
             if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
                 logDebug(`[P2P] ICE Spojení s ${targetId} padlo.`, 'error');
                 cleanupConnection(targetId);
@@ -632,8 +640,9 @@
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
             if (!isDnsHost) {
-                logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
-                setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
+                logDebug(`Za 4 vteřiny požádám o historii...`, 'info');
+                // Prodlouženo na 4s, aby měl Master 100% uložen a propsán nový klíč
+                setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 4000);
             }
 
             const pingInterval = setInterval(() => {
@@ -665,6 +674,8 @@
                     }
                     return;
                 }
+                
+                if (msgObj.type !== 'chat') logDebug(`[P2P IN] Zpráva dorazila: Typ [${msgObj.type}] od [${msgObj.sender}]`, 'info');
                 routeMessage(msgObj, channel); 
             } catch (err) { }
         };
@@ -716,7 +727,7 @@
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
-        pollingGuests.clear(); // Vyčistit i zpracovávané hosty
+        pollingGuests.clear(); 
         isDnsHost = false;
         
         await initCrypto();
