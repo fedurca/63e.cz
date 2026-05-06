@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.5</title>
+    <title>E2E Tree P2P Chat v2.1.6</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -58,7 +58,7 @@
         #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
         @media (min-width: 800px) { #debug-panel { width: 450px; height: 100%; } }
         
-        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; }
+        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
@@ -88,7 +88,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.5 (Robust Sync & Backpressure)</span>
+            <span class="version-badge">v2.1.6 (Anti-Ghost Session ID)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -117,7 +117,9 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)</div>
+            <div class="debug-header">
+                📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)
+            </div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -130,7 +132,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.5: Pokročilá diagnostika Webrtc a ochrana proti pádu Bufferu.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.6: Ochrana proti závadám z cachování (Session ID).</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -181,6 +183,9 @@
     let isCheckingIsolation = false;
     
     let pollingGuests = new Set();
+    
+    // Globální uchování aktuálního Session ID pro připojování
+    let currentSessionId = null;
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -417,11 +422,10 @@
 
         Object.values(channels).forEach(ch => {
             if (ch.readyState === 'open' && ch !== sourceChannel) {
-                // BEZPEČNÉ ODESÍLÁNÍ PROTI PÁDŮM WEBRTC
                 try { 
                     const str = JSON.stringify(msgObj);
                     if (ch.bufferedAmount > 65535) {
-                        logDebug(`[P2P WARN] Kanál do sítě je plný (${Math.round(ch.bufferedAmount/1024)} KB), hrozí přetečení!`, 'error');
+                        logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB), hrozí přetečení!`, 'error');
                     }
                     ch.send(str); 
                 } catch(err) {
@@ -454,8 +458,7 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                // EXTRÉMNÍ OCHRANA PROTI BUFFER OVERFLOW WEBRTC: Dávky po 3 zprávách, s velkou mezerou
-                const batchSize = 3; 
+                const batchSize = 3; // Nízký počet zpráv pro minimalizaci zátěže WebRTC
                 let i = 0;
                 let chunkIndex = 1;
                 
@@ -463,7 +466,7 @@
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Všechny dávky pro ${knownNodes[msg.sender].name} úspěšně odeslány.`, 'sync');
+                        logDebug(`[SYNC DONE] Všechny dávky úspěšně odeslány.`, 'sync');
                         return;
                     }
                     const batch = chatHistory.slice(i, i + batchSize);
@@ -476,8 +479,7 @@
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování dávky selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    // Delší pauza 800ms pro vyprázdnění WebRTC bufferů v mobilních prohlížečích
-                    setTimeout(sendBatch, 800); 
+                    setTimeout(sendBatch, 800); // Backpressure mezera 800ms
                 };
                 sendBatch();
             }
@@ -599,8 +601,11 @@
         connections[targetId] = pc;
 
         pc.oniceconnectionstatechange = () => {
-            logDebug(`[WebRTC] ICE stav pro ${targetId}: ${pc.iceConnectionState}`, 'webrtc');
-            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+            const state = pc.iceConnectionState;
+            const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57');
+            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}">${state}</span>`, 'info');
+            
+            if (state === 'disconnected' || state === 'failed') {
                 logDebug(`[P2P] ICE Spojení s ${targetId} padlo.`, 'error');
                 cleanupConnection(targetId);
             }
@@ -615,14 +620,17 @@
                 if (pc.gatheringDone) return;
                 pc.gatheringDone = true;
                 if (useDns) {
-                    const ok = await writeSignal(`offer-${myId}`, pc.localDescription);
+                    // OPRAVA GHOST ANSWER: Připojení Session ID k nabídce
+                    currentSessionId = generateMsgId();
+                    const payload = { sdp: pc.localDescription, sid: currentSessionId };
+                    const ok = await writeSignal(`offer-${myId}`, payload);
                     if (ok) await writeSignal('queue', { guestId: myId });
                 }
             };
             if (pc.iceGatheringState === 'complete') onGatheringComplete();
             else {
                 pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') onGatheringComplete(); };
-                setTimeout(() => { if (!pc.gatheringDone) onGatheringComplete(); }, 8000); 
+                setTimeout(() => { if (!pc.gatheringDone) onGatheringComplete(); }, 12000); 
             }
         } else {
             pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId);
@@ -634,16 +642,18 @@
             channels[targetId] = channel;
             updateDebugStats('peers', Object.keys(channels).length);
             unlockChat();
-            logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success');
+            logDebug(`P2P Datový kanál s ${targetId} otevřen 🚀`, 'success');
             
-            const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+            // Prodleva před zahájením komunikace pro ustálení ICE
+            setTimeout(async () => {
+                const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
-            if (!isDnsHost) {
-                logDebug(`Za 4 vteřiny požádám o historii...`, 'info');
-                // Prodlouženo na 4s, aby měl Master 100% uložen a propsán nový klíč
-                setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 4000);
-            }
+                if (!isDnsHost) {
+                    logDebug(`Za 3 vteřiny požádám o historii...`, 'info');
+                    setTimeout(() => { routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); }, 3000);
+                }
+            }, 500);
 
             const pingInterval = setInterval(() => {
                 if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
@@ -812,7 +822,11 @@
                 
                 if(connections[queue.guestId]) cleanupConnection(queue.guestId);
 
-                const offer = await readSignal(`offer-${queue.guestId}`);
+                const offerPayload = await readSignal(`offer-${queue.guestId}`);
+                // Kompatibilita s novým formátem (obsahuje Session ID) i starým
+                const offer = offerPayload?.sdp ? offerPayload.sdp : offerPayload;
+                const offerSid = offerPayload?.sid ? offerPayload.sid : null;
+
                 if(offer) {
                     pollingGuests.add(queue.guestId);
                     await createP2PNode(queue.guestId, false);
@@ -825,7 +839,10 @@
                             if (!connections[queue.guestId] || connections[queue.guestId].answerDone) return;
                             connections[queue.guestId].answerDone = true;
                             logDebug(`[API OUT] Odesílám Answer pro: ${queue.guestId}`, 'info');
-                            const ok = await writeSignal(`answer-${queue.guestId}`, connections[queue.guestId].localDescription);
+                            
+                            // Hub připojí Session ID do odpovědi
+                            const payload = { sdp: connections[queue.guestId].localDescription, sid: offerSid };
+                            const ok = await writeSignal(`answer-${queue.guestId}`, payload);
                             if(ok) await writeSignal('queue', { guestId: 'IDLE' }); 
                         };
 
@@ -858,9 +875,20 @@
                 return;
             }
             logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/9)...`, 'info');
-            const answer = await readSignal(`answer-${myId}`);
-            if (answer && connections['hub']) {
+            const answerPayload = await readSignal(`answer-${myId}`);
+            
+            // OCHRANA PROTI "DUCHŮM" (Ghost Answer)
+            if (answerPayload && connections['hub']) {
+                const answer = answerPayload.sdp ? answerPayload.sdp : answerPayload;
+                const answerSid = answerPayload.sid ? answerPayload.sid : null;
+
+                if (currentSessionId && answerSid !== currentSessionId) {
+                    logDebug(`[API WARN] Ignoruji starý Answer z cache (nesouhlasí Session ID). Čekám na nový...`, 'error');
+                    return; // Čeká dál v intervalu
+                }
+
                 clearInterval(joinInterval);
+                logDebug(`[API IN] Answer nalezen a ověřen, aplikuji do WebRTC...`, 'success');
                 try {
                     await connections['hub'].setRemoteDescription(answer);
                 } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
