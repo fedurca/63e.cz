@@ -3,8 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.0</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <title>E2E Tree P2P Chat v2.1.1</title>
+    
+    <!-- LOKÁLNÍ NAČTENÍ PAKO S CDN FALLBACKEM -->
+    <script src="./pako.min.js"></script>
+    <script>
+        if (typeof pako === 'undefined') {
+            console.warn("Lokální pako.min.js nenalezeno, stahuji z CDN jako zálohu.");
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"><\/script>');
+        }
+    </script>
+
     <style>
         :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
@@ -63,7 +72,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; } .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -79,7 +88,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.0 (Definitive Sync)</span>
+            <span class="version-badge">v2.1.1 (CORS & Local Pako)</span>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -120,7 +129,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.0: Neomylná synchronizace a extrakce obsahu do logů.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.1: Fix blokování CDN a Cloudflare CORS politiky.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -309,7 +318,6 @@
         let mergedMap = new Map();
         chatHistory.forEach(m => mergedMap.set(m.id, m));
         
-        // OPRAVA 3: Jistota přidání
         incomingArray.forEach(m => {
             if(!mergedMap.has(m.id)) {
                 mergedMap.set(m.id, m);
@@ -346,7 +354,6 @@
     }
 
     function routeMessage(msgObj, sourceChannel = null) {
-        // BYPASS filtru pro systémové zprávy, aby nedošlo k jejich zahození!
         if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history') {
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id);
@@ -410,7 +417,6 @@
             }
         }
         else if (msg.type === 'sync-history') {
-            // OPRAVA 1: NIKDY neporovnávej msg.target s myId, ignoruj to a zkus dešifrovat vždy!
             logDebug(`[SYNC IN] Dorazil paket s historií z uzlu ${msg.sender}. Dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             
@@ -418,7 +424,6 @@
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     
-                    // OPRAVA 2: Extrahuje text a vloží do Debug okna (Hardcore log)
                     const extractedTexts = historyArray.map(m => `[${m.author}]: ${m.text}`).join('<br> &nbsp; &nbsp; ');
                     logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
                     
@@ -427,7 +432,7 @@
                     logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
                 }
             } else {
-                logDebug(`[SYNC ERR] Cílový klíč nesedí, zpráva není pro mě.`, 'info');
+                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč?).`, 'error');
             }
         } 
         else if (msg.type === 'chat') {
