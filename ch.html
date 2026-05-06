@@ -2,77 +2,105 @@
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
-<title>P2P Gossip Chat v2.2</title>
+<title>P2P Gossip Mesh Chat v2.2 FULL</title>
 <style>
-body { font-family: sans-serif; margin:0; }
-#chat { height: 80vh; overflow:auto; padding:10px; background:#eee; }
+body { margin:0; font-family:sans-serif; display:flex; height:100vh; }
+#left { flex:2; display:flex; flex-direction:column; }
+#chat { flex:1; overflow:auto; padding:10px; background:#e5ddd5; }
 #input { display:flex; }
 input { flex:1; padding:10px; }
 button { padding:10px; }
+
+#right { flex:1; background:#111; color:#0f0; display:flex; flex-direction:column; }
+#log { flex:1; overflow:auto; font-size:12px; padding:5px; }
+#topo { height:200px; background:#000; }
+#health { font-size:12px; padding:5px; border-top:1px solid #333; }
 </style>
 </head>
 <body>
 
+<div id="left">
 <div id="chat"></div>
 <div id="input">
 <input id="msg" placeholder="Zpráva...">
 <button onclick="sendMsg()">Send</button>
 </div>
+</div>
+
+<div id="right">
+<canvas id="topo"></canvas>
+<div id="health"></div>
+<div id="log"></div>
+</div>
 
 <script>
-const WORKER = "https://webrtc-dns-signal.63ecz.workers.dev";
-const peers = {};
-const channels = {};
-const seen = new Set();
-let myId = Math.random().toString(36).substr(2,6);
+const WORKER="https://webrtc-dns-signal.63ecz.workers.dev";
+
+let myId=Math.random().toString(36).substr(2,6);
+let peers={}, channels={}, seen=new Set();
 let keyPair;
+let lastSeen={}, pingMap={};
 
-function log(t){ chat.innerHTML += t+"<br>"; chat.scrollTop=chat.scrollHeight; }
+function log(t){
+    const l=document.getElementById("log");
+    l.innerHTML+=t+"<br>";
+    l.scrollTop=l.scrollHeight;
+}
 
-// ---------- CRYPTO (FORWARD SECRECY) ----------
+// ---------- CRYPTO ----------
 async function initCrypto(){
-    keyPair = await crypto.subtle.generateKey(
+    keyPair=await crypto.subtle.generateKey(
         {name:"ECDH",namedCurve:"P-256"},true,["deriveKey"]
     );
 }
 
 async function encryptFS(text, pubJwk){
-    const eph = await crypto.subtle.generateKey(
-        {name:"ECDH",namedCurve:"P-256"},true,["deriveKey"]
+    const eph=await crypto.subtle.generateKey({name:"ECDH",namedCurve:"P-256"},true,["deriveKey"]);
+    const pub=await crypto.subtle.importKey("jwk",pubJwk,{name:"ECDH",namedCurve:"P-256"},true,[]);
+    const aes=await crypto.subtle.deriveKey(
+        {name:"ECDH",public:pub},eph.privateKey,
+        {name:"AES-GCM",length:256},false,["encrypt"]
     );
-
-    const pub = await crypto.subtle.importKey("jwk", pubJwk,{name:"ECDH",namedCurve:"P-256"},true,[]);
-    const aes = await crypto.subtle.deriveKey(
-        {name:"ECDH", public:pub}, eph.privateKey,
-        {name:"AES-GCM", length:256}, false, ["encrypt"]
-    );
-
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const enc = await crypto.subtle.encrypt({name:"AES-GCM", iv}, aes, new TextEncoder().encode(text));
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const enc=await crypto.subtle.encrypt({name:"AES-GCM",iv},aes,new TextEncoder().encode(text));
 
     return {
-        eph: await crypto.subtle.exportKey("jwk", eph.publicKey),
+        eph: await crypto.subtle.exportKey("jwk",eph.publicKey),
         iv: btoa(String.fromCharCode(...iv)),
         c: btoa(String.fromCharCode(...new Uint8Array(enc)))
     };
 }
 
-async function decryptFS(data){
-    const pub = await crypto.subtle.importKey("jwk", data.eph,{name:"ECDH",namedCurve:"P-256"},true,[]);
-    const aes = await crypto.subtle.deriveKey(
-        {name:"ECDH", public:pub}, keyPair.privateKey,
-        {name:"AES-GCM", length:256}, false, ["decrypt"]
+async function decryptFS(d){
+    const pub=await crypto.subtle.importKey("jwk",d.eph,{name:"ECDH",namedCurve:"P-256"},true,[]);
+    const aes=await crypto.subtle.deriveKey(
+        {name:"ECDH",public:pub},keyPair.privateKey,
+        {name:"AES-GCM",length:256},false,["decrypt"]
     );
-
-    const iv = Uint8Array.from(atob(data.iv), c=>c.charCodeAt(0));
-    const buf = Uint8Array.from(atob(data.c), c=>c.charCodeAt(0));
-
-    const dec = await crypto.subtle.decrypt({name:"AES-GCM", iv}, aes, buf);
+    const iv=Uint8Array.from(atob(d.iv),c=>c.charCodeAt(0));
+    const buf=Uint8Array.from(atob(d.c),c=>c.charCodeAt(0));
+    const dec=await crypto.subtle.decrypt({name:"AES-GCM",iv},aes,buf);
     return new TextDecoder().decode(dec);
 }
 
+// ---------- SAFE SEND ----------
+const queues={};
+function safeSend(ch,data,id){
+    if(!queues[id]) queues[id]=[];
+    queues[id].push(data);
+    flush(ch,id);
+}
+function flush(ch,id){
+    const q=queues[id];
+    if(!q) return;
+    while(q.length && ch.bufferedAmount<65536){
+        ch.send(q.shift());
+    }
+    if(q.length) setTimeout(()=>flush(ch,id),50);
+}
+
 // ---------- GOSSIP ----------
-function gossip(msg, src=null){
+function gossip(msg,src=null){
     if(seen.has(msg.id)) return;
     seen.add(msg.id);
 
@@ -81,43 +109,19 @@ function gossip(msg, src=null){
 
     Object.entries(channels).forEach(([id,ch])=>{
         if(ch!==src && ch.readyState==="open"){
-            safeSend(ch, JSON.stringify(msg), id);
+            safeSend(ch,JSON.stringify(msg),id);
         }
     });
 
     handle(msg);
 }
 
-// ---------- SAFE SEND ----------
-const queues = {};
-
-function safeSend(ch,data,id){
-    if(!queues[id]) queues[id]=[];
-    queues[id].push(data);
-    flush(ch,id);
+// ---------- SIGNAL ----------
+async function write(k,v){
+    await fetch(WORKER,{method:"POST",body:JSON.stringify({subdomain:k,content:btoa(JSON.stringify(v))})});
 }
-
-function flush(ch,id){
-    const q=queues[id];
-    if(!q) return;
-
-    while(q.length && ch.bufferedAmount<65536){
-        ch.send(q.shift());
-    }
-
-    if(q.length) setTimeout(()=>flush(ch,id),50);
-}
-
-// ---------- SIGNALING ----------
-async function write(key,val){
-    await fetch(WORKER,{
-        method:"POST",
-        body:JSON.stringify({subdomain:key,content:btoa(JSON.stringify(val))})
-    });
-}
-
-async function read(key){
-    const r=await fetch(WORKER+"?key="+key);
+async function read(k){
+    const r=await fetch(WORKER+"?key="+k);
     const j=await r.json();
     if(j.content) return JSON.parse(atob(j.content));
 }
@@ -125,7 +129,6 @@ async function read(key){
 // ---------- WEBRTC ----------
 async function connect(target){
     if(peers[target]) return;
-
     const pc=new RTCPeerConnection();
     peers[target]=pc;
 
@@ -135,29 +138,40 @@ async function connect(target){
     const offer=await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    setTimeout(async()=>{
-        await write("offer-"+target,{from:myId,offer});
-    },1000);
+    setTimeout(()=>write("offer-"+target,{from:myId,offer}),1000);
 
     setInterval(async()=>{
         const ans=await read("answer-"+myId);
-        if(ans){
-            await pc.setRemoteDescription(ans.answer);
-        }
+        if(ans) await pc.setRemoteDescription(ans.answer);
     },2000);
 }
 
 function bind(ch,id){
     channels[id]=ch;
+    lastSeen[id]=Date.now();
 
+    ch.onopen=()=>log("🟢 "+id);
     ch.onmessage=e=>{
-        const msg=JSON.parse(e.data);
-        gossip(msg,ch);
+        lastSeen[id]=Date.now();
+        const m=JSON.parse(e.data);
+
+        if(m.type==="ping"){
+            ch.send(JSON.stringify({type:"pong",t:m.t}));
+            return;
+        }
+        if(m.type==="pong"){
+            pingMap[id]=Date.now()-m.t;
+            return;
+        }
+
+        gossip(m,ch);
     };
 
-    ch.onopen=()=>{
-        log("connected "+id);
-    };
+    setInterval(()=>{
+        if(ch.readyState==="open"){
+            ch.send(JSON.stringify({type:"ping",t:Date.now()}));
+        }
+    },5000);
 }
 
 // ---------- MESSAGE ----------
@@ -166,9 +180,9 @@ async function sendMsg(){
     msg.value="";
 
     const payloads={};
+    const pub=await crypto.subtle.exportKey("jwk",keyPair.publicKey);
 
-    for(const id in peers){
-        const pub = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
+    for(const id in channels){
         payloads[id]=await encryptFS(text,pub);
     }
 
@@ -179,14 +193,25 @@ async function sendMsg(){
         sender:myId,
         ttl:6
     });
+
+    chat.innerHTML+=`<b>Ty:</b> ${text}<br>`;
 }
 
-async function handle(msg){
-    if(msg.type==="chat"){
-        if(msg.payloads[myId]){
-            const t=await decryptFS(msg.payloads[myId]);
-            log("<b>"+msg.sender+":</b> "+t);
+// ---------- HANDLE ----------
+async function handle(m){
+    if(m.type==="chat"){
+        if(m.payloads[myId]){
+            const t=await decryptFS(m.payloads[myId]);
+            chat.innerHTML+=`<b>${m.sender}:</b> ${t}<br>`;
         }
+    }
+    if(m.type==="peer"){
+        m.peers.forEach(p=>{
+            if(p!==myId && !peers[p]){
+                log("🔗 connect "+p);
+                connect(p);
+            }
+        });
     }
 }
 
@@ -198,30 +223,84 @@ setInterval(()=>{
         peers:Object.keys(peers),
         ttl:4
     });
-},5000);
+},4000);
 
-// ---------- START ----------
+// ---------- TOPOLOGY ----------
+function draw(){
+    const c=document.getElementById("topo");
+    c.width=c.clientWidth;
+    c.height=c.clientHeight;
+    const ctx=c.getContext("2d");
+
+    const nodes=[myId,...Object.keys(peers)];
+    const cx=c.width/2, cy=c.height/2;
+    const r=80;
+
+    const pos={};
+    nodes.forEach((n,i)=>{
+        const a=i/nodes.length*2*Math.PI;
+        pos[n]={x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)};
+    });
+
+    ctx.clearRect(0,0,c.width,c.height);
+
+    nodes.forEach(n=>{
+        Object.keys(peers).forEach(p=>{
+            if(pos[n]&&pos[p]){
+                ctx.beginPath();
+                ctx.moveTo(pos[n].x,pos[n].y);
+                ctx.lineTo(pos[p].x,pos[p].y);
+                ctx.strokeStyle="#444";
+                ctx.stroke();
+            }
+        });
+    });
+
+    nodes.forEach(n=>{
+        ctx.beginPath();
+        ctx.arc(pos[n].x,pos[n].y,10,0,2*Math.PI);
+        ctx.fillStyle=n===myId?"#0f0":"#888";
+        ctx.fill();
+    });
+}
+setInterval(draw,1000);
+
+// ---------- HEALTH ----------
+setInterval(()=>{
+    let h="";
+    Object.keys(peers).forEach(id=>{
+        const age=Date.now()-lastSeen[id];
+        h+=`${id} | ping:${pingMap[id]||"-"}ms | ${age}ms<br>`;
+        if(age>20000){
+            log("💀 "+id);
+            delete peers[id];
+            delete channels[id];
+        }
+    });
+    document.getElementById("health").innerHTML=h;
+},2000);
+
+// ---------- BOOTSTRAP ----------
+setInterval(async()=>{
+    const offer=await read("offer-"+myId);
+    if(offer){
+        const pc=new RTCPeerConnection();
+        peers[offer.from]=pc;
+
+        pc.ondatachannel=e=>bind(e.channel,offer.from);
+
+        await pc.setRemoteDescription(offer.offer);
+        const ans=await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+
+        await write("answer-"+offer.from,{answer:ans});
+    }
+},2000);
+
+// ---------- INIT ----------
 (async()=>{
     await initCrypto();
     log("ID: "+myId);
-
-    // bootstrap přes DNS
-    setInterval(async()=>{
-        const offer=await read("offer-"+myId);
-        if(offer){
-            const pc=new RTCPeerConnection();
-            peers[offer.from]=pc;
-
-            pc.ondatachannel=e=>bind(e.channel,offer.from);
-
-            await pc.setRemoteDescription(offer.offer);
-            const ans=await pc.createAnswer();
-            await pc.setLocalDescription(ans);
-
-            await write("answer-"+offer.from,{answer:ans});
-        }
-    },2000);
-
 })();
 </script>
 </body>
