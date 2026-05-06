@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.1.3</title>
+    <title>E2E Tree P2P Chat v2.1.4</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -32,6 +32,7 @@
         .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
         .secure-badge { background: #2ed573; color: #000; font-size: 0.7rem; padding: 3px 6px; border-radius: 10px; font-weight: bold; margin-left: 10px; }
         .version-badge { font-size: 0.75rem; opacity: 0.8; margin-left: 10px; }
+        .btn-danger { background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: bold; margin-left: 15px; }
         
         .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
         @media (min-width: 800px) { .main-content { flex-direction: row; } }
@@ -71,9 +72,7 @@
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; }
-        
-        .sync-box { color: #fff; background: rgba(243,156,18,0.15); padding: 8px; border-radius: 5px; margin-top: 5px; border-left: 4px solid #f39c12; font-family: monospace; font-size: 0.7rem; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;}
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -89,7 +88,8 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.1.3 (Titanium Sync)</span>
+            <span class="version-badge">v2.1.4 (XSS Armor & Loop Fix)</span>
+            <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -130,7 +130,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.3: Ochrana proti přetečení paměti + Hardcore Sync Log.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.1.4: Ochrana proti XSS a oprava cyklící fronty.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -144,13 +144,11 @@
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
     
-    // Generátory
     function generateNodeId() {
         const dateStr = new Date().toISOString().split('T')[0]; 
         const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
@@ -181,6 +179,9 @@
     let dnsInterval = null;
     let isResetting = false;
     let isCheckingIsolation = false;
+    
+    // ZÁSADNÍ OPRAVA PRO CYKLÍCÍ SPOKE: Proměnná pro uchování rozpracovaných hostů mimo interval
+    let pollingGuests = new Set();
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -189,7 +190,14 @@
         if (savedName) document.getElementById('username').value = savedName;
     });
 
-    // ZÁSADNÍ OPRAVA (Zabránění kolapsu Stacku při šifrování velkých historií)
+    // OCHRANA PROTI XSS (Očištění textu)
+    function escapeHTML(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>'"]/g, tag => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        }[tag] || tag));
+    }
+
     function buf2b64(buf) {
         let binary = '';
         const bytes = new Uint8Array(buf);
@@ -203,7 +211,6 @@
         for (let i = 0; i < len; i++) bytes[i] = binary_string.charCodeAt(i);
         return bytes.buffer;
     }
-    // ZÁSADNÍ OPRAVA (Komprese Cloudflare)
     function komprimovat(data) {
         const deflated = pako.deflate(JSON.stringify(data));
         let binary = '';
@@ -220,7 +227,8 @@
     function logDebug(msg, type = 'info') {
         const logWindow = document.getElementById('debug-log');
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-        logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`;
+        // OPRAVA LOGU: Přidáno [ID: myId] do každého řádku
+        logWindow.innerHTML += `<div><span style="color:#555">[${time}] [ID: ${myId}]</span> <span class="log-${type}">${msg}</span></div>`;
         logWindow.scrollTop = logWindow.scrollHeight;
     }
     
@@ -230,6 +238,7 @@
         document.getElementById('setup-screen').style.display = 'none';
         document.getElementById('chat-input').disabled = false;
         document.getElementById('send-btn').disabled = false;
+        document.getElementById('btn-clear-history').style.display = 'inline-block';
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
     }
@@ -296,10 +305,9 @@
         return null;
     }
 
-    // --- AGRESIVNÍ VYKRESLOVAČ CHATU ---
     function reRenderAllHistory() {
         const chat = document.getElementById('chat-area');
-        chat.innerHTML = ''; // Vymaže celé okno
+        chat.innerHTML = ''; 
         
         chatHistory.forEach(msg => {
             renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false);
@@ -310,15 +318,20 @@
         div.innerHTML = `<span>Konec sjednocené historie</span>`;
         chat.appendChild(div);
         
-        chat.scrollTop = chat.scrollHeight; // Odrotuje dolů
+        chat.scrollTop = chat.scrollHeight; 
     }
 
     function loadHistory() {
         const saved = localStorage.getItem('chat_history');
         if(saved) {
-            chatHistory = JSON.parse(saved);
-            chatHistory.sort((a,b) => a.time - b.time); 
-            reRenderAllHistory();
+            try {
+                chatHistory = JSON.parse(saved);
+                chatHistory.sort((a,b) => a.time - b.time); 
+                reRenderAllHistory();
+            } catch(e) {
+                logDebug("Lokální historie byla poškozena. Byla vymazána.", "error");
+                clearLocalHistory();
+            }
         }
     }
 
@@ -329,6 +342,21 @@
         if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
         localStorage.setItem('chat_history', JSON.stringify(chatHistory));
         return true;
+    }
+
+    // --- FUNKCE PRO VYMAZÁNÍ HISTORIE (Z PŘÍKAZU NEBO TLAČÍTKA) ---
+    function clearLocalHistory() {
+        chatHistory = [];
+        localStorage.removeItem('chat_history');
+        reRenderAllHistory();
+        logDebug("Lokální historie chatu byla zcela vymazána.", "error");
+    }
+
+    function broadcastClearHistory() {
+        if(confirm("Opravdu vymazat historii sítě? Smaže se u tebe i u všech aktuálně připojených uživatelů.")) {
+            clearLocalHistory();
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'clear-history', sender: myId });
+        }
     }
 
     let syncTimeout = null;
@@ -363,10 +391,17 @@
         div.className = `msg msg-${type}`;
         
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
+        
+        // APLIKACE OCHRANY PROTI XSS PŘED VYKRESLENÍM!
+        const safeAuthor = escapeHTML(author);
+        const safeText = escapeHTML(text);
+
         if (type !== 'system') {
             div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;">
-                <b>${author}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${text}`;
-        } else div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${text}`;
+                <b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${safeText}`;
+        } else {
+            div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${safeText}`;
+        }
         
         chat.appendChild(div);
         if(scroll) chat.scrollTop = chat.scrollHeight;
@@ -441,7 +476,6 @@
             }
         }
         else if (msg.type === 'sync-history') {
-            // Bez ohledu na to co je v target, pokud to dešifrujeme, je to pro nás!
             if (msg.target !== myId) return; 
 
             logDebug(`[SYNC IN] Dorazil paket s historií od ${msg.sender}. Dešifruji...`, 'info');
@@ -451,9 +485,9 @@
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     
-                    // KRÁSNÝ VÝPIS TEXTŮ ZPRÁV DO DEBUG OKNA
-                    const extractedTexts = historyArray.map(m => `<b>[${m.author}]:</b> ${m.text}`).join('<br>');
-                    logDebug(`[SYNC DATA] Dávka dešifrována! Zprávy uvnitř:<div class="sync-box">${extractedTexts}</div>`, 'sync');
+                    // XSS Safe výpis pro Log okno
+                    const extractedTexts = historyArray.map(m => `<b>[${escapeHTML(m.author)}]:</b> ${escapeHTML(m.text)}`).join('<br> &nbsp; &nbsp; ');
+                    logDebug(`[SYNC DATA] Dávka dešifrována! Obsahuje:<br> &nbsp; &nbsp; ${extractedTexts}`, 'sync');
                     
                     mergeIncomingHistory(historyArray);
                 } catch(e) {
@@ -463,6 +497,10 @@
                 logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč).`, 'error');
             }
         } 
+        else if (msg.type === 'clear-history') {
+            logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error');
+            clearLocalHistory();
+        }
         else if (msg.type === 'chat') {
             if (msg.payloads[myId]) {
                 const plainJson = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
@@ -527,6 +565,10 @@
             connections[targetId].close(); 
             delete connections[targetId]; 
         }
+        
+        // ZÁSADNÍ OPRAVA CYKLENÍ: Smazání hosta z globálního seznamu rozpracovaných, pokud spojení padne
+        pollingGuests.delete(targetId);
+        
         updateDebugStats('peers', Object.keys(channels).length);
 
         if (isDnsHost && targetId !== 'hub') {
@@ -655,7 +697,7 @@
             if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>';
             else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
 
-            if(knownNodes[id]) html += `<tr><td>${node.name.substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
+            if(knownNodes[id]) html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
         });
         html += '</table>';
         list.innerHTML = html;
@@ -674,6 +716,7 @@
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
+        pollingGuests.clear(); // Vyčistit i zpracovávané hosty
         isDnsHost = false;
         
         await initCrypto();
@@ -730,7 +773,7 @@
         
         myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
         localStorage.setItem('chat_nickname', myName); 
-        document.getElementById('ui-my-name').innerText = myName; 
+        document.getElementById('ui-my-name').innerText = escapeHTML(myName); 
 
         document.getElementById('setup-screen').style.display = 'none'; 
         loadHistory();
@@ -752,7 +795,6 @@
 
         if (dnsInterval) clearInterval(dnsInterval);
         
-        let pollingGuests = new Set();
         dnsInterval = setInterval(async () => {
             const queue = await readSignal('queue');
             if (queue && queue.guestId && queue.guestId !== 'IDLE' && queue.guestId !== myId && !pollingGuests.has(queue.guestId)) {
@@ -870,7 +912,7 @@
             
             ctx.fillStyle = '#fff'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
             const shortName = knownNodes[n] ? knownNodes[n].name.substr(0,4) : n.substr(0,4);
-            ctx.fillText(shortName, pos[n].x, pos[n].y + 4);
+            ctx.fillText(escapeHTML(shortName), pos[n].x, pos[n].y + 4);
         });
     }
 </script>
