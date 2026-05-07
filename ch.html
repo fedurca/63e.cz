@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.0 (Anti Split-Brain & Watchdog)</title>
+    <title>E2E Tree P2P Chat v4.1 (Split-Brain Fix & Format Fix)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -131,7 +131,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.0 (Anti Split-Brain & Watchdog)</span>
+            <span class="version-badge">v4.1 (Split-Brain Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -182,7 +182,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.0: Vylepšená ochrana proti zamrznutí spojení a Split-Brain defektům.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.1: Deterministická rezoluce Split-Brain a správné formátování telemetrie.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -274,24 +274,26 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE, BENCHMARK A GEO-PING ---
     let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, dpi: '?', diag: '?', bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
     
+    function formatTelemetry(t) {
+        if (!t || !t.os) return 'Telemetrie nedostupná';
+        const dpi = t.dpi ? `${t.dpi} DPI, ` : '';
+        const diag = t.diag ? `${t.diag}` : '';
+        return `💻 ${t.os} | 🌐 ${t.browser} | 📱 ${t.res} (${dpi}${diag}) | 🔋 ${t.bat} | 🗣️ ${t.lang} | 🌍 ${t.loc} | ⚡ ${t.perf}`;
+    }
+
     async function estimateDevicePower() {
         return new Promise((resolve) => {
             setTimeout(() => {
-                // WARM-UP JIT KOMPILÁTORU
                 let w = 0;
                 for (let i = 1; i < 500000; i++) { w += Math.sqrt(i); }
-
-                // OSTRÉ MĚŘENÍ
                 const start = performance.now();
                 let result = 0;
                 for (let i = 1; i < 10000000; i++) { result += Math.sqrt(i) * Math.sin(i); }
                 const end = performance.now();
                 
                 const durationMs = Math.round(end - start) || 1;
-
                 let score = Math.round(200000 / durationMs);
                 let year = "Neznámý";
 
@@ -404,7 +406,6 @@
     updateTelemetry();
     setInterval(updateTelemetry, 60000); 
 
-    // --- VIDEO CALL STATE ---
     let activeCall = {
         pc: null,
         peerId: null,
@@ -419,9 +420,7 @@
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
-        // --- ZPRACOVÁNÍ URL PARAMETRŮ ---
         const urlParams = new URLSearchParams(window.location.search);
-        
         let urlNick = urlParams.get('n') || urlParams.get('nick');
         let urlMsg = urlParams.get('m') || urlParams.get('msg');
 
@@ -452,7 +451,6 @@
             if (savedName) document.getElementById('username').value = savedName;
         }
 
-        // --- INICIALIZACE CANVASU ---
         const canvas = document.getElementById('topo-canvas');
         const tooltip = document.getElementById('topo-tooltip');
         
@@ -604,7 +602,6 @@
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
 
-        // AUTO-SEND LOGIKA
         if (pendingAutoMsg) {
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info');
             const msgToSend = pendingAutoMsg;
@@ -746,14 +743,15 @@
         }
     }
 
-    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null) {
+    // V4.1: Oprava escapování HTML v renderMessage
+    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false) {
         const chat = document.getElementById('chat-area');
         const div = document.createElement('div');
         div.className = `msg msg-${type}`;
         
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
         const safeAuthor = escapeHTML(author);
-        let contentHtml = escapeHTML(text);
+        let contentHtml = rawHtml ? text : escapeHTML(text);
 
         if (fileObj) {
             if (!fileObj.dataUrl) {
@@ -778,7 +776,6 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // --- VIDEO CALL LOKÁLNÍ FUNKCE ---
     async function sendVideoSignal(targetId, action, data) {
         const payload = JSON.stringify({ action, data });
         const encrypted = await encryptE2E(payload, targetId);
@@ -1086,10 +1083,10 @@
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
                 
                 if (isNewNode) {
-                    const t = msg.tele || {};
-                    const teleStr = `Info: ${t.browser || '?'} na ${t.os || '?'}, ${t.perf || 'Výkon nezměřen'}`;
-                    renderMessage('System', `${msg.name} se připojil(a) do sítě. <br><span style="font-size: 0.7rem; color: #888;">${teleStr}</span>`, 'system');
-                    logDebug(`[TELEMETRIE] ${msg.name} připojen: ${t.os}, ${t.browser}, ${t.res}, ${t.perf}`, 'announce');
+                    const safeName = escapeHTML(msg.name);
+                    const teleStr = formatTelemetry(msg.tele);
+                    renderMessage('System', `${safeName} se připojil(a) do sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true);
+                    logDebug(`[TELEMETRIE] ${msg.name} připojen.`, 'announce');
                 }
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
@@ -1571,11 +1568,11 @@
         for (const [peerId, pc] of Object.entries(allConnections)) {
             if (!pc) continue;
 
-            // V4.0: Watchdog pro zaseknuty ICE (checking > 15s)
+            // V4.1: WebRTC Fail-Fast Watchdog proti zaseknuti (Chrome vs FF)
             if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
                 if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
                 if (Date.now() - pc.checkingStartTime > 15000) {
-                    logDebug(`[WebRTC] Spojeni s ${peerId} zamrzlo. Ukoncuji.`, 'error');
+                    logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error');
                     cleanupConnection(peerId);
                     continue;
                 }
@@ -1742,17 +1739,12 @@
 
             if(knownNodes[id]) {
                 let callBtn = !isMe ? `<button class="btn-call" onclick="startVideoCall('${id}')" title="Videohovor">📞</button>` : '';
-                
                 let teleStr = '';
                 if (node.tele && node.tele.browser) {
-                    const dpi = node.tele.dpi || '?';
-                    const diag = node.tele.diag || '?';
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} (${dpi} DPI, ${diag}) | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc} | ⚡ ${node.tele.perf}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">${formatTelemetry(node.tele)}</div>`;
                 }
                 if (isMe) {
-                    const dpi = myTelemetry.dpi || '?';
-                    const diag = myTelemetry.diag || '?';
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} (${dpi} DPI, ${diag}) | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc} | ⚡ ${myTelemetry.perf}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">${formatTelemetry(myTelemetry)}</div>`;
                 }
 
                 html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
@@ -1816,7 +1808,7 @@
         aliveIds.sort();
 
         if (aliveIds[0] === myId) {
-            logDebug(`Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
+            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
             isCheckingIsolation = false;
             startDnsHostLoop();
         } else {
@@ -1862,12 +1854,16 @@
             await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
             
             const aliveCheck = await readSignal('host-alive');
-            if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && aliveCheck.id < myId && (Date.now() - aliveCheck.timestamp < 60000)) {
-                // V4.0: Reseni Split-Brain defektu
-                logDebug(`[SPLIT-BRAIN] Detekovan silnejsi Master (${aliveCheck.id}). Menim roli na Spoke a mazu blacklist.`, "error");
-                blacklistedHubId = null;
-                fullResetAndReconnect();
-                return;
+            if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) {
+                // V4.1: Deterministická oprava Split-Brain pomocí porovnání ID
+                if (myId > aliveCheck.id) {
+                    logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error");
+                    blacklistedHubId = null;
+                    fullResetAndReconnect();
+                    return;
+                } else {
+                    logDebug(`[SPLIT-BRAIN] Ignoruji slabšího Mastera (${aliveCheck.id}). Zůstávám prioritní uzel.`, "info");
+                }
             }
 
             const queuePayload = await readSignal('queue');
@@ -1909,7 +1905,7 @@
                     
                     try {
                         const safeType = String(offerData.type).toLowerCase().trim();
-                        if (safeType !== 'offer') throw new Error(`SDP Typ musi byt 'offer'`);
+                        if (safeType !== 'offer') throw new Error(`SDP Typ musí být 'offer'`);
 
                         const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
                         await pc.setRemoteDescription(rtcOffer);
@@ -1954,10 +1950,10 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            // V4.0: Zkraceny timeout z 30s na 20s
-            if (pokusy > 10) { 
+            // V4.1: Snížen limit na 16 vteřin pro Fail-Fast zotavení
+            if (pokusy > 8) { 
                 clearInterval(joinInterval);
-                logDebug(`Spojeni vyprselo. Ignoruji hub pro dalsich 45 vterin.`, "error");
+                logDebug(`Spojení vypršelo (nedostupné ICE kandidáty). Ignoruji Hub pro 45 vteřin.`, "error");
                 blacklistedHubId = knownHubId; 
                 blacklistedHubTimeout = Date.now() + 45000;
                 cleanupConnection('hub'); 
