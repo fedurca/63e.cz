@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.5 (HW Telemetrie & Pevné ID)</title>
+    <title>E2E Tree P2P Chat v3.6 (HW Telemetrie & Geo-Ping)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -130,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.5 (HW Telemetrie & Pevné ID)</span>
+            <span class="version-badge">v3.6 (Geo-Ping & HW Info)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +181,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.5: Přidána HW Telemetrie do zdraví sítě a garantovaně pevná ID.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.6: Přidán odhad země přes Geo-Ping, jazykové preference a pevné P2P ID.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -227,7 +227,7 @@
         ]
     };
     
-    // V3.5: Garantovaně stejné ID založené na HW otisku + lokální záloze. (Bez Date a bez URL)
+    // V3.5/V3.6: Garantovaně stejné ID založené na HW otisku + lokální záloze. (Bez Date a bez URL)
     function getStableNodeId() {
         let saved = localStorage.getItem('p2p_stable_id');
         if (saved) return saved;
@@ -274,8 +274,8 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE (V3.5) ---
-    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?' };
+    // --- HW TELEMETRIE A GEO-PING (V3.6) ---
+    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?', lang: '?', loc: '?' };
     
     async function updateTelemetry() {
         const ua = navigator.userAgent;
@@ -294,6 +294,9 @@
         else if (ua.includes("OPR/")) myTelemetry.browser = "Opera";
         else myTelemetry.browser = "Jiný";
         
+        // Získání pole nainstalovaných/preferovaných jazyků (odpovídá nejčastěji klávesnicím)
+        myTelemetry.lang = navigator.languages ? navigator.languages.join(', ') : (navigator.language || '?');
+
         try {
             if (navigator.getBattery) {
                 const b = await navigator.getBattery();
@@ -303,7 +306,44 @@
             }
         } catch(e) {}
     }
+
+    async function estimateLocation() {
+        myTelemetry.loc = "Měřím...";
+        // Národní registry - využíváme jejich miniaturní ikony (zabrání to CORS blokaci a je to super-rychlé)
+        const regions = [
+            { id: 'CZ', url: 'https://www.nic.cz/favicon.ico' },
+            { id: 'SK', url: 'https://sk-nic.sk/favicon.ico' },
+            { id: 'DE', url: 'https://www.denic.de/favicon.ico' },
+            { id: 'AT', url: 'https://www.nic.at/favicon.ico' },
+            { id: 'PL', url: 'https://www.dns.pl/favicon.ico' },
+            { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' },
+            { id: 'US', url: 'https://www.iana.org/favicon.ico' }
+        ];
+
+        const ping = (url) => new Promise((resolve) => {
+            const img = new Image();
+            const start = performance.now();
+            img.onload = img.onerror = () => resolve(performance.now() - start);
+            img.src = url + '?t=' + Date.now(); // Cache buster
+            setTimeout(() => resolve(9999), 3000); // 3s Timeout
+        });
+
+        let results = [];
+        for (let r of regions) {
+            let time = await ping(r.url);
+            if (time < 9999) results.push({ id: r.id, time: time });
+        }
+
+        if (results.length > 0) {
+            results.sort((a,b) => a.time - b.time);
+            myTelemetry.loc = `${results[0].id} (~${Math.round(results[0].time)}ms)`;
+        } else {
+            myTelemetry.loc = "Neznámá";
+        }
+    }
+
     updateTelemetry();
+    estimateLocation();
     setInterval(updateTelemetry, 60000); // Baterie se mění, aktualizujeme každou minutu
 
     // --- VIDEO CALL STATE ---
@@ -1385,7 +1425,7 @@
         }
     }
 
-    // V3.5: Vymýcený Zombie-Ping Race condition
+    // V3.6: Robustní obrana proti Zombie-Ping cyklům
     function bindDataChannel(channel, targetId) {
         const setupChannel = async () => {
             channels[targetId] = channel;
@@ -1423,11 +1463,12 @@
                 
                 if (msgObj.type === '_ping') {
                     const actualSenderId = msgObj.sender;
-                    // Pokud přišel PING rychleji než ohlášení (announce), nebo od smazaného uzlu:
+
+                    // Extrémně silná pojistka proti rozpadům na pingu (žádné ukončování spojení!)
                     if (!knownNodes[actualSenderId]) {
                         logDebug(`[P2P] Neznámý uzel (${actualSenderId}) poslal ping. Žádám o re-announce.`, 'webrtc');
                         channel.send(JSON.stringify({ type: 'request-announce', sender: myId }));
-                        return; // Zatím ho neznáme, neodpovídáme
+                        return; // Zatím ho neznáme, neodpovídáme pongem, dokud se nepředstaví
                     }
 
                     if (msgObj.tele) knownNodes[actualSenderId].tele = msgObj.tele;
@@ -1446,6 +1487,7 @@
                     return;
                 }
 
+                // Zachycení žádosti o znovupředstavení se v síti
                 if (msgObj.type === 'request-announce') {
                     if (myKeyPair) {
                         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
@@ -1560,7 +1602,7 @@
         }
     }, 5000);
 
-    // V3.5: Vykreslení telemetrie do tabulky Zdraví sítě
+    // V3.6: Vykreslení telemetrie do tabulky Zdraví sítě (Jazyk, Geo-Lokace)
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1628,10 +1670,10 @@
                 
                 let teleStr = '';
                 if (node.tele && node.tele.browser) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc}</div>`;
                 }
                 if (isMe) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc}</div>`;
                 }
 
                 html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
