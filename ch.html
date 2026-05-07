@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.7 (Advanced Telemetry)</title>
+    <title>E2E Tree P2P Chat v3.8 (DPI & Odhad obrazovky)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -130,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.7 (Advanced Telemetry)</span>
+            <span class="version-badge">v3.8 (DPI & Screen Size)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +181,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.7: FPU Benchmark zařízení, rozšířený Geo-Ping a vylepšená stabilita.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.8: Přidáno měření DPI a odhad fyzické velikosti (úhlopříčky) displeje.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -227,7 +227,6 @@
         ]
     };
     
-    // V3.7: Garantované pevné ID
     function getStableNodeId() {
         let saved = localStorage.getItem('p2p_stable_id');
         if (saved) return saved;
@@ -274,23 +273,18 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE, BENCHMARK A GEO-PING (V3.7) ---
-    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
+    // --- HW TELEMETRIE, BENCHMARK, GEO-PING A DPI (V3.8) ---
+    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, dpi: '?', diag: '?', bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
     
-    // Asynchronní FPU Stress test pro odhad výkonu (bez zamrznutí UI)
     async function estimateDevicePower() {
         return new Promise((resolve) => {
             setTimeout(() => {
                 const start = performance.now();
                 let result = 0;
-                // Intenzivní FPU smyčka
-                for (let i = 1; i < 5000000; i++) {
-                    result += Math.sqrt(i) * Math.sin(i);
-                }
+                for (let i = 1; i < 5000000; i++) { result += Math.sqrt(i) * Math.sin(i); }
                 const end = performance.now();
                 const durationMs = Math.round(end - start);
 
-                // Výpočet abstraktního skóre (vyšší je lepší) a odhadu roku
                 let score = Math.round(100000 / (durationMs || 1));
                 let year = "Neznámý";
 
@@ -307,7 +301,6 @@
     }
 
     async function estimateLocation() {
-        // Rozšířený seznam národních registrů
         const regions = [
             { id: 'CZ', url: 'https://www.nic.cz/favicon.ico' },
             { id: 'SK', url: 'https://sk-nic.sk/favicon.ico' },
@@ -336,11 +329,10 @@
             const img = new Image();
             const start = performance.now();
             img.onload = img.onerror = () => resolve(performance.now() - start);
-            img.src = url + '?t=' + Math.random(); // Cache buster
-            setTimeout(() => resolve(9999), 3000); // 3s Timeout
+            img.src = url + '?t=' + Math.random(); 
+            setTimeout(() => resolve(9999), 3000); 
         });
 
-        // Paralelní spuštění všech pingů
         let promises = regions.map(async (r) => {
             let time = await ping(r.url);
             return { id: r.id, time: time };
@@ -350,7 +342,6 @@
         results = results.filter(r => r.time < 9999).sort((a,b) => a.time - b.time);
 
         if (results.length > 0) {
-            // Zobrazení TOP 3
             myTelemetry.loc = results.slice(0, 3).map(x => `${x.id} (${Math.round(x.time)}ms)`).join(', ');
         } else {
             myTelemetry.loc = "Neznámá (Blokováno)";
@@ -376,6 +367,18 @@
         
         myTelemetry.lang = navigator.languages ? navigator.languages.join(', ') : (navigator.language || '?');
 
+        // Odhad DPI a Úhlopříčky displeje
+        const dpr = window.devicePixelRatio || 1;
+        myTelemetry.dpi = Math.round(dpr * 96);
+        
+        const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+        if (isMobile) {
+            myTelemetry.diag = '~6" (Mobil)';
+        } else {
+            const cssDiagonal = Math.sqrt(screen.width * screen.width + screen.height * screen.height);
+            myTelemetry.diag = `~${(cssDiagonal / 96).toFixed(1)}"`;
+        }
+
         try {
             if (navigator.getBattery) {
                 const b = await navigator.getBattery();
@@ -385,13 +388,11 @@
             }
         } catch(e) {}
 
-        // Měření výkonu pouze jednou při startu
         if (myTelemetry.perf === 'Měřím...') {
             myTelemetry.perf = await estimateDevicePower();
         }
     }
 
-    // Inicializace jednorázových měřidel
     estimateLocation();
     updateTelemetry();
     setInterval(updateTelemetry, 60000); 
@@ -407,6 +408,8 @@
         isScreenSharing: false
     };
     let incomingCallData = null; 
+
+    document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
         // --- ZPRACOVÁNÍ URL PARAMETRŮ ---
@@ -751,7 +754,7 @@
             } else {
                 const isImage = fileObj.dataUrl.startsWith('data:image/');
                 if (isImage) {
-                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div>`;
+                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`;
                 } else {
                     contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`;
                 }
@@ -1647,6 +1650,7 @@
         }
     }, 5000);
 
+    // V3.8: Vykreslení telemetrie do tabulky s přidaným DPI a Úhlopříčkou
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1714,10 +1718,14 @@
                 
                 let teleStr = '';
                 if (node.tele && node.tele.browser) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc} | ⚡ ${node.tele.perf}</div>`;
+                    const dpi = node.tele.dpi || '?';
+                    const diag = node.tele.diag || '?';
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} (${dpi} DPI, ${diag}) | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc} | ⚡ ${node.tele.perf}</div>`;
                 }
                 if (isMe) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc} | ⚡ ${myTelemetry.perf}</div>`;
+                    const dpi = myTelemetry.dpi || '?';
+                    const diag = myTelemetry.diag || '?';
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} (${dpi} DPI, ${diag}) | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc} | ⚡ ${myTelemetry.perf}</div>`;
                 }
 
                 html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
