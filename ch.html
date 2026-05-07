@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.16</title>
+    <title>E2E Tree P2P Chat v3.0 (Video & Screen Share)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -88,8 +88,10 @@
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;}
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
+        .btn-call { background:#0078FF; color:white; border:none; border-radius:4px; padding:2px 6px; cursor:pointer; margin-left:5px; font-size:0.75rem; }
+        .btn-call:hover { background:#005bb5; }
+
         #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
-        
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
 
         @media (min-width: 800px) { 
@@ -103,6 +105,21 @@
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
         .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center;}
         .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
+
+        /* VIDEO CALL UI ELEMENTS */
+        #video-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; flex-direction: column; }
+        #video-container { flex: 1; display: flex; position: relative; justify-content: center; align-items: center; overflow: hidden; }
+        #remote-video { max-width: 100%; max-height: 100%; object-fit: contain; }
+        #local-video { position: absolute; bottom: 20px; right: 20px; width: 120px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.5); object-fit: cover; background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .video-controls { padding: 15px; text-align: center; background: #111; border-top: 1px solid #333; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .video-btn { background: #333; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: bold; }
+        .video-btn:hover { background: #444; }
+        .video-btn.active { background: #2ed573; color: #000; }
+        .video-btn.danger { background: #ff4757; }
+
+        #incoming-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 12px; z-index: 10000; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 2px solid var(--primary); min-width: 250px;}
+        .modal-btns { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+        .modal-btns button { border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -113,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.16 (Solid State Fix)</span>
+            <span class="version-badge">v3.0 (Video + Screen)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -164,9 +181,33 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.16: Synchronní pojistka SID proti pádům na mobilních sítích.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.0: Přidány 1:1 šifrované videohovory a sdílení obrazovky.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
+        </div>
+    </div>
+
+    <div id="video-overlay">
+        <div id="video-container">
+            <video id="remote-video" autoplay playsinline></video>
+            <video id="local-video" autoplay playsinline muted></video>
+        </div>
+        <div class="video-controls">
+            <div style="color:#aaa; display:flex; align-items:center; margin-right:auto;" id="video-peer-name">Spojuji...</div>
+            <button class="video-btn" id="btn-vid-mic" onclick="toggleAudio()">🎤 Vypnout mikrofon</button>
+            <button class="video-btn" id="btn-vid-cam" onclick="toggleVideo()">📷 Vypnout kameru</button>
+            <button class="video-btn" id="btn-vid-share" onclick="toggleScreenShare()">🖥️ Sdílet obrazovku</button>
+            <button class="video-btn" onclick="triggerIceRestart()" title="Vynutí hledání nové cesty sítí">🔄 ICE Restart</button>
+            <button class="video-btn danger" onclick="endVideoCall()">❌ Ukončit</button>
+        </div>
+    </div>
+
+    <div id="incoming-modal">
+        <h3 style="margin-bottom: 5px;">Příchozí videohovor</h3>
+        <p id="incoming-name" style="font-size: 1.2rem; color: var(--primary); font-weight: bold;"></p>
+        <div class="modal-btns">
+            <button style="background: #2ed573; color: #000;" onclick="acceptCall()">Přijmout</button>
+            <button style="background: #ff4757; color: #fff;" onclick="rejectCall()">Odmítnout</button>
         </div>
     </div>
 </div>
@@ -182,9 +223,7 @@
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:standard.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
     
@@ -192,10 +231,7 @@
         const dateStr = new Date().toISOString().split('T')[0]; 
         const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
         let hash = 0;
-        for (let i = 0; i < fingerprint.length; i++) {
-            hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i);
-            hash |= 0; 
-        }
+        for (let i = 0; i < fingerprint.length; i++) { hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i); hash |= 0; }
         let id = Math.abs(hash).toString(36);
         while(id.length < 6) id += '0'; 
         return id.substr(0, 6);
@@ -230,6 +266,18 @@
 
     let appSessionTime = 0;
     let watchdogTick = Date.now();
+
+    // --- VIDEO CALL STATE ---
+    let activeCall = {
+        pc: null,
+        peerId: null,
+        localStream: null,
+        screenStream: null,
+        isAudioMuted: false,
+        isVideoMuted: false,
+        isScreenSharing: false
+    };
+    let incomingCallData = null; // Uchovává SDP pro příchozí modal
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -278,7 +326,6 @@
                 const rtt = s.rtt > 0 ? s.rtt + ' ms' : 'N/A';
                 const bit = s.bitrate !== undefined ? s.bitrate + ' kbps' : '0 kbps';
                 const type = s.isRelay ? '<span style="color:#feca57">Relay (TURN)</span>' : '<span style="color:#2ed573">Direct (P2P)</span>';
-                
                 let protoStr = (s.protocol || 'UDP').toUpperCase();
                 let serverStr = s.server || 'Local LAN';
                 
@@ -289,17 +336,13 @@
                 tooltip.style.display = 'none';
             }
         });
-        
         canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
     });
 
     setInterval(() => {
         const now = Date.now();
         const delta = now - watchdogTick;
-        
-        if (delta < 2000) {
-            appSessionTime++;
-        }
+        if (delta < 2000) appSessionTime++;
         
         const m = String(Math.floor(appSessionTime / 60)).padStart(2, '0');
         const s = String(appSessionTime % 60).padStart(2, '0');
@@ -311,7 +354,6 @@
             appSessionTime = 0; 
             fullResetAndReconnect();
         }
-        
         watchdogTick = now;
     }, 1000);
 
@@ -339,9 +381,7 @@
 
     function escapeHTML(str) {
         if (!str) return '';
-        return String(str).replace(/[&<>'"]/g, tag => ({
-            '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
-        }[tag] || tag));
+        return String(str).replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
     }
     function formatBytes(bytes, decimals = 2) {
         if (bytes === 0) return '0 Bytes';
@@ -351,7 +391,6 @@
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
     }
-
     function buf2b64(buf) {
         let binary = '';
         const bytes = new Uint8Array(buf);
@@ -461,16 +500,11 @@
     function reRenderAllHistory() {
         const chat = document.getElementById('chat-area');
         chat.innerHTML = ''; 
-        
-        chatHistory.forEach(msg => {
-            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file);
-        });
-
+        chatHistory.forEach(msg => { renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file); });
         const div = document.createElement('div');
         div.className = "history-divider";
         div.innerHTML = `<span>Konec sjednocené historie</span>`;
         chat.appendChild(div);
-        
         chat.scrollTop = chat.scrollHeight; 
     }
 
@@ -481,10 +515,7 @@
                 chatHistory = JSON.parse(saved);
                 chatHistory.sort((a,b) => a.time - b.time); 
                 reRenderAllHistory();
-            } catch(e) {
-                logDebug("Lokální historie byla poškozena. Byla vymazána.", "error");
-                clearLocalHistory();
-            }
+            } catch(e) { clearLocalHistory(); }
         }
     }
 
@@ -501,7 +532,6 @@
         chatHistory = [];
         localStorage.removeItem('chat_history');
         reRenderAllHistory();
-        logDebug("Lokální historie chatu byla zcela vymazána.", "error");
     }
 
     function broadcastClearHistory() {
@@ -530,10 +560,7 @@
             localStorage.setItem('chat_history', JSON.stringify(chatHistory));
             
             clearTimeout(syncTimeout);
-            syncTimeout = setTimeout(() => {
-                reRenderAllHistory();
-                logDebug(`[SYNC OK] Do okna úspěšně vloženo ${addedCount} nových historických zpráv.`, "success");
-            }, 300);
+            syncTimeout = setTimeout(() => { reRenderAllHistory(); }, 300);
         }
     }
 
@@ -543,50 +570,24 @@
         div.className = `msg msg-${type}`;
         
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
-        
         const safeAuthor = escapeHTML(author);
         let contentHtml = escapeHTML(text);
 
         if (fileObj) {
             if (!fileObj.dataUrl) {
-                contentHtml += `
-                    <div class="file-attachment" style="opacity: 0.6;">
-                        <div class="file-icon">📁</div>
-                        <div>
-                            <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
-                            <div class="file-size">${formatBytes(fileObj.size)} (Nedostupné z historie)</div>
-                        </div>
-                    </div>
-                `;
+                contentHtml += `<div class="file-attachment" style="opacity: 0.6;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)} (Nedostupné z historie)</div></div></div>`;
             } else {
                 const isImage = fileObj.dataUrl.startsWith('data:image/');
-                
                 if (isImage) {
-                    contentHtml += `
-                        <div style="margin-top: 5px;">
-                            <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek">
-                                <img src="${fileObj.dataUrl}" alt="${escapeHTML(fileObj.name)}" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight">
-                            </a>
-                            <div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div>
-                        </div>
-                    `;
+                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div>`;
                 } else {
-                    contentHtml += `
-                        <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
-                            <div class="file-icon">📁</div>
-                            <div>
-                                <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
-                                <div class="file-size">${formatBytes(fileObj.size)}</div>
-                            </div>
-                        </a>
-                    `;
+                    contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`;
                 }
             }
         }
 
         if (type !== 'system') {
-            div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;">
-                <b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${contentHtml}`;
+            div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;"><b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${contentHtml}`;
         } else {
             div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${contentHtml}`;
         }
@@ -595,8 +596,248 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
+    // --- VIDEO CALL LOKÁLNÍ FUNKCE ---
+    async function sendVideoSignal(targetId, action, data) {
+        const payload = JSON.stringify({ action, data });
+        const encrypted = await encryptE2E(payload, targetId);
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'video-signal', sender: myId, target: targetId, payload: encrypted });
+    }
+
+    async function initVideoPc(peerId, isInitiator) {
+        if (activeCall.pc) return activeCall.pc;
+
+        logDebug(`[VIDEO] Inicializace WebRTC (Video) s ${peerId}`, 'webrtc');
+        const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+        activeCall.pc = pc;
+        activeCall.peerId = peerId;
+
+        pc.oniceconnectionstatechange = () => {
+            logDebug(`[VIDEO] ICE Stav: ${pc.iceConnectionState}`, 'webrtc');
+            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+                endVideoCall(false); // Cleanup without explicit rejection
+            }
+        };
+
+        pc.onicecandidate = (e) => {
+            if (e.candidate) {
+                sendVideoSignal(peerId, 'ice', e.candidate);
+            }
+        };
+
+        pc.ontrack = (e) => {
+            const remoteVideo = document.getElementById('remote-video');
+            if (remoteVideo.srcObject !== e.streams[0]) {
+                remoteVideo.srcObject = e.streams[0];
+            }
+        };
+
+        // Získáme lokální kameru a mikrofon
+        try {
+            activeCall.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            document.getElementById('local-video').srcObject = activeCall.localStream;
+            activeCall.localStream.getTracks().forEach(track => pc.addTrack(track, activeCall.localStream));
+            
+            document.getElementById('video-overlay').style.display = 'flex';
+            document.getElementById('video-peer-name').innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`;
+        } catch (e) {
+            logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error');
+            alert("Nelze získat přístup ke kameře nebo mikrofonu.");
+            endVideoCall();
+            return null;
+        }
+
+        if (isInitiator) {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            await sendVideoSignal(peerId, 'offer', offer);
+        }
+
+        return pc;
+    }
+
+    async function startVideoCall(targetId) {
+        if (activeCall.pc) {
+            alert("Již máte probíhající hovor.");
+            return;
+        }
+        logDebug(`[VIDEO] Vytáčím uživatele ${targetId}...`, 'info');
+        await initVideoPc(targetId, true);
+    }
+
+    async function handleVideoSignal(senderId, action, data) {
+        if (action === 'offer') {
+            if (activeCall.pc && activeCall.peerId === senderId) {
+                // ICE Restart nebo re-offer v rámci existujícího hovoru
+                await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data));
+                const answer = await activeCall.pc.createAnswer();
+                await activeCall.pc.setLocalDescription(answer);
+                sendVideoSignal(senderId, 'answer', answer);
+            } else if (activeCall.pc) {
+                // Jsme zaneprázdněni (volá někdo třetí)
+                sendVideoSignal(senderId, 'reject', 'busy');
+            } else {
+                // Zobrazíme příchozí hovor
+                incomingCallData = { senderId, sdp: data };
+                document.getElementById('incoming-name').innerText = knownNodes[senderId]?.name || senderId;
+                document.getElementById('incoming-modal').style.display = 'block';
+            }
+        } 
+        else if (action === 'answer') {
+            if (activeCall.pc && activeCall.peerId === senderId) {
+                await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data));
+            }
+        } 
+        else if (action === 'ice') {
+            if (activeCall.pc && activeCall.peerId === senderId) {
+                try { await activeCall.pc.addIceCandidate(new RTCIceCandidate(data)); } catch(e) {}
+            }
+        } 
+        else if (action === 'reject') {
+            logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (nebo má plno).`, 'error');
+            alert(`Hovor byl odmítnut (${data}).`);
+            endVideoCall(false);
+        }
+        else if (action === 'end') {
+            logDebug(`[VIDEO] Uzel ${senderId} ukončil hovor.`, 'info');
+            endVideoCall(false);
+        }
+    }
+
+    async function acceptCall() {
+        document.getElementById('incoming-modal').style.display = 'none';
+        if (!incomingCallData) return;
+        
+        const senderId = incomingCallData.senderId;
+        const offerData = incomingCallData.sdp;
+        incomingCallData = null;
+
+        const pc = await initVideoPc(senderId, false);
+        if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendVideoSignal(senderId, 'answer', answer);
+        }
+    }
+
+    function rejectCall() {
+        document.getElementById('incoming-modal').style.display = 'none';
+        if (incomingCallData) {
+            sendVideoSignal(incomingCallData.senderId, 'reject', 'declined');
+            incomingCallData = null;
+        }
+    }
+
+    function endVideoCall(notifyPeer = true) {
+        if (notifyPeer && activeCall.peerId) {
+            sendVideoSignal(activeCall.peerId, 'end', null);
+        }
+
+        if (activeCall.pc) {
+            activeCall.pc.close();
+            activeCall.pc = null;
+        }
+        if (activeCall.localStream) {
+            activeCall.localStream.getTracks().forEach(t => t.stop());
+            activeCall.localStream = null;
+        }
+        if (activeCall.screenStream) {
+            activeCall.screenStream.getTracks().forEach(t => t.stop());
+            activeCall.screenStream = null;
+        }
+        
+        activeCall.peerId = null;
+        activeCall.isAudioMuted = false;
+        activeCall.isVideoMuted = false;
+        activeCall.isScreenSharing = false;
+
+        document.getElementById('remote-video').srcObject = null;
+        document.getElementById('local-video').srcObject = null;
+        document.getElementById('video-overlay').style.display = 'none';
+        document.getElementById('btn-vid-mic').className = 'video-btn';
+        document.getElementById('btn-vid-cam').className = 'video-btn';
+        document.getElementById('btn-vid-share').className = 'video-btn';
+        logDebug(`[VIDEO] Hovor lokálně ukončen a vyčištěn.`, 'info');
+    }
+
+    function toggleAudio() {
+        if (!activeCall.localStream) return;
+        activeCall.isAudioMuted = !activeCall.isAudioMuted;
+        activeCall.localStream.getAudioTracks().forEach(t => t.enabled = !activeCall.isAudioMuted);
+        
+        const btn = document.getElementById('btn-vid-mic');
+        btn.innerText = activeCall.isAudioMuted ? '🔇 Zapnout mikrofon' : '🎤 Vypnout mikrofon';
+        btn.className = activeCall.isAudioMuted ? 'video-btn active' : 'video-btn';
+    }
+
+    function toggleVideo() {
+        if (!activeCall.localStream) return;
+        activeCall.isVideoMuted = !activeCall.isVideoMuted;
+        activeCall.localStream.getVideoTracks().forEach(t => t.enabled = !activeCall.isVideoMuted);
+        
+        const btn = document.getElementById('btn-vid-cam');
+        btn.innerText = activeCall.isVideoMuted ? '📸 Zapnout kameru' : '📷 Vypnout kameru';
+        btn.className = activeCall.isVideoMuted ? 'video-btn active' : 'video-btn';
+    }
+
+    async function toggleScreenShare() {
+        if (!activeCall.pc) return;
+        const videoSender = activeCall.pc.getSenders().find(s => s.track.kind === 'video');
+        if (!videoSender) return;
+        
+        const btn = document.getElementById('btn-vid-share');
+
+        if (!activeCall.isScreenSharing) {
+            try {
+                activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                const screenTrack = activeCall.screenStream.getVideoTracks()[0];
+                await videoSender.replaceTrack(screenTrack);
+                document.getElementById('local-video').srcObject = activeCall.screenStream; // Ukázat náhled plochy
+                activeCall.isScreenSharing = true;
+                btn.className = 'video-btn active';
+                btn.innerText = '🖥️ Zastavit sdílení';
+
+                // Nativní tlačítko prohlížeče pro zastavení
+                screenTrack.onended = () => { revertToCamera(videoSender, btn); };
+            } catch (e) {
+                logDebug(`Sdílení zrušeno nebo selhalo: ${e.message}`, 'error');
+            }
+        } else {
+            revertToCamera(videoSender, btn);
+        }
+    }
+
+    async function revertToCamera(videoSender, btn) {
+        if (activeCall.screenStream) {
+            activeCall.screenStream.getTracks().forEach(t => t.stop());
+            activeCall.screenStream = null;
+        }
+        if (activeCall.localStream) {
+            const camTrack = activeCall.localStream.getVideoTracks()[0];
+            if (camTrack) await videoSender.replaceTrack(camTrack);
+            document.getElementById('local-video').srcObject = activeCall.localStream;
+        }
+        activeCall.isScreenSharing = false;
+        if(btn) {
+            btn.className = 'video-btn';
+            btn.innerText = '🖥️ Sdílet obrazovku';
+        }
+    }
+
+    async function triggerIceRestart() {
+        if (!activeCall.pc || !activeCall.peerId) return;
+        logDebug(`[VIDEO] Spouštím ICE Restart pro oživení videa...`, 'webrtc');
+        try {
+            const offer = await activeCall.pc.createOffer({ iceRestart: true });
+            await activeCall.pc.setLocalDescription(offer);
+            sendVideoSignal(activeCall.peerId, 'offer', offer);
+        } catch(e) { logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error'); }
+    }
+    // --- KONEC VIDEO CALL LOKÁLNÍ FUNKCE ---
+
+
     function routeMessage(msgObj, sourceChannel = null) {
-        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk') {
+        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal') {
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id);
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
@@ -642,6 +883,14 @@
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
             }
         } 
+        else if (msg.type === 'video-signal') {
+            if (msg.target !== myId) return; // Propaguje se jen cíli
+            const plainJson = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+            if (plainJson) {
+                const signal = JSON.parse(plainJson);
+                handleVideoSignal(msg.sender, signal.action, signal.data);
+            }
+        }
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
                 const batchSize = 10; 
@@ -649,13 +898,8 @@
                 let chunkIndex = 1;
                 const totalChunks = Math.ceil(chatHistory.length / batchSize);
                 
-                logDebug(`[SYNC START] Odesílám historii (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}...`, 'sync');
-                
                 const sendBatch = async () => {
-                    if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Historie úspěšně odeslána.`, 'sync');
-                        return;
-                    }
+                    if (i >= chatHistory.length) return;
                     const batch = chatHistory.slice(i, i + batchSize);
                     
                     const safeBatch = batch.map(m => {
@@ -667,10 +911,9 @@
 
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(safeBatch), msg.sender);
-                        logDebug(`[SYNC OUT] Dávka #${chunkIndex}/${totalChunks}...`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
-                    } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
+                    } catch(e) {}
                     
                     i += batchSize;
                     setTimeout(sendBatch, 500); 
@@ -680,19 +923,12 @@
         }
         else if (msg.type === 'sync-history') {
             if (msg.target !== myId) return; 
-
-            logDebug(`[SYNC IN] Dorazila dávka s historií. Dešifruji...`, 'info');
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
-            
             if (plaintextHistory) {
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     mergeIncomingHistory(historyArray);
-                } catch(e) {
-                    logDebug(`[SYNC ERR] Rozbitý JSON po dešifrování.`, 'error');
-                }
-            } else {
-                logDebug(`[SYNC ERR] Dešifrování selhalo (Špatný klíč).`, 'error');
+                } catch(e) {}
             }
         } 
         else if (msg.type === 'clear-history') {
@@ -919,7 +1155,6 @@
                 finish(); 
             }
         };
-        // PRODLOUŽENO: 4.5s pro mobilní sítě (4G potřebuje čas na TURN kandidáty)
         setTimeout(finish, 4500); 
     }
 
@@ -989,7 +1224,6 @@
 
                 if (!isDnsHost) {
                     setTimeout(() => { 
-                        logDebug(`Požaduji historii od Mastera...`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
                     }, 3000);
                 }
@@ -1030,7 +1264,13 @@
     }
 
     setInterval(async () => {
-        for (const [peerId, pc] of Object.entries(connections)) {
+        // Zahrnujeme i oddělené WebRTC pro videa do telemetrie
+        const allConnections = { ...connections };
+        if (activeCall.pc && activeCall.peerId) {
+            allConnections[`video_${activeCall.peerId}`] = activeCall.pc;
+        }
+
+        for (const [peerId, pc] of Object.entries(allConnections)) {
             if (!pc || pc.iceConnectionState !== 'connected') continue;
             try {
                 const stats = await pc.getStats();
@@ -1053,7 +1293,7 @@
 
                 let currentBytes = 0;
                 stats.forEach(report => {
-                    if (report.type === 'data-channel') {
+                    if (report.type === 'data-channel' || report.type === 'outbound-rtp' || report.type === 'inbound-rtp') {
                         currentBytes += (report.bytesSent || 0) + (report.bytesReceived || 0);
                     }
                 });
@@ -1161,7 +1401,8 @@
             }
 
             if(knownNodes[id]) {
-                html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
+                let callBtn = !isMe ? `<button class="btn-call" onclick="startVideoCall('${id}')" title="Videohovor">📞</button>` : '';
+                html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
             }
         });
         html += '</table>';
@@ -1172,10 +1413,12 @@
         if (isResetting) return;
         isResetting = true;
         appSessionTime = 0; 
-        currentSessionId = null; // KLÍČOVÁ OPRAVA RACE CONDITION
+        currentSessionId = null; 
 
         logDebug("Provádím kompletní reset...", "info");
         
+        endVideoCall(true); // Ukončíme i video při pádu sítě
+
         if (joinInterval) clearInterval(joinInterval);
         if (dnsInterval) clearInterval(dnsInterval);
         
@@ -1322,7 +1565,6 @@
                         waitForIce(pc, async () => {
                             if (!pc || pc.signalingState === 'closed' || pc.answerDone) return;
                             pc.answerDone = true;
-                            logDebug(`[API OUT] Odesílám Answer pro: ${guestId}`, 'info');
                             
                             const sdpData = {
                                 type: pc.localDescription.type,
@@ -1344,10 +1586,7 @@
     async function joinViaDns() {
         document.getElementById('ui-role').innerText = "Spojuji se...";
         
-        // GENEROVAT SYNC SID IHNED: Předchází chybě "Called in wrong state: stable"
         currentSessionId = generateMsgId();
-        
-        // Zneplatnění starého Offeru, aby ho Master nečetl omylem
         writeSignal(`offer-${myId}`, { consumed: true, ts: 0 });
         
         await createP2PNode('hub', true, true, currentSessionId); 
@@ -1359,7 +1598,7 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            if (pokusy > 15) { // 30 sekund timeout pro mobily
+            if (pokusy > 15) { 
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo. Ignoruji zlobivý Hub pro další 2 minuty.`, "error");
                 blacklistedHubId = knownHubId; 
@@ -1368,7 +1607,6 @@
                 checkIsolation(); 
                 return;
             }
-            logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/15)...`, 'info');
             
             if (!knownHubId) {
                 const alive = await readSignal('host-alive');
@@ -1394,125 +1632,26 @@
                 const answerData = answerPayload.sdp ? answerPayload.sdp : answerPayload;
                 const answerSid = answerPayload.sid ? answerPayload.sid : null;
 
-                // STRIKTNÍ MATCH SID
                 if (answerSid !== currentSessionId) {
-                    logDebug(`[API WARN] Ignoruji Answer z jiné session.`, 'error');
                     return; 
                 }
 
                 if (answerData && answerData.sdp && answerData.type) {
-                    
-                    // OCHRANA PROTI PŘEDČASNÉMU APLIKOVÁNÍ
                     if (connections['hub'].signalingState !== 'have-local-offer') {
-                        logDebug(`[API WARN] Čekám na dokončení lokálního Offeru...`, 'info');
                         return; 
                     }
                     
                     clearInterval(joinInterval);
-                    logDebug(`[API IN] Answer nalezen a ověřen, aplikuji...`, 'success');
                     try {
                         const safeType = String(answerData.type).toLowerCase().trim();
-                        
                         const rtcAnswer = new RTCSessionDescription({ type: safeType, sdp: String(answerData.sdp) });
                         await connections['hub'].setRemoteDescription(rtcAnswer);
-                        
                         await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
                         
                     } catch(e) { logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); }
                 }
             }
         }, 2000);
-    }
-
-    setInterval(() => {
-        if (isDnsHost) {
-            const edgesInfo = Object.keys(channels).map(id => {
-                const s = peerStats[id] || {};
-                const n = knownNodes[id] || {};
-                return { 
-                    id: id, 
-                    isRelay: s.isRelay || false,
-                    protocol: s.protocol || 'udp',
-                    server: s.server || 'Local LAN',
-                    rtt: s.rtt || 0,
-                    bitrate: s.bitrate || 0,
-                    ping: n.ping || 0
-                };
-            });
-            networkGraph = { root: myId, edges: edgesInfo };
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
-            drawTopology();
-        }
-    }, 2000);
-
-    function drawTopology() {
-        const canvas = document.getElementById('topo-canvas');
-        if(!canvas) return;
-        canvas.width = canvas.parentElement.clientWidth;
-        canvas.height = canvas.parentElement.clientHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        
-        const rootId = networkGraph.root || myId;
-        const edges = networkGraph.edges || [];
-        
-        let nodesArr = [rootId, ...edges.map(e => e.id || e)];
-        if (!nodesArr.includes(myId)) nodesArr.push(myId); 
-        nodesArr = [...new Set(nodesArr)]; 
-        
-        const radius = Math.min(canvas.width, canvas.height) / 3;
-        const cx = canvas.width / 2;
-        const cy = canvas.height / 2;
-        const pos = {};
-        
-        nodesArr.forEach((n, i) => {
-            if (n === rootId) { pos[n] = { x: cx, y: cy }; } 
-            else {
-                const spokeIndex = nodesArr.indexOf(n) - (nodesArr.indexOf(rootId) < nodesArr.indexOf(n) ? 1 : 0);
-                const spokeCount = Math.max(1, nodesArr.length - 1);
-                const angle = (spokeIndex / spokeCount) * 2 * Math.PI - Math.PI / 2;
-                pos[n] = { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
-            }
-        });
-
-        drawnEdges = [];
-        ctx.lineWidth = 2;
-
-        if (pos[rootId]) {
-            edges.forEach(edge => {
-                const target = edge.id || edge;
-                if (pos[target]) {
-                    ctx.beginPath(); ctx.moveTo(pos[rootId].x, pos[rootId].y); ctx.lineTo(pos[target].x, pos[target].y);
-                    
-                    const isRelayLink = edge.isRelay !== undefined ? edge.isRelay : false;
-                    ctx.strokeStyle = isRelayLink ? '#feca57' : '#2ed573';
-                    ctx.stroke();
-                    
-                    let localStats = peerStats[target];
-                    if (!isDnsHost && target === myId) {
-                        localStats = peerStats['hub'];
-                    }
-
-                    drawnEdges.push({
-                        id: target,
-                        x1: pos[rootId].x, y1: pos[rootId].y,
-                        x2: pos[target].x, y2: pos[target].y,
-                        isRelay: isRelayLink,
-                        stats: localStats || { rtt: edge.rtt, bitrate: edge.bitrate, protocol: edge.protocol, server: edge.server }
-                    });
-                }
-            });
-        }
-
-        nodesArr.forEach(n => {
-            ctx.beginPath(); ctx.arc(pos[n].x, pos[n].y, 18, 0, 2 * Math.PI);
-            ctx.fillStyle = (n === myId) ? '#0078FF' : (n === rootId ? '#feca57' : '#333');
-            ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
-            
-            ctx.fillStyle = '#fff'; ctx.font = '10px Arial'; ctx.textAlign = 'center';
-            const shortName = knownNodes[n] ? knownNodes[n].name.substr(0,4) : n.substr(0,4);
-            ctx.fillText(escapeHTML(shortName), pos[n].x, pos[n].y + 4);
-        });
     }
 </script>
 </body>
