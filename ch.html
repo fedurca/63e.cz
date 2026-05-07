@@ -92,7 +92,7 @@
         .btn-call:hover { background:#005bb5; }
 
         #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
-        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12; border-radius: 4px; margin: 2px 0;} .log-file { color: #00d2d3; font-weight: bold;}
 
         @media (min-width: 800px) { 
             .main-content { flex-direction: row; }
@@ -266,6 +266,7 @@
 
     let appSessionTime = 0;
     let watchdogTick = Date.now();
+    let isIceRestarting = false; 
 
     // --- VIDEO CALL STATE ---
     let activeCall = {
@@ -277,7 +278,7 @@
         isVideoMuted: false,
         isScreenSharing: false
     };
-    let incomingCallData = null; // Uchovává SDP pro příchozí modal
+    let incomingCallData = null; 
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -337,6 +338,7 @@
             }
         });
         canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+        window.addEventListener('resize', drawTopology);
     });
 
     setInterval(() => {
@@ -614,7 +616,7 @@
         pc.oniceconnectionstatechange = () => {
             logDebug(`[VIDEO] ICE Stav: ${pc.iceConnectionState}`, 'webrtc');
             if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
-                endVideoCall(false); // Cleanup without explicit rejection
+                endVideoCall(false); 
             }
         };
 
@@ -631,9 +633,11 @@
             }
         };
 
-        // Získáme lokální kameru a mikrofon
         try {
+            logDebug(`[VIDEO] Žádám systém o práva pro kameru a mikrofon...`, 'webrtc');
             activeCall.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            logDebug(`[VIDEO] Práva na AV stream úspěšně udělena.`, 'success');
+
             document.getElementById('local-video').srcObject = activeCall.localStream;
             activeCall.localStream.getTracks().forEach(track => pc.addTrack(track, activeCall.localStream));
             
@@ -641,9 +645,9 @@
             document.getElementById('video-peer-name').innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`;
         } catch (e) {
             logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error');
-            alert("Nelze získat přístup ke kameře nebo mikrofonu.");
+            alert("Pro přijetí/vytvoření hovoru je nutné povolit kameru a mikrofon.");
             endVideoCall();
-            return null;
+            return null; // Záměrně vracíme null, pokud se nepodaří
         }
 
         if (isInitiator) {
@@ -667,19 +671,17 @@
     async function handleVideoSignal(senderId, action, data) {
         if (action === 'offer') {
             if (activeCall.pc && activeCall.peerId === senderId) {
-                // ICE Restart nebo re-offer v rámci existujícího hovoru
                 await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data));
                 const answer = await activeCall.pc.createAnswer();
                 await activeCall.pc.setLocalDescription(answer);
                 sendVideoSignal(senderId, 'answer', answer);
             } else if (activeCall.pc) {
-                // Jsme zaneprázdněni (volá někdo třetí)
                 sendVideoSignal(senderId, 'reject', 'busy');
             } else {
-                // Zobrazíme příchozí hovor
                 incomingCallData = { senderId, sdp: data };
                 document.getElementById('incoming-name').innerText = knownNodes[senderId]?.name || senderId;
                 document.getElementById('incoming-modal').style.display = 'block';
+                logDebug(`[VIDEO] Příchozí hovor od ${knownNodes[senderId]?.name || senderId}. Čekám na reakci uživatele...`, 'info');
             }
         } 
         else if (action === 'answer') {
@@ -693,7 +695,7 @@
             }
         } 
         else if (action === 'reject') {
-            logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (nebo má plno).`, 'error');
+            logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (nebo nemá práva: ${data}).`, 'error');
             alert(`Hovor byl odmítnut (${data}).`);
             endVideoCall(false);
         }
@@ -711,12 +713,24 @@
         const offerData = incomingCallData.sdp;
         incomingCallData = null;
 
+        logDebug(`[VIDEO] Přijímám hovor... Čekám na povolení kamery/mikrofonu od uživatele.`, 'info');
+
         const pc = await initVideoPc(senderId, false);
         if (pc) {
-            await pc.setRemoteDescription(new RTCSessionDescription(offerData));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            sendVideoSignal(senderId, 'answer', answer);
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                sendVideoSignal(senderId, 'answer', answer);
+                logDebug(`[VIDEO] Hovor spojen, odesílám potvrzení (Answer).`, 'success');
+            } catch (e) {
+                logDebug(`[VIDEO] Neočekávaná chyba při přijímání hovoru: ${e.message}`, 'error');
+                endVideoCall(true);
+            }
+        } else {
+            // Explicitní reakce, pokud uživatel v prohlížeči klikne na blokovat kameru
+            logDebug(`[VIDEO] Přijetí hovoru selhalo kvůli chybějícím právům. Informuji volajícího.`, 'error');
+            sendVideoSignal(senderId, 'reject', 'no-media-permissions');
         }
     }
 
@@ -797,7 +811,6 @@
                 btn.className = 'video-btn active';
                 btn.innerText = '🖥️ Zastavit sdílení';
 
-                // Nativní tlačítko prohlížeče pro zastavení
                 screenTrack.onended = () => { revertToCamera(videoSender, btn); };
             } catch (e) {
                 logDebug(`Sdílení zrušeno nebo selhalo: ${e.message}`, 'error');
@@ -825,13 +838,20 @@
     }
 
     async function triggerIceRestart() {
-        if (!activeCall.pc || !activeCall.peerId) return;
+        if (!activeCall.pc || !activeCall.peerId || isIceRestarting) return;
+        
+        isIceRestarting = true;
+        setTimeout(() => isIceRestarting = false, 5000); // 5s debounce
+
         logDebug(`[VIDEO] Spouštím ICE Restart pro oživení videa...`, 'webrtc');
         try {
             const offer = await activeCall.pc.createOffer({ iceRestart: true });
             await activeCall.pc.setLocalDescription(offer);
             sendVideoSignal(activeCall.peerId, 'offer', offer);
-        } catch(e) { logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error'); }
+        } catch(e) { 
+            logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error'); 
+            isIceRestarting = false; 
+        }
     }
     // --- KONEC VIDEO CALL LOKÁLNÍ FUNKCE ---
 
@@ -884,7 +904,7 @@
             }
         } 
         else if (msg.type === 'video-signal') {
-            if (msg.target !== myId) return; // Propaguje se jen cíli
+            if (msg.target !== myId) return;
             const plainJson = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
             if (plainJson) {
                 const signal = JSON.parse(plainJson);
@@ -892,6 +912,9 @@
             }
         }
         else if (msg.type === 'request-history') {
+            // Návrat systémového logu pro synchronizaci (Master)
+            logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync');
+
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
                 const batchSize = 10; 
                 let i = 0;
@@ -928,6 +951,8 @@
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     mergeIncomingHistory(historyArray);
+                    // Návrat systémového logu pro synchronizaci (Spoke)
+                    logDebug(`[SYNC] Přijat balíček s historií od uzlu ${knownNodes[msg.sender]?.name || msg.sender}.`, 'sync');
                 } catch(e) {}
             }
         } 
@@ -1005,7 +1030,6 @@
                     }
                 });
             }
-
             drawTopology();
         }
         else if (msg.type === 'node-left') {
@@ -1016,6 +1040,71 @@
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
             }
         }
+    }
+
+    function drawTopology() {
+        const canvas = document.getElementById('topo-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.offsetWidth || canvas.width;
+        const h = canvas.offsetHeight || canvas.height;
+        canvas.width = w;
+        canvas.height = h;
+        
+        ctx.clearRect(0, 0, w, h);
+        drawnEdges = [];
+
+        if (!networkGraph || !networkGraph.root) return;
+
+        const rootX = w / 2;
+        const rootY = 30;
+
+        // Vykreslení Hubu (Master)
+        ctx.beginPath();
+        ctx.arc(rootX, rootY, 12, 0, Math.PI * 2);
+        ctx.fillStyle = (networkGraph.root === myId) ? '#0078FF' : '#555';
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 10px sans-serif';
+        const rootName = knownNodes[networkGraph.root] ? knownNodes[networkGraph.root].name : networkGraph.root;
+        ctx.fillText(rootName.substring(0, 6), rootX, rootY + 25);
+
+        // Vykreslení spojení (Edges) a uzlů (Spokes)
+        const edges = networkGraph.edges || [];
+        const count = edges.length;
+        if (count === 0) return;
+
+        const spacing = w / (count + 1);
+
+        edges.forEach((edge, i) => {
+            const nodeX = spacing * (i + 1);
+            const nodeY = h - 40;
+
+            // Čára (Linka)
+            ctx.beginPath();
+            ctx.moveTo(rootX, rootY);
+            ctx.lineTo(nodeX, nodeY);
+            ctx.strokeStyle = edge.isRelay ? '#feca57' : '#2ed573';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Interaktivní plocha
+            drawnEdges.push({
+                id: edge.id,
+                x1: rootX, y1: rootY, x2: nodeX, y2: nodeY,
+                stats: edge
+            });
+
+            // Uzel (Spoke)
+            ctx.beginPath();
+            ctx.arc(nodeX, nodeY, 10, 0, Math.PI * 2);
+            ctx.fillStyle = (edge.id === myId) ? '#0078FF' : '#555';
+            ctx.fill();
+            ctx.fillStyle = '#aaa';
+            const nodeName = knownNodes[edge.id] ? knownNodes[edge.id].name : edge.id;
+            ctx.fillText(nodeName.substring(0, 6), nodeX, nodeY + 25);
+        });
     }
 
     async function sendMsg() {
@@ -1246,8 +1335,13 @@
             try {
                 const msgObj = JSON.parse(e.data);
                 if (msgObj.type === '_ping') {
+                    if (!knownNodes[targetId]) {
+                        logDebug(`[P2P] Přišel ping od uzlu (${targetId}), který byl smazán. Ukončuji mrtvé spojení.`, 'error');
+                        cleanupConnection(targetId);
+                        return;
+                    }
                     channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t }));
-                    if (knownNodes[targetId]) knownNodes[targetId].lastSeen = Date.now();
+                    knownNodes[targetId].lastSeen = Date.now();
                     return;
                 }
                 if (msgObj.type === '_pong') {
@@ -1263,15 +1357,15 @@
         };
     }
 
+    // Interval: Sbírání WebRTC telemetrie
     setInterval(async () => {
-        // Zahrnujeme i oddělené WebRTC pro videa do telemetrie
         const allConnections = { ...connections };
         if (activeCall.pc && activeCall.peerId) {
             allConnections[`video_${activeCall.peerId}`] = activeCall.pc;
         }
 
         for (const [peerId, pc] of Object.entries(allConnections)) {
-            if (!pc || pc.iceConnectionState !== 'connected') continue;
+            if (!pc || (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed')) continue;
             try {
                 const stats = await pc.getStats();
                 if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, protocol: 'udp', server: 'Local LAN', lastBytes: 0, lastTime: Date.now() };
@@ -1343,6 +1437,30 @@
         }
     }, 2000);
 
+    // Interval: Broadcast topologie od Master uzlu
+    setInterval(() => {
+        if (isDnsHost && networkGraph.root === myId) {
+            let edges = [];
+            Object.keys(knownNodes).forEach(peerId => {
+                if (peerId !== myId) {
+                    const s = peerStats[peerId] || {};
+                    edges.push({
+                        id: peerId,
+                        ping: s.rtt || knownNodes[peerId].ping || 0,
+                        rtt: s.rtt || 0,
+                        bitrate: s.bitrate || 0,
+                        isRelay: s.isRelay || false,
+                        protocol: s.protocol || 'udp'
+                    });
+                }
+            });
+            networkGraph.edges = edges;
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
+            drawTopology();
+        }
+    }, 5000);
+
+    // Interval: Aktualizace UI zdraví sítě a watchdog mrtvých uzlů
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1360,7 +1478,12 @@
             if (!isMe && lastSeenDiff > 45000) {
                 if (isDnsHost) cleanupConnection(id);
                 else if (isMaster) cleanupConnection('hub');
-                else if (lastSeenDiff > 60000) delete knownNodes[id];
+                else if (lastSeenDiff > 60000) {
+                    logDebug(`[WATCHDOG] Uzel ${id} neodpovídá (>60s), mažu data a zavírám linku.`, 'error');
+                    cleanupConnection(id);
+                    delete knownNodes[id];
+                    document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
+                }
             }
 
             const role = isMaster ? 'Master (Hub)' : 'Spoke';
@@ -1429,6 +1552,8 @@
         processingOffers.clear(); 
         peerStats = {};
         isDnsHost = false;
+        drawnEdges = [];
+        drawTopology();
         
         await initCrypto();
         isResetting = false;
