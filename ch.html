@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.11</title>
+    <title>E2E Tree P2P Chat v2.2.12</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -36,11 +36,10 @@
         .btn-danger { background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: bold; margin-left: 15px; }
         
         .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
-        @media (min-width: 800px) { .main-content { flex-direction: row; } }
-
-        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; border-right: 1px solid #ddd; min-height: 0; }
+        
+        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; }
         #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
-        .msg { max-width: 80%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
+        .msg { max-width: 85%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
         .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
         .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
         .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
@@ -52,6 +51,7 @@
         .file-icon { font-size: 1.5rem; margin-right: 10px; }
         .file-name { font-size: 0.85rem; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;}
         .file-size { font-size: 0.7rem; color: #777; }
+        .img-preview { max-width: 100%; max-height: 250px; border-radius: 8px; display: block; margin-top: 5px; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; }
 
         #input-area { 
             display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
@@ -65,21 +65,18 @@
         #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        /* OPRAVA MOBILNÍHO SCROLLOVÁNÍ DEBUG PANELU */
+        /* MOBILNÍ OPRAVY PRO DEBUG PANEL */
         #debug-panel { 
             display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; 
-            font-family: monospace; width: 100%; height: 50vh; border-left: 1px solid #333; 
-            flex-shrink: 0; overflow-y: auto; 
-        }
-        @media (min-width: 800px) { 
-            #debug-panel { width: 550px; height: 100%; overflow-y: hidden; } 
+            font-family: monospace; width: 100%; flex-shrink: 0; 
+            max-height: 45vh; overflow-y: auto; -webkit-overflow-scrolling: touch; border-top: 1px solid #333;
         }
         
         .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
-        #topo-container { min-height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
+        #topo-container { height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
         #topo-canvas { width: 100%; height: 100%; cursor: crosshair; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
         #topo-legend { position: absolute; bottom: 5px; left: 5px; font-size: 0.65rem; color: #aaa; pointer-events: none; }
@@ -87,13 +84,22 @@
         #topo-tooltip { position: absolute; background: rgba(0,0,0,0.85); color: #00ff00; font-family: monospace; font-size: 0.7rem; padding: 10px; border-radius: 6px; pointer-events: none; display: none; z-index: 100; white-space: nowrap; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.5); line-height: 1.5; }
         .tooltip-server { color: #aaa; font-size: 0.65rem; display: block; border-top: 1px solid #333; margin-top: 4px; padding-top: 4px; }
 
-        #net-health-panel { min-height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;}
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
-        #debug-log { flex: 1; min-height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
+        #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
+        
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
+
+        /* DESKTOP ZOBRAZENÍ */
+        @media (min-width: 800px) { 
+            .main-content { flex-direction: row; }
+            #chat-container { border-right: 1px solid #ddd; }
+            #debug-panel { width: 500px; height: 100%; max-height: none; overflow-y: hidden; border-top: none; border-left: 1px solid #333; } 
+            #debug-log { flex: 1; height: auto; } /* Na desktopu vyplní zbytek místa */
+        }
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
@@ -109,7 +115,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.11 (Mobile UI & Spoke Sync)</span>
+            <span class="version-badge">v2.2.12 (Mobile Fix & Images)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -147,7 +153,7 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ (GETSTATS API)</div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -160,7 +166,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.11: Oprava mobilního scrollování a sdílení stavů pro Spoke uzly.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.12: Plynulý mobilní posun, náhledy obrázků v chatu.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -542,15 +548,29 @@
         let contentHtml = escapeHTML(text);
 
         if (fileObj) {
-            contentHtml += `
-                <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
-                    <div class="file-icon">📁</div>
-                    <div>
-                        <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
-                        <div class="file-size">${formatBytes(fileObj.size)}</div>
+            // Detekce, jestli je soubor obrázek
+            const isImage = fileObj.dataUrl.startsWith('data:image/');
+            
+            if (isImage) {
+                contentHtml += `
+                    <div style="margin-top: 5px;">
+                        <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek">
+                            <img src="${fileObj.dataUrl}" alt="${escapeHTML(fileObj.name)}" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight">
+                        </a>
+                        <div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div>
                     </div>
-                </a>
-            `;
+                `;
+            } else {
+                contentHtml += `
+                    <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
+                        <div class="file-icon">📁</div>
+                        <div>
+                            <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
+                            <div class="file-size">${formatBytes(fileObj.size)}</div>
+                        </div>
+                    </a>
+                `;
+            }
         }
 
         if (type !== 'system') {
@@ -715,7 +735,6 @@
         else if (msg.type === 'topo-sync') {
             networkGraph = msg.graph;
             
-            // SPOKE SYNC: Zabráníme Spoke uzlům odpojovat aktivní uzly kvůli vlastnímu (lokálnímu) timeoutu
             if (!isDnsHost) {
                 const now = Date.now();
                 if (msg.graph.root && knownNodes[msg.graph.root]) {
@@ -1100,7 +1119,6 @@
                     displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?';
                     displayBitrate = `${pStats.bitrate} kbps`;
                 } else {
-                    // Spoke sync logiky - vykreslení stavu cizích uzlů podle dat od Mastera
                     const edgeData = (networkGraph.edges || []).find(e => (e.id || e) === id);
                     if (edgeData) {
                         let protoStr = (edgeData.protocol || 'UDP').toUpperCase();
