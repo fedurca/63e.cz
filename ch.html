@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.7</title>
+    <title>E2E Tree P2P Chat v2.2.8</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -65,7 +65,7 @@
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
 
         #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
-        @media (min-width: 800px) { #debug-panel { width: 450px; height: 100%; } }
+        @media (min-width: 800px) { #debug-panel { width: 550px; height: 100%; } }
         
         .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
@@ -75,9 +75,9 @@
         #topo-canvas { width: 100%; height: 100%; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
 
-        #net-health-panel { height: 120px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
-        #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; }
+        #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;}
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
         #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
@@ -97,7 +97,7 @@
             <span id="status-dot" class="status-dot"></span>
             <h1 style="display:inline;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.7 (History Sync Fix)</span>
+            <span class="version-badge">v2.2.8 (Stats & FullSync)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -130,7 +130,7 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (TIMEOUT: 45s)</div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (P2P STATS)</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -143,7 +143,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.7: Opraveno ztrácení historie, vráceny Sync Logy.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.8: Měření RTT, Bitrate a barvy linek z getStats().</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -151,7 +151,8 @@
 </div>
 
 <script>
-    const WORKER_URL = "https://webrtc-dns-signal.63ecz.workers.dev";
+    // Úprava API na tvou doménu
+    const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
     const WEBRTC_CONFIG = {
@@ -198,6 +199,9 @@
     let blacklistedHubId = null;
     let blacklistedHubTimeout = 0;
     let processingOffers = new Set();
+
+    // Sledování statistik sítě v reálném čase
+    let peerStats = {};
 
     document.getElementById('dbg-id').innerText = myId;
 
@@ -439,19 +443,15 @@
         if(scroll) chat.scrollTop = chat.scrollHeight;
     }
 
-    // ROBUSTNÍ SMĚROVACÍ ENGINE (Oprava TTL dropů)
     function routeMessage(msgObj, sourceChannel = null) {
-        // Kontrola duplicit
         if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk') {
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id);
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
         }
 
-        // KLÍČOVÁ OPRAVA: Zprávu vždy ZPRACUJEME LOKÁLNĚ dřív, než ji zahodíme kvůli vypršení sítě
         processPayload(msgObj);
 
-        // Nyní zkontrolujeme, zda má zpráva ještě životnost (TTL) jít dál k dalším uzlům
         msgObj.ttl -= 1; 
         if (msgObj.ttl <= 0) return; 
 
@@ -492,11 +492,12 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 3; 
+                const batchSize = 10; // Zvětšení dávky pro rychlejší přenos CELÉ historie
                 let i = 0;
                 let chunkIndex = 1;
+                const totalChunks = Math.ceil(chatHistory.length / batchSize);
                 
-                logDebug(`[SYNC START] Začínám synchronizaci (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Odesílám CELOU historii (${chatHistory.length} zpráv, ${totalChunks} dávek) pro ${knownNodes[msg.sender].name}.`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
@@ -506,14 +507,13 @@
                     const batch = chatHistory.slice(i, i + batchSize);
                     try {
                         const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        logDebug(`[SYNC OUT] Odesílám dávku #${chunkIndex} pro ${knownNodes[msg.sender].name}...`, 'info');
-                        // TTL zvýšeno z 2 na 5 pro případné delší skoky
+                        logDebug(`[SYNC OUT] Odesílám dávku #${chunkIndex}/${totalChunks} pro ${knownNodes[msg.sender].name}...`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    setTimeout(sendBatch, 800); 
+                    setTimeout(sendBatch, 500); // 500ms ochrana proti zahlcení kanálu
                 };
                 sendBatch();
             }
@@ -705,6 +705,7 @@
         }
         
         updateDebugStats('peers', Object.keys(channels).length);
+        delete peerStats[targetId];
 
         if (isDnsHost && targetId !== 'hub') {
             if(knownNodes[targetId]) {
@@ -808,7 +809,6 @@
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
 
                 if (!isDnsHost) {
-                    // KLIČOVÝ KROK: Žádost o historii 3 vteřiny po oznámení nového uzlu
                     setTimeout(() => { 
                         logDebug(`Požaduji historii od Mastera...`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
@@ -850,10 +850,55 @@
         };
     }
 
+    // --- REALTIME ANALÝZA WEBRTC STATISTIK ---
+    setInterval(async () => {
+        for (const [peerId, pc] of Object.entries(connections)) {
+            if (!pc || pc.iceConnectionState !== 'connected') continue;
+            try {
+                const stats = await pc.getStats();
+                if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, lastBytes: 0, lastTime: Date.now() };
+                
+                let isRelay = false;
+                let rtt = 0;
+                let currentBytes = 0;
+
+                stats.forEach(report => {
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                        if (report.currentRoundTripTime !== undefined) rtt = (report.currentRoundTripTime * 1000).toFixed(0);
+                        
+                        const localCand = stats.get(report.localCandidateId);
+                        const remoteCand = stats.get(report.remoteCandidateId);
+                        if ((localCand && localCand.candidateType === 'relay') || 
+                            (remoteCand && remoteCand.candidateType === 'relay')) {
+                            isRelay = true;
+                        }
+                    }
+                    if (report.type === 'data-channel') {
+                        currentBytes += (report.bytesSent || 0) + (report.bytesReceived || 0);
+                    }
+                });
+
+                const now = Date.now();
+                const dt = (now - peerStats[peerId].lastTime) / 1000;
+                let bitrate = 0;
+                if (dt > 0 && peerStats[peerId].lastBytes > 0) {
+                    bitrate = ((currentBytes - peerStats[peerId].lastBytes) * 8 / dt / 1000).toFixed(1);
+                }
+
+                peerStats[peerId].rtt = rtt;
+                peerStats[peerId].isRelay = isRelay;
+                peerStats[peerId].bitrate = Math.max(0, bitrate);
+                peerStats[peerId].lastBytes = currentBytes;
+                peerStats[peerId].lastTime = now;
+            } catch (e) {}
+        }
+    }, 2000);
+
+    // Aktualizace UI Zdraví sítě
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
-        let html = '<table><tr><th>Uzel</th><th>Role</th><th>Ping</th><th>Status</th></tr>';
+        let html = '<table><tr><th>Uzel</th><th>Role</th><th>Linka</th><th>RTT</th><th>Bitrate</th><th>Status</th></tr>';
         
         const now = Date.now();
         const activeIds = Object.keys(knownNodes).sort();
@@ -871,13 +916,27 @@
             }
 
             const role = isMaster ? 'Master (Hub)' : 'Spoke';
-            const pingStr = isMe ? '<span style="color:#aaa">Local</span>' : (node.ping !== undefined ? `${node.ping} ms` : '<span style="color:#aaa">Nepřímý</span>');
-            
             let status = '<span style="color:#2ed573">Aktivní</span>';
             if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>';
             else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
 
-            if(knownNodes[id]) html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${pingStr}</td><td>${status}</td></tr>`;
+            // Načítání reálných dat z WebRTC
+            let pStats = peerStats[id] || (isMe ? null : peerStats['hub']); 
+            let displayLink = isMe ? '-' : '<span style="color:#777">Nepřímý</span>';
+            let displayRtt = isMe ? '-' : '?';
+            let displayBitrate = isMe ? '-' : '0 kbps';
+
+            if (!isMe && connections[id] && pStats) {
+                displayLink = pStats.isRelay ? '<span style="color:#feca57">TURN (Relay)</span>' : '<span style="color:#2ed573">P2P (Direct)</span>';
+                displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?';
+                displayBitrate = `${pStats.bitrate} kbps`;
+            } else if (!isMe && !connections[id]) {
+                displayRtt = node.ping !== undefined ? `~${node.ping} ms` : '?';
+            }
+
+            if(knownNodes[id]) {
+                html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
+            }
         });
         html += '</table>';
         list.innerHTML = html;
@@ -897,6 +956,7 @@
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
         processingOffers.clear(); 
+        peerStats = {};
         isDnsHost = false;
         
         await initCrypto();
@@ -1121,7 +1181,9 @@
 
     setInterval(() => {
         if (isDnsHost) {
-            networkGraph = { root: myId, edges: Object.keys(channels) };
+            // Master do sítě odesílá rovnou typ spojení (isRelay)
+            const edgesInfo = Object.keys(channels).map(id => ({ id, isRelay: peerStats[id]?.isRelay || false }));
+            networkGraph = { root: myId, edges: edgesInfo };
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
             drawTopology();
         }
@@ -1138,7 +1200,7 @@
         const rootId = networkGraph.root || myId;
         const edges = networkGraph.edges || [];
         
-        let nodesArr = [rootId, ...edges];
+        let nodesArr = [rootId, ...edges.map(e => e.id || e)];
         if (!nodesArr.includes(myId)) nodesArr.push(myId); 
         nodesArr = [...new Set(nodesArr)]; 
         
@@ -1159,10 +1221,13 @@
 
         ctx.lineWidth = 2;
         if (pos[rootId]) {
-            edges.forEach(target => {
+            edges.forEach(edge => {
+                const target = edge.id || edge;
                 if (pos[target]) {
                     ctx.beginPath(); ctx.moveTo(pos[rootId].x, pos[rootId].y); ctx.lineTo(pos[target].x, pos[target].y);
-                    ctx.strokeStyle = '#555'; ctx.stroke();
+                    // Dynamické barvení linek (Oranžová = Relay/TURN, Zelená = P2P Direct)
+                    ctx.strokeStyle = edge.isRelay ? '#feca57' : '#2ed573';
+                    ctx.stroke();
                 }
             });
         }
