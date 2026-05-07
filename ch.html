@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.15</title>
+    <title>E2E Tree P2P Chat v2.2.16</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -113,7 +113,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.15 (Mobile Timing & State Fix)</span>
+            <span class="version-badge">v2.2.16 (Solid State Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -164,7 +164,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.15: Ochrana proti pádu spojení na mobilních sítích s pomalým ICE.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.16: Synchronní pojistka SID proti pádům na mobilních sítích.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -218,7 +218,7 @@
     let dnsInterval = null;
     let isResetting = false;
     let isCheckingIsolation = false;
-    let currentSessionId = null; // Globální Session ID uzlu
+    let currentSessionId = null; 
     let fileBuffers = {};
     
     let blacklistedHubId = null;
@@ -914,15 +914,16 @@
         pc.onicecandidate = (e) => {
             if (e.candidate) {
                 clearTimeout(candidateTimer);
-                candidateTimer = setTimeout(finish, 800); // 800ms pro mobilní sítě
+                candidateTimer = setTimeout(finish, 800); 
             } else {
                 finish(); 
             }
         };
-        setTimeout(finish, 4500); // Prodlouženo na 4.5s kvůli pomalým 4G sítím
+        // PRODLOUŽENO: 4.5s pro mobilní sítě (4G potřebuje čas na TURN kandidáty)
+        setTimeout(finish, 4500); 
     }
 
-    async function createP2PNode(targetId, isInitiator, useDns = false) {
+    async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) {
         if (connections[targetId]) return; 
         logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
         
@@ -942,20 +943,21 @@
         if (isInitiator) {
             const ch = pc.createDataChannel('chat');
             bindDataChannel(ch, targetId);
-            await pc.setLocalDescription(await pc.createOffer());
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
             
             waitForIce(pc, async () => {
                 if (!pc || pc.signalingState === 'closed' || pc.gatheringDone) return;
                 pc.gatheringDone = true;
-                if (useDns) {
-                    currentSessionId = generateMsgId();
-                    pc.offerSid = currentSessionId;
+                if (useDns && sid) {
+                    pc.offerSid = sid;
                     
                     const sdpData = {
                         type: pc.localDescription.type,
                         sdp: pc.localDescription.sdp
                     };
-                    const payload = { sdp: sdpData, sid: currentSessionId, ts: Date.now() };
+                    const payload = { sdp: sdpData, sid: sid, ts: Date.now() };
                     
                     logDebug(`[API OUT] Odesílám Offer...`, 'info');
                     const ok = await writeSignal(`offer-${myId}`, payload);
@@ -1170,7 +1172,7 @@
         if (isResetting) return;
         isResetting = true;
         appSessionTime = 0; 
-        currentSessionId = null; // KLÍČOVÁ OPRAVA PRO RACE CONDITION
+        currentSessionId = null; // KLÍČOVÁ OPRAVA RACE CONDITION
 
         logDebug("Provádím kompletní reset...", "info");
         
@@ -1341,7 +1343,14 @@
 
     async function joinViaDns() {
         document.getElementById('ui-role').innerText = "Spojuji se...";
-        await createP2PNode('hub', true, true); 
+        
+        // GENEROVAT SYNC SID IHNED: Předchází chybě "Called in wrong state: stable"
+        currentSessionId = generateMsgId();
+        
+        // Zneplatnění starého Offeru, aby ho Master nečetl omylem
+        writeSignal(`offer-${myId}`, { consumed: true, ts: 0 });
+        
+        await createP2PNode('hub', true, true, currentSessionId); 
         
         if (joinInterval) clearInterval(joinInterval);
         
@@ -1350,7 +1359,7 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            if (pokusy > 10) { 
+            if (pokusy > 15) { // 30 sekund timeout pro mobily
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo. Ignoruji zlobivý Hub pro další 2 minuty.`, "error");
                 blacklistedHubId = knownHubId; 
@@ -1359,7 +1368,7 @@
                 checkIsolation(); 
                 return;
             }
-            logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/10)...`, 'info');
+            logDebug(`[API IN] Hledám Answer (Pokus ${pokusy}/15)...`, 'info');
             
             if (!knownHubId) {
                 const alive = await readSignal('host-alive');
@@ -1385,17 +1394,20 @@
                 const answerData = answerPayload.sdp ? answerPayload.sdp : answerPayload;
                 const answerSid = answerPayload.sid ? answerPayload.sid : null;
 
-                if (currentSessionId && answerSid !== currentSessionId) {
+                // STRIKTNÍ MATCH SID
+                if (answerSid !== currentSessionId) {
+                    logDebug(`[API WARN] Ignoruji Answer z jiné session.`, 'error');
                     return; 
                 }
 
                 if (answerData && answerData.sdp && answerData.type) {
-                    // KLÍČOVÁ OPRAVA RACE CONDITION PRO MOBILY:
+                    
+                    // OCHRANA PROTI PŘEDČASNÉMU APLIKOVÁNÍ
                     if (connections['hub'].signalingState !== 'have-local-offer') {
-                        logDebug(`[API WARN] Čekám na dokončení lokálního Offeru (stav: ${connections['hub'].signalingState})...`, 'info');
+                        logDebug(`[API WARN] Čekám na dokončení lokálního Offeru...`, 'info');
                         return; 
                     }
-
+                    
                     clearInterval(joinInterval);
                     logDebug(`[API IN] Answer nalezen a ověřen, aplikuji...`, 'success');
                     try {
