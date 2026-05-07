@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.0 (Video & Screen Share)</title>
+    <title>E2E Tree P2P Chat v3.1 (Video, Screen, URL Params)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -130,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.0 (Video + Screen)</span>
+            <span class="version-badge">v3.1 (Video + Screen)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +181,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.0: Přidány 1:1 šifrované videohovory a sdílení obrazovky.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.1: Přidána podpora URL parametrů pro auto-vyplnění.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -268,10 +268,6 @@
     let watchdogTick = Date.now();
     let isIceRestarting = false; 
 
-    // --- AUTO-LOGIN A URL PARAMETRY ---
-    let autoMsg = null;
-    let autoMsgSent = false;
-
     // --- VIDEO CALL STATE ---
     let activeCall = {
         pc: null,
@@ -287,22 +283,38 @@
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
-        // Vytažení URL parametrů
+        // --- ZPRACOVÁNÍ URL PARAMETRŮ ---
         const urlParams = new URLSearchParams(window.location.search);
-        const autoName = urlParams.get('n');
-        const autoMessage = urlParams.get('m');
+        
+        let urlNick = urlParams.get('n') || urlParams.get('nick');
+        let urlMsg = urlParams.get('m') || urlParams.get('msg');
 
-        if (autoMessage) {
-            autoMsg = autoMessage;
+        // Blbuvzdorná pojistka: pokud uživatel použil ? místo & (např. ?n=Jmeno?m=Zprava)
+        if (urlNick && urlNick.includes('?m=')) {
+            const parts = urlNick.split('?m=');
+            urlNick = parts[0];
+            urlMsg = parts[1];
+        } else if (urlNick && urlNick.includes('?msg=')) {
+            const parts = urlNick.split('?msg=');
+            urlNick = parts[0];
+            urlMsg = parts[1];
         }
 
-        const savedName = localStorage.getItem('chat_nickname');
-        if (autoName) {
-            document.getElementById('username').value = autoName;
-        } else if (savedName) {
-            document.getElementById('username').value = savedName;
+        // Nastavení přezdívky
+        if (urlNick) {
+            document.getElementById('username').value = urlNick;
+            localStorage.setItem('chat_nickname', urlNick);
+        } else {
+            const savedName = localStorage.getItem('chat_nickname');
+            if (savedName) document.getElementById('username').value = savedName;
         }
 
+        // Předvyplnění zprávy do chatu
+        if (urlMsg) {
+            document.getElementById('chat-input').value = decodeURIComponent(urlMsg);
+        }
+
+        // --- INICIALIZACE CANVASU ---
         const canvas = document.getElementById('topo-canvas');
         const tooltip = document.getElementById('topo-tooltip');
         
@@ -356,15 +368,6 @@
         });
         canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
         window.addEventListener('resize', drawTopology);
-
-        // Automatické připojení, pokud je vyplněno jméno z URL
-        if (autoName) {
-            setTimeout(() => {
-                if (document.getElementById('setup-screen').style.display !== 'none') {
-                    initSystem();
-                }
-            }, 500); // 0.5s zpoždění pro bezpečné vykreslení DOMu před voláním
-        }
     });
 
     setInterval(() => {
@@ -462,16 +465,6 @@
         document.getElementById('btn-clear-history').style.display = 'inline-block';
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
-
-        // Odeslání automatické zprávy z URL (pokud existuje a ještě nebyla odeslána)
-        if (autoMsg && !autoMsgSent) {
-            autoMsgSent = true;
-            logDebug(`[AUTO] Připraven k odeslání zprávy z URL parametru...`, 'info');
-            setTimeout(() => {
-                document.getElementById('chat-input').value = autoMsg;
-                sendMsg();
-            }, 2000); // 2s zpoždění, aby se stihly navázat kanály s peerem/masterem
-        }
     }
 
     async function initCrypto() {
