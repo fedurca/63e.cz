@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.2 (Auto-Connect & Auto-Send)</title>
+    <title>E2E Tree P2P Chat v3.5 (HW Telemetrie & Pevné ID)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -130,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.2 (Auto-Connect)</span>
+            <span class="version-badge">v3.5 (HW Telemetrie & Pevné ID)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +181,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.2: Plná podpora Auto-Connect a Auto-Send pomocí URL parametrů.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.5: Přidána HW Telemetrie do zdraví sítě a garantovaně pevná ID.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -227,18 +227,23 @@
         ]
     };
     
-    function generateNodeId() {
-        const dateStr = new Date().toISOString().split('T')[0]; 
-        const fingerprint = navigator.userAgent + screen.width + 'x' + screen.height + navigator.language + dateStr;
+    // V3.5: Garantovaně stejné ID založené na HW otisku + lokální záloze. (Bez Date a bez URL)
+    function getStableNodeId() {
+        let saved = localStorage.getItem('p2p_stable_id');
+        if (saved) return saved;
+        
+        const fp = navigator.userAgent + screen.width + 'x' + screen.height + (navigator.hardwareConcurrency || 2);
         let hash = 0;
-        for (let i = 0; i < fingerprint.length; i++) { hash = ((hash << 5) - hash) + fingerprint.charCodeAt(i); hash |= 0; }
-        let id = Math.abs(hash).toString(36);
-        while(id.length < 6) id += '0'; 
-        return id.substr(0, 6);
+        for (let i = 0; i < fp.length; i++) { hash = ((hash << 5) - hash) + fp.charCodeAt(i); hash |= 0; }
+        let id = Math.abs(hash).toString(36).substring(0, 6);
+        while(id.length < 6) id += '0';
+        
+        localStorage.setItem('p2p_stable_id', id);
+        return id;
     }
     function generateMsgId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); }
 
-    let myId = generateNodeId(); 
+    let myId = getStableNodeId(); 
     let myName = "";
     let isDnsHost = false;
     let connections = {}; 
@@ -267,7 +272,39 @@
     let appSessionTime = 0;
     let watchdogTick = Date.now();
     let isIceRestarting = false; 
-    let pendingAutoMsg = null; // Uchovává URL zprávu do doby, než se spojení plně ustaví
+    let pendingAutoMsg = null; 
+
+    // --- HW TELEMETRIE (V3.5) ---
+    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?' };
+    
+    async function updateTelemetry() {
+        const ua = navigator.userAgent;
+        if (ua.includes("Windows NT 10.0")) myTelemetry.os = "Win 10/11";
+        else if (ua.includes("Windows NT 6.")) myTelemetry.os = "Win 7/8";
+        else if (ua.includes("Mac OS X")) myTelemetry.os = "macOS";
+        else if (ua.includes("Linux")) myTelemetry.os = "Linux";
+        else if (ua.includes("Android")) myTelemetry.os = "Android";
+        else if (ua.includes("iPhone") || ua.includes("iPad")) myTelemetry.os = "iOS";
+        else myTelemetry.os = "Jiné";
+        
+        if (ua.includes("Firefox/")) myTelemetry.browser = "Firefox";
+        else if (ua.includes("Edg/")) myTelemetry.browser = "Edge";
+        else if (ua.includes("Chrome/")) myTelemetry.browser = "Chrome";
+        else if (ua.includes("Safari/") && !ua.includes("Chrome")) myTelemetry.browser = "Safari";
+        else if (ua.includes("OPR/")) myTelemetry.browser = "Opera";
+        else myTelemetry.browser = "Jiný";
+        
+        try {
+            if (navigator.getBattery) {
+                const b = await navigator.getBattery();
+                myTelemetry.bat = Math.round(b.level * 100) + "%" + (b.charging ? " ⚡" : "");
+            } else {
+                myTelemetry.bat = "N/A";
+            }
+        } catch(e) {}
+    }
+    updateTelemetry();
+    setInterval(updateTelemetry, 60000); // Baterie se mění, aktualizujeme každou minutu
 
     // --- VIDEO CALL STATE ---
     let activeCall = {
@@ -290,7 +327,6 @@
         let urlNick = urlParams.get('n') || urlParams.get('nick');
         let urlMsg = urlParams.get('m') || urlParams.get('msg');
 
-        // Blbuvzdorná pojistka: pokud uživatel použil ? místo & (např. ?n=Jmeno?m=Zprava)
         const rawQuery = window.location.search;
         if (!urlMsg && rawQuery.includes('?m=')) {
             const parts = rawQuery.split('?m=');
@@ -307,15 +343,12 @@
             document.getElementById('chat-input').value = pendingAutoMsg;
         }
 
-        // Nastavení přezdívky a AUTOMATICKÉ PŘIPOJENÍ
         if (urlNick) {
             document.getElementById('username').value = decodeURIComponent(urlNick);
             localStorage.setItem('chat_nickname', document.getElementById('username').value);
             
-            logDebug(`[SYSTEM] Zjištěn parametr přezdívky z URL. Zahajuji automatické připojení...`, 'info');
-            setTimeout(() => {
-                initSystem();
-            }, 500); // 0.5s zpoždění pro plynulý start
+            logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info');
+            setTimeout(() => { initSystem(); }, 500); 
         } else {
             const savedName = localStorage.getItem('chat_nickname');
             if (savedName) document.getElementById('username').value = savedName;
@@ -477,13 +510,11 @@
         if (pendingAutoMsg) {
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info');
             const msgToSend = pendingAutoMsg;
-            pendingAutoMsg = null; // Vyčistíme okamžitě, abychom zamezili duplicitnímu zavolání
+            pendingAutoMsg = null; 
             
             setTimeout(() => {
-                document.getElementById('chat-input').value = msgToSend; // Ujistíme se, že tam text stále je
+                document.getElementById('chat-input').value = msgToSend; 
                 sendMsg();
-                
-                // Vyčištění URL z prohlížeče, aby refresh (F5) zprávu neodeslal znovu
                 window.history.replaceState({}, document.title, window.location.pathname);
             }, 2000); 
         }
@@ -492,7 +523,7 @@
     async function initCrypto() {
         myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk, lastSeen: Date.now() }; 
+        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk, lastSeen: Date.now(), tele: myTelemetry }; 
         return myJwk;
     }
 
@@ -698,7 +729,7 @@
             logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error');
             alert("Pro přijetí/vytvoření hovoru je nutné povolit kameru a mikrofon.");
             endVideoCall();
-            return null; // Záměrně vracíme null, pokud se nepodaří
+            return null;
         }
 
         if (isInitiator) {
@@ -779,7 +810,6 @@
                 endVideoCall(true);
             }
         } else {
-            // Explicitní reakce, pokud uživatel v prohlížeči klikne na blokovat kameru
             logDebug(`[VIDEO] Přijetí hovoru selhalo kvůli chybějícím právům. Informuji volajícího.`, 'error');
             sendVideoSignal(senderId, 'reject', 'no-media-permissions');
         }
@@ -794,6 +824,8 @@
     }
 
     function endVideoCall(notifyPeer = true) {
+        let wasActive = false;
+
         if (notifyPeer && activeCall.peerId) {
             sendVideoSignal(activeCall.peerId, 'end', null);
         }
@@ -801,14 +833,17 @@
         if (activeCall.pc) {
             activeCall.pc.close();
             activeCall.pc = null;
+            wasActive = true;
         }
         if (activeCall.localStream) {
             activeCall.localStream.getTracks().forEach(t => t.stop());
             activeCall.localStream = null;
+            wasActive = true;
         }
         if (activeCall.screenStream) {
             activeCall.screenStream.getTracks().forEach(t => t.stop());
             activeCall.screenStream = null;
+            wasActive = true;
         }
         
         activeCall.peerId = null;
@@ -822,7 +857,10 @@
         document.getElementById('btn-vid-mic').className = 'video-btn';
         document.getElementById('btn-vid-cam').className = 'video-btn';
         document.getElementById('btn-vid-share').className = 'video-btn';
-        logDebug(`[VIDEO] Hovor lokálně ukončen a vyčištěn.`, 'info');
+        
+        if (wasActive) {
+            logDebug(`[VIDEO] Hovor lokálně ukončen a vyčištěn.`, 'info');
+        }
     }
 
     function toggleAudio() {
@@ -862,7 +900,6 @@
                 btn.className = 'video-btn active';
                 btn.innerText = '🖥️ Zastavit sdílení';
 
-                // Nativní tlačítko prohlížeče pro zastavení
                 screenTrack.onended = () => { revertToCamera(videoSender, btn); };
             } catch (e) {
                 logDebug(`Sdílení zrušeno nebo selhalo: ${e.message}`, 'error');
@@ -893,7 +930,7 @@
         if (!activeCall.pc || !activeCall.peerId || isIceRestarting) return;
         
         isIceRestarting = true;
-        setTimeout(() => isIceRestarting = false, 5000); // 5s debounce
+        setTimeout(() => isIceRestarting = false, 5000); 
 
         logDebug(`[VIDEO] Spouštím ICE Restart pro oživení videa...`, 'webrtc');
         try {
@@ -944,7 +981,7 @@
             const isKeyChanged = knownNodes[msg.sender] && JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk);
 
             if (isNewNode || isKeyChanged) {
-                knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now() };
+                knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now(), tele: msg.tele || {} };
                 if (isKeyChanged) delete knownNodes[msg.sender].derivedAesKey;
 
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
@@ -952,7 +989,10 @@
                 if (isNewNode) renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
+            } else if (msg.tele) {
+                knownNodes[msg.sender].tele = msg.tele;
+                knownNodes[msg.sender].lastSeen = Date.now();
             }
         } 
         else if (msg.type === 'video-signal') {
@@ -964,7 +1004,6 @@
             }
         }
         else if (msg.type === 'request-history') {
-            // Návrat systémového logu pro synchronizaci (Master)
             logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync');
 
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
@@ -1003,7 +1042,6 @@
                 try {
                     const historyArray = JSON.parse(plaintextHistory);
                     mergeIncomingHistory(historyArray);
-                    // Návrat systémového logu pro synchronizaci (Spoke)
                     logDebug(`[SYNC] Přijat balíček s historií od uzlu ${knownNodes[msg.sender]?.name || msg.sender}.`, 'sync');
                 } catch(e) {}
             }
@@ -1111,7 +1149,6 @@
         const rootX = w / 2;
         const rootY = 30;
 
-        // Vykreslení Hubu (Master)
         ctx.beginPath();
         ctx.arc(rootX, rootY, 12, 0, Math.PI * 2);
         ctx.fillStyle = (networkGraph.root === myId) ? '#0078FF' : '#555';
@@ -1122,7 +1159,6 @@
         const rootName = knownNodes[networkGraph.root] ? knownNodes[networkGraph.root].name : networkGraph.root;
         ctx.fillText(rootName.substring(0, 6), rootX, rootY + 25);
 
-        // Vykreslení spojení (Edges) a uzlů (Spokes)
         const edges = networkGraph.edges || [];
         const count = edges.length;
         if (count === 0) return;
@@ -1133,7 +1169,6 @@
             const nodeX = spacing * (i + 1);
             const nodeY = h - 40;
 
-            // Čára (Linka)
             ctx.beginPath();
             ctx.moveTo(rootX, rootY);
             ctx.lineTo(nodeX, nodeY);
@@ -1141,14 +1176,12 @@
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Interaktivní plocha
             drawnEdges.push({
                 id: edge.id,
                 x1: rootX, y1: rootY, x2: nodeX, y2: nodeY,
                 stats: edge
             });
 
-            // Uzel (Spoke)
             ctx.beginPath();
             ctx.arc(nodeX, nodeY, 10, 0, Math.PI * 2);
             ctx.fillStyle = (edge.id === myId) ? '#0078FF' : '#555';
@@ -1352,6 +1385,7 @@
         }
     }
 
+    // V3.5: Vymýcený Zombie-Ping Race condition
     function bindDataChannel(channel, targetId) {
         const setupChannel = async () => {
             channels[targetId] = channel;
@@ -1361,7 +1395,7 @@
             
             setTimeout(async () => {
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
 
                 if (!isDnsHost) {
                     setTimeout(() => { 
@@ -1371,7 +1405,7 @@
             }, 1000);
 
             const pingInterval = setInterval(() => {
-                if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now() }));
+                if(channel.readyState === 'open') channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now(), tele: myTelemetry }));
                 else clearInterval(pingInterval);
             }, 10000); 
         };
@@ -1383,23 +1417,39 @@
             cleanupConnection(targetId);
         };
 
-        channel.onmessage = (e) => {
+        channel.onmessage = async (e) => {
             try {
                 const msgObj = JSON.parse(e.data);
+                
                 if (msgObj.type === '_ping') {
-                    if (!knownNodes[targetId]) {
-                        logDebug(`[P2P] Přišel ping od uzlu (${targetId}), který byl smazán. Ukončuji mrtvé spojení.`, 'error');
-                        cleanupConnection(targetId);
-                        return;
+                    const actualSenderId = msgObj.sender;
+                    // Pokud přišel PING rychleji než ohlášení (announce), nebo od smazaného uzlu:
+                    if (!knownNodes[actualSenderId]) {
+                        logDebug(`[P2P] Neznámý uzel (${actualSenderId}) poslal ping. Žádám o re-announce.`, 'webrtc');
+                        channel.send(JSON.stringify({ type: 'request-announce', sender: myId }));
+                        return; // Zatím ho neznáme, neodpovídáme
                     }
-                    channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t }));
-                    knownNodes[targetId].lastSeen = Date.now();
+
+                    if (msgObj.tele) knownNodes[actualSenderId].tele = msgObj.tele;
+                    channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t, tele: myTelemetry }));
+                    knownNodes[actualSenderId].lastSeen = Date.now();
                     return;
                 }
+                
                 if (msgObj.type === '_pong') {
-                    if (knownNodes[targetId]) {
-                        knownNodes[targetId].ping = Date.now() - msgObj.t;
-                        knownNodes[targetId].lastSeen = Date.now();
+                    const actualSenderId = msgObj.sender;
+                    if (knownNodes[actualSenderId]) {
+                        knownNodes[actualSenderId].ping = Date.now() - msgObj.t;
+                        knownNodes[actualSenderId].lastSeen = Date.now();
+                        if (msgObj.tele) knownNodes[actualSenderId].tele = msgObj.tele;
+                    }
+                    return;
+                }
+
+                if (msgObj.type === 'request-announce') {
+                    if (myKeyPair) {
+                        const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+                        routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
                     }
                     return;
                 }
@@ -1409,7 +1459,6 @@
         };
     }
 
-    // Interval: Sbírání WebRTC telemetrie
     setInterval(async () => {
         const allConnections = { ...connections };
         if (activeCall.pc && activeCall.peerId) {
@@ -1489,7 +1538,6 @@
         }
     }, 2000);
 
-    // Interval: Broadcast topologie od Master uzlu
     setInterval(() => {
         if (isDnsHost && networkGraph.root === myId) {
             let edges = [];
@@ -1512,7 +1560,7 @@
         }
     }, 5000);
 
-    // Interval: Aktualizace UI zdraví sítě a watchdog mrtvých uzlů
+    // V3.5: Vykreslení telemetrie do tabulky Zdraví sítě
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1577,7 +1625,16 @@
 
             if(knownNodes[id]) {
                 let callBtn = !isMe ? `<button class="btn-call" onclick="startVideoCall('${id}')" title="Videohovor">📞</button>` : '';
-                html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
+                
+                let teleStr = '';
+                if (node.tele && node.tele.browser) {
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat}</div>`;
+                }
+                if (isMe) {
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat}</div>`;
+                }
+
+                html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
             }
         });
         html += '</table>';
