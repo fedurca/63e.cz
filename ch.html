@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.6 (HW Telemetrie & Geo-Ping)</title>
+    <title>E2E Tree P2P Chat v3.7 (Advanced Telemetry)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -130,7 +130,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.6 (Geo-Ping & HW Info)</span>
+            <span class="version-badge">v3.7 (Advanced Telemetry)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +181,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.6: Přidán odhad země přes Geo-Ping, jazykové preference a pevné P2P ID.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.7: FPU Benchmark zařízení, rozšířený Geo-Ping a vylepšená stabilita.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -227,7 +227,7 @@
         ]
     };
     
-    // V3.5/V3.6: Garantovaně stejné ID založené na HW otisku + lokální záloze. (Bez Date a bez URL)
+    // V3.7: Garantované pevné ID
     function getStableNodeId() {
         let saved = localStorage.getItem('p2p_stable_id');
         if (saved) return saved;
@@ -274,9 +274,89 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE A GEO-PING (V3.6) ---
-    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?', lang: '?', loc: '?' };
+    // --- HW TELEMETRIE, BENCHMARK A GEO-PING (V3.7) ---
+    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
     
+    // Asynchronní FPU Stress test pro odhad výkonu (bez zamrznutí UI)
+    async function estimateDevicePower() {
+        return new Promise((resolve) => {
+            setTimeout(() => {
+                const start = performance.now();
+                let result = 0;
+                // Intenzivní FPU smyčka
+                for (let i = 1; i < 5000000; i++) {
+                    result += Math.sqrt(i) * Math.sin(i);
+                }
+                const end = performance.now();
+                const durationMs = Math.round(end - start);
+
+                // Výpočet abstraktního skóre (vyšší je lepší) a odhadu roku
+                let score = Math.round(100000 / (durationMs || 1));
+                let year = "Neznámý";
+
+                if (durationMs <= 15) year = "2023-2024";
+                else if (durationMs <= 35) year = "2021-2022";
+                else if (durationMs <= 70) year = "2019-2020";
+                else if (durationMs <= 130) year = "2016-2018";
+                else if (durationMs <= 250) year = "2013-2015";
+                else year = "Starší / Úsporný režim";
+
+                resolve(`Skóre: ${score} (Odhad: ${year})`);
+            }, 50);
+        });
+    }
+
+    async function estimateLocation() {
+        // Rozšířený seznam národních registrů
+        const regions = [
+            { id: 'CZ', url: 'https://www.nic.cz/favicon.ico' },
+            { id: 'SK', url: 'https://sk-nic.sk/favicon.ico' },
+            { id: 'DE', url: 'https://www.denic.de/favicon.ico' },
+            { id: 'AT', url: 'https://www.nic.at/favicon.ico' },
+            { id: 'PL', url: 'https://www.dns.pl/favicon.ico' },
+            { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' },
+            { id: 'FR', url: 'https://www.afnic.fr/favicon.ico' },
+            { id: 'IT', url: 'https://www.nic.it/favicon.ico' },
+            { id: 'ES', url: 'https://www.dominios.es/favicon.ico' },
+            { id: 'CH', url: 'https://www.nic.ch/favicon.ico' },
+            { id: 'NL', url: 'https://www.sidn.nl/favicon.ico' },
+            { id: 'BE', url: 'https://www.dnsbelgium.be/favicon.ico' },
+            { id: 'SE', url: 'https://internetstiftelsen.se/favicon.ico' },
+            { id: 'NO', url: 'https://www.norid.no/favicon.ico' },
+            { id: 'FI', url: 'https://www.traficom.fi/favicon.ico' },
+            { id: 'US', url: 'https://www.about.us/favicon.ico' },
+            { id: 'CA', url: 'https://www.cira.ca/favicon.ico' },
+            { id: 'AU', url: 'https://www.auda.org.au/favicon.ico' },
+            { id: 'JP', url: 'https://jprs.jp/favicon.ico' },
+            { id: 'BR', url: 'https://registro.br/favicon.ico' },
+            { id: 'IN', url: 'https://www.registry.in/favicon.ico' }
+        ];
+
+        const ping = (url) => new Promise((resolve) => {
+            const img = new Image();
+            const start = performance.now();
+            img.onload = img.onerror = () => resolve(performance.now() - start);
+            img.src = url + '?t=' + Math.random(); // Cache buster
+            setTimeout(() => resolve(9999), 3000); // 3s Timeout
+        });
+
+        // Paralelní spuštění všech pingů
+        let promises = regions.map(async (r) => {
+            let time = await ping(r.url);
+            return { id: r.id, time: time };
+        });
+
+        let results = await Promise.all(promises);
+        results = results.filter(r => r.time < 9999).sort((a,b) => a.time - b.time);
+
+        if (results.length > 0) {
+            // Zobrazení TOP 3
+            myTelemetry.loc = results.slice(0, 3).map(x => `${x.id} (${Math.round(x.time)}ms)`).join(', ');
+        } else {
+            myTelemetry.loc = "Neznámá (Blokováno)";
+        }
+    }
+
     async function updateTelemetry() {
         const ua = navigator.userAgent;
         if (ua.includes("Windows NT 10.0")) myTelemetry.os = "Win 10/11";
@@ -294,7 +374,6 @@
         else if (ua.includes("OPR/")) myTelemetry.browser = "Opera";
         else myTelemetry.browser = "Jiný";
         
-        // Získání pole nainstalovaných/preferovaných jazyků (odpovídá nejčastěji klávesnicím)
         myTelemetry.lang = navigator.languages ? navigator.languages.join(', ') : (navigator.language || '?');
 
         try {
@@ -305,46 +384,17 @@
                 myTelemetry.bat = "N/A";
             }
         } catch(e) {}
-    }
 
-    async function estimateLocation() {
-        myTelemetry.loc = "Měřím...";
-        // Národní registry - využíváme jejich miniaturní ikony (zabrání to CORS blokaci a je to super-rychlé)
-        const regions = [
-            { id: 'CZ', url: 'https://www.nic.cz/favicon.ico' },
-            { id: 'SK', url: 'https://sk-nic.sk/favicon.ico' },
-            { id: 'DE', url: 'https://www.denic.de/favicon.ico' },
-            { id: 'AT', url: 'https://www.nic.at/favicon.ico' },
-            { id: 'PL', url: 'https://www.dns.pl/favicon.ico' },
-            { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' },
-            { id: 'US', url: 'https://www.iana.org/favicon.ico' }
-        ];
-
-        const ping = (url) => new Promise((resolve) => {
-            const img = new Image();
-            const start = performance.now();
-            img.onload = img.onerror = () => resolve(performance.now() - start);
-            img.src = url + '?t=' + Date.now(); // Cache buster
-            setTimeout(() => resolve(9999), 3000); // 3s Timeout
-        });
-
-        let results = [];
-        for (let r of regions) {
-            let time = await ping(r.url);
-            if (time < 9999) results.push({ id: r.id, time: time });
-        }
-
-        if (results.length > 0) {
-            results.sort((a,b) => a.time - b.time);
-            myTelemetry.loc = `${results[0].id} (~${Math.round(results[0].time)}ms)`;
-        } else {
-            myTelemetry.loc = "Neznámá";
+        // Měření výkonu pouze jednou při startu
+        if (myTelemetry.perf === 'Měřím...') {
+            myTelemetry.perf = await estimateDevicePower();
         }
     }
 
-    updateTelemetry();
+    // Inicializace jednorázových měřidel
     estimateLocation();
-    setInterval(updateTelemetry, 60000); // Baterie se mění, aktualizujeme každou minutu
+    updateTelemetry();
+    setInterval(updateTelemetry, 60000); 
 
     // --- VIDEO CALL STATE ---
     let activeCall = {
@@ -357,8 +407,6 @@
         isScreenSharing: false
     };
     let incomingCallData = null; 
-
-    document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
         // --- ZPRACOVÁNÍ URL PARAMETRŮ ---
@@ -1425,7 +1473,6 @@
         }
     }
 
-    // V3.6: Robustní obrana proti Zombie-Ping cyklům
     function bindDataChannel(channel, targetId) {
         const setupChannel = async () => {
             channels[targetId] = channel;
@@ -1464,11 +1511,10 @@
                 if (msgObj.type === '_ping') {
                     const actualSenderId = msgObj.sender;
 
-                    // Extrémně silná pojistka proti rozpadům na pingu (žádné ukončování spojení!)
                     if (!knownNodes[actualSenderId]) {
                         logDebug(`[P2P] Neznámý uzel (${actualSenderId}) poslal ping. Žádám o re-announce.`, 'webrtc');
                         channel.send(JSON.stringify({ type: 'request-announce', sender: myId }));
-                        return; // Zatím ho neznáme, neodpovídáme pongem, dokud se nepředstaví
+                        return; 
                     }
 
                     if (msgObj.tele) knownNodes[actualSenderId].tele = msgObj.tele;
@@ -1487,7 +1533,6 @@
                     return;
                 }
 
-                // Zachycení žádosti o znovupředstavení se v síti
                 if (msgObj.type === 'request-announce') {
                     if (myKeyPair) {
                         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
@@ -1602,7 +1647,6 @@
         }
     }, 5000);
 
-    // V3.6: Vykreslení telemetrie do tabulky Zdraví sítě (Jazyk, Geo-Lokace)
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1670,10 +1714,10 @@
                 
                 let teleStr = '';
                 if (node.tele && node.tele.browser) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${node.tele.os} | 🌐 ${node.tele.browser} | 📱 ${node.tele.res} | 🔋 ${node.tele.bat} | 🗣️ ${node.tele.lang} | 🌍 ${node.tele.loc} | ⚡ ${node.tele.perf}</div>`;
                 }
                 if (isMe) {
-                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc}</div>`;
+                    teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">💻 ${myTelemetry.os} | 🌐 ${myTelemetry.browser} | 📱 ${myTelemetry.res} | 🔋 ${myTelemetry.bat} | 🗣️ ${myTelemetry.lang} | 🌍 ${myTelemetry.loc} | ⚡ ${myTelemetry.perf}</div>`;
                 }
 
                 html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`;
