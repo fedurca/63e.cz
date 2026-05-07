@@ -252,4 +252,232 @@ Vidět skutečně používanou metodu (STUN/TURN) a synchronizovat ji napříč 
   - topologie i healthcheck tabulka používaly stejný zdroj pravdy
   - barvy spojnic byly konzistentní napříč uzly
 
+
+POPIS SÍŤOVÁNÍ
+
+Data při P2P spojení tečou po WebRTC DataChannel mezi koncovými uzly; protlačení sítí zajišťuje ICE (STUN/TURN + ICE connectivity checks) a vlastní směrování dat v síti zajišťuje až aplikační routovací logika nad těmito kanály (hub/spoke + TTL forwarding).
+
+Teď podrobně, vrstvu po vrstvě.
+
+2) Vrstvy toku dat (od fyziky po aplikaci)
+Vrstva 1 — fyzický přenos dat (Internet / síť)
+Na úplně nejnižší úrovni data tečou jako:
+
+UDP nebo TCP pakety
+typicky:
+
+UDP (preferované WebRTC),
+fallback TCP (např. TURN/TCP).
+
+
+
+Tady ještě neexistuje P2P logika, jen IP sítě, NATy, firewally, proxy.
+
+Vrstva 2 — ICE: jak se data „protlačí“ sítí
+Tohle je nejdůležitější část pro pochopení „kudy to jde přes síť“.
+Co je ICE
+ICE (Interactive Connectivity Establishment) je mechanismus WebRTC, který:
+
+hledá všechny možné síťové cesty mezi dvěma prohlížeči,
+otestuje je,
+vybere jednu funkční trasu.
+
+Jaké cesty ICE zkouší (v tomto pořadí)
+
+host
+
+přímé IP (LAN, stejná síť)
+
+
+srflx (STUN)
+
+veřejná IP zjištěná přes STUN server
+
+
+relay (TURN)
+
+provoz přesměrován přes TURN server
+
+
+
+Co přesně dělá STUN
+
+Klient se zeptá STUN serveru:
+
+„Jaká je moje veřejná IP a port, když k tobě přijdu?“
+
+
+STUN nepřenáší data, jen pomáhá zjistit adresu za NATem.
+
+Co přesně dělá TURN
+
+TURN server funguje jako relay:
+
+oba klienti posílají data do TURN,
+TURN je pošle dál druhému.
+
+
+Používá se, když:
+
+je blokovaný UDP,
+je symetrický NAT,
+je enterprise proxy.
+
+
+
+👉 Výběr konkrétní cesty (host / srflx / relay) dělá prohlížeč, ne tvůj kód.
+
+Vrstva 3 — WebRTC DataChannel (transport + šifrování)
+Jakmile ICE vybere trasu:
+
+otevře se DTLS spojení (automatické)
+nad ním SCTP
+nad SCTP běží DataChannel
+
+Vlastnosti:
+
+šifrované (DTLS),
+spolehlivé přenosy (nebo nespolehlivé – ale ty používáš spolehlivé),
+pro tebe se chová jako „socket“.
+
+👉 Tady už data skutečně tečou mezi prohlížeči – buď:
+
+přímo,
+nebo skrz TURN server jako relay (ale pořád end‑to‑end šifrovaně).
+
+
+3) Kudy tečou data v tvé síti (topologie Hub & Spoke)
+Teď přecházíme z fyziky na logiku tvé aplikace.
+3.1 Přímé P2P linky
+Topologie není plný mesh, ale:
+Spoke A ──┐
+Spoke B ──┤
+Spoke C ──┼── Hub
+Spoke D ──┘
+
+
+Každý Spoke má 1 WebRTC spojení (na Hub)
+Hub má N spojení (na všechny Spokes)
+
+To znamená:
+
+po síti teče N oddělených P2P toků,
+nejsou si rovny – hub je tranzitní uzel.
+
+
+3.2 Jak tečou aplikační data (chat / soubory)
+Chatová zpráva
+Příklad: Spoke A → Spoke C
+
+
+Spoke A:
+
+vytvoří payload,
+E2E zašifruje ho zvlášť pro každého příjemce,
+pošle zprávu přes svůj DataChannel → Hub
+
+
+
+Hub:
+
+zprávu nečte (nezná klíče),
+aplikačně ji přepošle dál (routeMessage)
+přes DataChannel → Spoke C
+
+
+
+Spoke C:
+
+zprávu dešifruje,
+zobrazí.
+
+
+
+➡️ Po síti tedy tečou dvě fyzická P2P spojení:
+
+A ↔ Hub
+Hub ↔ C
+
+Ale aplikačně to vypadá jako „A → C“.
+
+4) Co zajišťuje směrování dat (routing)
+Toto je klíčový bod: WebRTC samo data NESMĚRUJE.
+WebRTC:
+
+vytvoří bod‑bod kanály,
+netuší nic o „síti uzlů“.
+
+Směrování zajišťuje výhradně tvůj aplikační protokol
+Konkrétně:
+4.1 routeMessage()
+
+funguje jako aplikační router.
+rozhoduje:
+
+komu zprávu poslat,
+jestli ji poslat dál,
+kdy ji zahodit.
+
+
+
+Používané mechanismy:
+
+TTL – brání nekonečným smyčkám,
+seenMessages – deduplikace,
+path – debug trasy (kudy zpráva prošla).
+
+
+4.2 Hub jako směrovací uzel
+Ve tvém designu:
+
+Hub plní roli aplikačního směrovače,
+ale není transportním routerem (to je Internet).
+
+Hub:
+
+zná topologii,
+ví, jaké DataChannel existují,
+přeposílá zprávy na správné kanály.
+
+
+5) Kde se v tom NEPOUŽÍVÁ Worker (důležité)
+Cloudflare Worker:
+
+NESLOUŽÍ k přenosu dat
+NEMÁ žádný live traffic
+Používá se pouze pro:
+
+signaling (offer/answer),
+discovery hubu,
+bootstrap sítě.
+
+
+
+Jakmile je P2P spojení hotové:
+
+Worker už není v datové cestě.
+
+
+6) Shrnutí do jednoduchého mentálního modelu
+Plain Text[ Browser A ] ── WebRTC ──┐                           │   (ICE vyřeší kudy)[ Browser B ] ── WebRTC ──┼─── Internet / NAT / TURN ─── Hub                           │[ Browser C ] ── WebRTC ──┘Zobrazit více řádků
+
+ICE rozhodne kudy se data fyzicky dostanou sítí.
+WebRTC DataChannel přenáší data bezpečně bodem‑bodem.
+Aplikační router (routeMessage + hub) rozhoduje kam zpráva patří v rámci P2P overlay sítě.
+Worker jen pomůže síť nastartovat.
+
+
+7) Jednověté odpovědi na přesné otázky
+
+
+Kudy tečou data při P2P spojení?
+→ Po WebRTC DataChannel mezi konkrétními uzly (přímo nebo přes TURN).
+
+
+Jak se protlačí sítí?
+→ ICE (STUN + TURN + connectivity checks) najde funkční cestu skrz NAT/proxy.
+
+
+Co zajišťuje jejich směrování?
+→ Aplikační logika (routeMessage, hub/spoke), nikoli WebRTC.
 ---
