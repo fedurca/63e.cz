@@ -268,6 +268,10 @@
     let watchdogTick = Date.now();
     let isIceRestarting = false; 
 
+    // --- AUTO-LOGIN A URL PARAMETRY ---
+    let autoMsg = null;
+    let autoMsgSent = false;
+
     // --- VIDEO CALL STATE ---
     let activeCall = {
         pc: null,
@@ -283,8 +287,21 @@
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
+        // Vytažení URL parametrů
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoName = urlParams.get('n');
+        const autoMessage = urlParams.get('m');
+
+        if (autoMessage) {
+            autoMsg = autoMessage;
+        }
+
         const savedName = localStorage.getItem('chat_nickname');
-        if (savedName) document.getElementById('username').value = savedName;
+        if (autoName) {
+            document.getElementById('username').value = autoName;
+        } else if (savedName) {
+            document.getElementById('username').value = savedName;
+        }
 
         const canvas = document.getElementById('topo-canvas');
         const tooltip = document.getElementById('topo-tooltip');
@@ -339,6 +356,15 @@
         });
         canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
         window.addEventListener('resize', drawTopology);
+
+        // Automatické připojení, pokud je vyplněno jméno z URL
+        if (autoName) {
+            setTimeout(() => {
+                if (document.getElementById('setup-screen').style.display !== 'none') {
+                    initSystem();
+                }
+            }, 500); // 0.5s zpoždění pro bezpečné vykreslení DOMu před voláním
+        }
     });
 
     setInterval(() => {
@@ -436,6 +462,16 @@
         document.getElementById('btn-clear-history').style.display = 'inline-block';
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
+
+        // Odeslání automatické zprávy z URL (pokud existuje a ještě nebyla odeslána)
+        if (autoMsg && !autoMsgSent) {
+            autoMsgSent = true;
+            logDebug(`[AUTO] Připraven k odeslání zprávy z URL parametru...`, 'info');
+            setTimeout(() => {
+                document.getElementById('chat-input').value = autoMsg;
+                sendMsg();
+            }, 2000); // 2s zpoždění, aby se stihly navázat kanály s peerem/masterem
+        }
     }
 
     async function initCrypto() {
