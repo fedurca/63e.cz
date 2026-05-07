@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.8</title>
+    <title>E2E Tree P2P Chat v2.2.10</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -27,9 +27,10 @@
         }
 
         header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
-        .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; }
+        .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
         .status-dot.online { background: #2ed573; }
         .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
+        #status-timer { font-size: 0.75rem; color: rgba(255,255,255,0.9); margin-left: 5px; font-variant-numeric: tabular-nums; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 10px; vertical-align: middle; }
         .secure-badge { background: #2ed573; color: #000; font-size: 0.7rem; padding: 3px 6px; border-radius: 10px; font-weight: bold; margin-left: 10px; }
         .version-badge { font-size: 0.75rem; opacity: 0.8; margin-left: 10px; }
         .btn-danger { background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: bold; margin-left: 15px; }
@@ -71,9 +72,13 @@
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
-        #topo-container { height: 160px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; }
-        #topo-canvas { width: 100%; height: 100%; }
+        #topo-container { height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
+        #topo-canvas { width: 100%; height: 100%; cursor: crosshair; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
+        #topo-legend { position: absolute; bottom: 5px; left: 5px; font-size: 0.65rem; color: #aaa; pointer-events: none; }
+        .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+        #topo-tooltip { position: absolute; background: rgba(0,0,0,0.85); color: #00ff00; font-family: monospace; font-size: 0.7rem; padding: 10px; border-radius: 6px; pointer-events: none; display: none; z-index: 100; white-space: nowrap; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.5); line-height: 1.5; }
+        .tooltip-server { color: #aaa; font-size: 0.65rem; display: block; border-top: 1px solid #333; margin-top: 4px; padding-top: 4px; }
 
         #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
@@ -94,11 +99,11 @@
 <div id="app">
     <header>
         <div>
-            <span id="status-dot" class="status-dot"></span>
-            <h1 style="display:inline;">Tree P2P</h1>
+            <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
+            <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.8 (Stats & FullSync)</span>
-            <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat historii</button>
+            <span class="version-badge">v2.2.10 (TCP TURN & Route Analyzers)</span>
+            <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
     </header>
@@ -121,6 +126,11 @@
             <div id="topo-container">
                 <div class="topo-label">STROMOVÁ TOPOLOGIE (HUB & SPOKE)</div>
                 <canvas id="topo-canvas"></canvas>
+                <div id="topo-legend">
+                    <span class="legend-dot" style="background:#2ed573;"></span>P2P (Direct)
+                    <span class="legend-dot" style="background:#feca57; margin-left:8px;"></span>TURN (Relay)
+                </div>
+                <div id="topo-tooltip"></div>
             </div>
             
             <div class="debug-stats">
@@ -130,7 +140,7 @@
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
 
-            <div class="debug-header">📡 ZDRAVÍ SÍTĚ (P2P STATS)</div>
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ (GETSTATS API)</div>
             <div id="net-health-panel">
                 <div id="net-health-list"></div>
             </div>
@@ -143,7 +153,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.8: Měření RTT, Bitrate a barvy linek z getStats().</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.10: Podpora TCP TURN serverů a detailní analýza tras.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -151,15 +161,22 @@
 </div>
 
 <script>
-    // Úprava API na tvou doménu
     const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
+    // Kompletní paleta STUN/TURN (UDP i TCP)
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
+            // OpenRelay UDP a TCP fallbacky
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            // Sekundární volné servery jako pojistka
+            { urls: 'turn:standard.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
     
@@ -200,15 +217,116 @@
     let blacklistedHubTimeout = 0;
     let processingOffers = new Set();
 
-    // Sledování statistik sítě v reálném čase
     let peerStats = {};
+    let drawnEdges = []; 
+
+    let appSessionTime = 0;
+    let watchdogTick = Date.now();
 
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
         const savedName = localStorage.getItem('chat_nickname');
         if (savedName) document.getElementById('username').value = savedName;
+
+        const canvas = document.getElementById('topo-canvas');
+        const tooltip = document.getElementById('topo-tooltip');
+        
+        canvas.addEventListener('mousemove', (e) => {
+            const mouseX = e.offsetX;
+            const mouseY = e.offsetY;
+            let hoveredEdge = null;
+
+            for (const edge of drawnEdges) {
+                const A = mouseX - edge.x1, B = mouseY - edge.y1, C = edge.x2 - edge.x1, D = edge.y2 - edge.y1;
+                const dot = A * C + B * D;
+                const len_sq = C * C + D * D;
+                let param = -1;
+                if (len_sq !== 0) param = dot / len_sq;
+                let xx, yy;
+                if (param < 0) { xx = edge.x1; yy = edge.y1; }
+                else if (param > 1) { xx = edge.x2; yy = edge.y2; }
+                else { xx = edge.x1 + param * C; yy = edge.y1 + param * D; }
+                const dx = mouseX - xx, dy = mouseY - yy;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < 8) { 
+                    hoveredEdge = edge;
+                    break;
+                }
+            }
+
+            if (hoveredEdge) {
+                tooltip.style.display = 'block';
+                let ttX = mouseX + 15;
+                let ttY = mouseY + 15;
+                if (ttX + 160 > canvas.width) ttX = mouseX - 170; 
+                
+                tooltip.style.left = ttX + 'px';
+                tooltip.style.top = ttY + 'px';
+                
+                const name = knownNodes[hoveredEdge.id] ? escapeHTML(knownNodes[hoveredEdge.id].name.substr(0,12)) : hoveredEdge.id;
+                const s = hoveredEdge.stats;
+                const rtt = s.rtt > 0 ? s.rtt + ' ms' : 'N/A';
+                const bit = s.bitrate !== undefined ? s.bitrate + ' kbps' : '0 kbps';
+                const type = s.isRelay ? '<span style="color:#feca57">Relay (TURN)</span>' : '<span style="color:#2ed573">Direct (P2P)</span>';
+                
+                let protoStr = (s.protocol || 'UDP').toUpperCase();
+                let serverStr = s.server || 'Local LAN';
+                
+                tooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>Master ↔ ${name}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`;
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+        
+        canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
     });
+
+    setInterval(() => {
+        const now = Date.now();
+        const delta = now - watchdogTick;
+        
+        if (delta < 2000) {
+            appSessionTime++;
+        }
+        
+        const m = String(Math.floor(appSessionTime / 60)).padStart(2, '0');
+        const s = String(appSessionTime % 60).padStart(2, '0');
+        const timerEl = document.getElementById('status-timer');
+        if(timerEl) timerEl.innerText = `${m}:${s}`;
+
+        if (delta > 10000) { 
+            logDebug(`[WATCHDOG] Detekováno uspání tabu/systému na ${Math.round(delta/1000)}s. WebRTC spojení pravděpodobně spadla. Resetuji síť...`, "error");
+            appSessionTime = 0; 
+            fullResetAndReconnect();
+        }
+        
+        watchdogTick = now;
+    }, 1000);
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            const delta = Date.now() - watchdogTick;
+            if (delta > 10000) {
+                logDebug(`[WATCHDOG] Návrat na tab po uspání. Vynucuji reset...`, "error");
+                appSessionTime = 0;
+                fullResetAndReconnect();
+                watchdogTick = Date.now();
+            }
+        }
+    });
+
+    // Helper pro čistou extrakci STUN/TURN serveru (např. z "turn:openrelay.metered.ca:443?transport=tcp")
+    function parseIceUrl(url) {
+        if (!url) return 'Local LAN';
+        try {
+            let clean = url.split('?')[0]; 
+            clean = clean.split('@').pop(); 
+            clean = clean.replace('turn:', '').replace('turns:', '').replace('stun:', '');
+            return clean.split(':')[0]; 
+        } catch(e) { return url; }
+    }
 
     function escapeHTML(str) {
         if (!str) return '';
@@ -492,7 +610,7 @@
         } 
         else if (msg.type === 'request-history') {
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
-                const batchSize = 10; // Zvětšení dávky pro rychlejší přenos CELÉ historie
+                const batchSize = 10; 
                 let i = 0;
                 let chunkIndex = 1;
                 const totalChunks = Math.ceil(chatHistory.length / batchSize);
@@ -513,7 +631,7 @@
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
                     
                     i += batchSize;
-                    setTimeout(sendBatch, 500); // 500ms ochrana proti zahlcení kanálu
+                    setTimeout(sendBatch, 500); 
                 };
                 sendBatch();
             }
@@ -850,46 +968,79 @@
         };
     }
 
-    // --- REALTIME ANALÝZA WEBRTC STATISTIK ---
+    // --- REALTIME ANALÝZA WEBRTC STATISTIK A SMĚROVÁNÍ ---
     setInterval(async () => {
         for (const [peerId, pc] of Object.entries(connections)) {
             if (!pc || pc.iceConnectionState !== 'connected') continue;
             try {
                 const stats = await pc.getStats();
-                if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, lastBytes: 0, lastTime: Date.now() };
+                if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, protocol: 'udp', server: 'Local LAN', lastBytes: 0, lastTime: Date.now() };
                 
-                let isRelay = false;
-                let rtt = 0;
-                let currentBytes = 0;
-
+                let activePair = null;
+                // Metoda 1: Přes transport (Nejspolehlivější v moderních prohlížečích)
                 stats.forEach(report => {
-                    if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                        if (report.currentRoundTripTime !== undefined) rtt = (report.currentRoundTripTime * 1000).toFixed(0);
-                        
-                        const localCand = stats.get(report.localCandidateId);
-                        const remoteCand = stats.get(report.remoteCandidateId);
-                        if ((localCand && localCand.candidateType === 'relay') || 
-                            (remoteCand && remoteCand.candidateType === 'relay')) {
-                            isRelay = true;
-                        }
+                    if (report.type === 'transport' && report.selectedCandidatePairId) {
+                        activePair = stats.get(report.selectedCandidatePairId);
                     }
+                });
+                
+                // Metoda 2: Fallback skrze candidate-pair
+                if (!activePair) {
+                    stats.forEach(report => {
+                        if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
+                            activePair = report;
+                        }
+                    });
+                }
+
+                let currentBytes = 0;
+                stats.forEach(report => {
                     if (report.type === 'data-channel') {
                         currentBytes += (report.bytesSent || 0) + (report.bytesReceived || 0);
                     }
                 });
 
-                const now = Date.now();
-                const dt = (now - peerStats[peerId].lastTime) / 1000;
-                let bitrate = 0;
-                if (dt > 0 && peerStats[peerId].lastBytes > 0) {
-                    bitrate = ((currentBytes - peerStats[peerId].lastBytes) * 8 / dt / 1000).toFixed(1);
-                }
+                if (activePair) {
+                    let rtt = (activePair.currentRoundTripTime !== undefined) ? (activePair.currentRoundTripTime * 1000).toFixed(0) : 0;
+                    
+                    const localCand = stats.get(activePair.localCandidateId);
+                    const remoteCand = stats.get(activePair.remoteCandidateId);
+                    
+                    let isRelay = false;
+                    let protocol = 'udp';
+                    let server = 'Local LAN';
 
-                peerStats[peerId].rtt = rtt;
-                peerStats[peerId].isRelay = isRelay;
-                peerStats[peerId].bitrate = Math.max(0, bitrate);
-                peerStats[peerId].lastBytes = currentBytes;
-                peerStats[peerId].lastTime = now;
+                    if (localCand && remoteCand) {
+                        if (localCand.candidateType === 'relay') {
+                            isRelay = true;
+                            protocol = localCand.relayProtocol || localCand.protocol || 'udp';
+                            server = parseIceUrl(localCand.url || localCand.address);
+                        } else if (remoteCand.candidateType === 'relay') {
+                            isRelay = true;
+                            protocol = remoteCand.relayProtocol || remoteCand.protocol || 'udp';
+                            server = parseIceUrl(remoteCand.url || remoteCand.address);
+                        } else if (localCand.candidateType === 'srflx' || remoteCand.candidateType === 'srflx') {
+                            isRelay = false;
+                            protocol = localCand.protocol || 'udp';
+                            server = parseIceUrl(localCand.url || remoteCand.url);
+                        }
+                    }
+
+                    const now = Date.now();
+                    const dt = (now - peerStats[peerId].lastTime) / 1000;
+                    let bitrate = 0;
+                    if (dt > 0 && peerStats[peerId].lastBytes > 0) {
+                        bitrate = ((currentBytes - peerStats[peerId].lastBytes) * 8 / dt / 1000).toFixed(1);
+                    }
+
+                    peerStats[peerId].rtt = rtt;
+                    peerStats[peerId].isRelay = isRelay;
+                    peerStats[peerId].protocol = protocol;
+                    peerStats[peerId].server = server;
+                    peerStats[peerId].bitrate = Math.max(0, bitrate);
+                    peerStats[peerId].lastBytes = currentBytes;
+                    peerStats[peerId].lastTime = now;
+                }
             } catch (e) {}
         }
     }, 2000);
@@ -920,14 +1071,17 @@
             if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>';
             else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
 
-            // Načítání reálných dat z WebRTC
             let pStats = peerStats[id] || (isMe ? null : peerStats['hub']); 
             let displayLink = isMe ? '-' : '<span style="color:#777">Nepřímý</span>';
             let displayRtt = isMe ? '-' : '?';
             let displayBitrate = isMe ? '-' : '0 kbps';
 
             if (!isMe && connections[id] && pStats) {
-                displayLink = pStats.isRelay ? '<span style="color:#feca57">TURN (Relay)</span>' : '<span style="color:#2ed573">P2P (Direct)</span>';
+                let protoStr = (pStats.protocol || 'UDP').toUpperCase();
+                let serverStr = pStats.server || 'Local LAN';
+                if(serverStr.length > 15) serverStr = serverStr.substr(0,12) + '...';
+
+                displayLink = pStats.isRelay ? `<span style="color:#feca57">TURN (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>` : `<span style="color:#2ed573">Direct (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>`;
                 displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?';
                 displayBitrate = `${pStats.bitrate} kbps`;
             } else if (!isMe && !connections[id]) {
@@ -945,6 +1099,7 @@
     async function fullResetAndReconnect() {
         if (isResetting) return;
         isResetting = true;
+        appSessionTime = 0; 
 
         logDebug("Provádím kompletní reset...", "info");
         
@@ -1005,6 +1160,7 @@
     async function initSystem() {
         document.getElementById('join-btn').disabled = true;
         document.getElementById('ui-role').innerText = "Kontroluji API...";
+        appSessionTime = 0; 
         
         myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
         localStorage.setItem('chat_nickname', myName); 
@@ -1181,8 +1337,18 @@
 
     setInterval(() => {
         if (isDnsHost) {
-            // Master do sítě odesílá rovnou typ spojení (isRelay)
-            const edgesInfo = Object.keys(channels).map(id => ({ id, isRelay: peerStats[id]?.isRelay || false }));
+            // Master rozesílá detailní data o hranách, aby se Spokům správně kreslila mapa
+            const edgesInfo = Object.keys(channels).map(id => {
+                const s = peerStats[id] || {};
+                return { 
+                    id: id, 
+                    isRelay: s.isRelay || false,
+                    protocol: s.protocol || 'udp',
+                    server: s.server || 'Local LAN',
+                    rtt: s.rtt || 0,
+                    bitrate: s.bitrate || 0
+                };
+            });
             networkGraph = { root: myId, edges: edgesInfo };
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
             drawTopology();
@@ -1219,15 +1385,27 @@
             }
         });
 
+        drawnEdges = [];
         ctx.lineWidth = 2;
+
         if (pos[rootId]) {
             edges.forEach(edge => {
                 const target = edge.id || edge;
                 if (pos[target]) {
                     ctx.beginPath(); ctx.moveTo(pos[rootId].x, pos[rootId].y); ctx.lineTo(pos[target].x, pos[target].y);
-                    // Dynamické barvení linek (Oranžová = Relay/TURN, Zelená = P2P Direct)
-                    ctx.strokeStyle = edge.isRelay ? '#feca57' : '#2ed573';
+                    
+                    const isRelayLink = edge.isRelay !== undefined ? edge.isRelay : false;
+                    ctx.strokeStyle = isRelayLink ? '#feca57' : '#2ed573';
                     ctx.stroke();
+                    
+                    drawnEdges.push({
+                        id: target,
+                        x1: pos[rootId].x, y1: pos[rootId].y,
+                        x2: pos[target].x, y2: pos[target].y,
+                        isRelay: isRelayLink,
+                        // Pokud nemáme lokální data (jsme Spoke, který kouká na cizího Spoka), použijeme ta od Mastera
+                        stats: peerStats[target] || { rtt: edge.rtt, bitrate: edge.bitrate, protocol: edge.protocol, server: edge.server }
+                    });
                 }
             });
         }
