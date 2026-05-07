@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.10</title>
+    <title>E2E Tree P2P Chat v2.2.11</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -65,14 +65,21 @@
         #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 100%; height: 40vh; border-left: 1px solid #333; flex-shrink: 0; }
-        @media (min-width: 800px) { #debug-panel { width: 550px; height: 100%; } }
+        /* OPRAVA MOBILNÍHO SCROLLOVÁNÍ DEBUG PANELU */
+        #debug-panel { 
+            display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; 
+            font-family: monospace; width: 100%; height: 50vh; border-left: 1px solid #333; 
+            flex-shrink: 0; overflow-y: auto; 
+        }
+        @media (min-width: 800px) { 
+            #debug-panel { width: 550px; height: 100%; overflow-y: hidden; } 
+        }
         
         .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
-        #topo-container { height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
+        #topo-container { min-height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
         #topo-canvas { width: 100%; height: 100%; cursor: crosshair; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
         #topo-legend { position: absolute; bottom: 5px; left: 5px; font-size: 0.65rem; color: #aaa; pointer-events: none; }
@@ -80,12 +87,12 @@
         #topo-tooltip { position: absolute; background: rgba(0,0,0,0.85); color: #00ff00; font-family: monospace; font-size: 0.7rem; padding: 10px; border-radius: 6px; pointer-events: none; display: none; z-index: 100; white-space: nowrap; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.5); line-height: 1.5; }
         .tooltip-server { color: #aaa; font-size: 0.65rem; display: block; border-top: 1px solid #333; margin-top: 4px; padding-top: 4px; }
 
-        #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #net-health-panel { min-height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;}
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
 
-        #debug-log { flex: 1; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; min-height: 100px; }
+        #debug-log { flex: 1; min-height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -102,7 +109,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.10 (TCP TURN & Route Analyzers)</span>
+            <span class="version-badge">v2.2.11 (Mobile UI & Spoke Sync)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -153,7 +160,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.10: Podpora TCP TURN serverů a detailní analýza tras.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.11: Oprava mobilního scrollování a sdílení stavů pro Spoke uzly.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -164,17 +171,14 @@
     const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
-    // Kompletní paleta STUN/TURN (UDP i TCP)
     const WEBRTC_CONFIG = {
         iceServers: [
             { urls: 'stun:stun.cloudflare.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
-            // OpenRelay UDP a TCP fallbacky
             { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-            // Sekundární volné servery jako pojistka
             { urls: 'turn:standard.relay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:standard.relay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
@@ -317,7 +321,6 @@
         }
     });
 
-    // Helper pro čistou extrakci STUN/TURN serveru (např. z "turn:openrelay.metered.ca:443?transport=tcp")
     function parseIceUrl(url) {
         if (!url) return 'Local LAN';
         try {
@@ -711,6 +714,21 @@
         } 
         else if (msg.type === 'topo-sync') {
             networkGraph = msg.graph;
+            
+            // SPOKE SYNC: Zabráníme Spoke uzlům odpojovat aktivní uzly kvůli vlastnímu (lokálnímu) timeoutu
+            if (!isDnsHost) {
+                const now = Date.now();
+                if (msg.graph.root && knownNodes[msg.graph.root]) {
+                    knownNodes[msg.graph.root].lastSeen = now;
+                }
+                (msg.graph.edges || []).forEach(edge => {
+                    const targetId = edge.id || edge;
+                    if (knownNodes[targetId]) {
+                        knownNodes[targetId].lastSeen = now;
+                    }
+                });
+            }
+
             drawTopology();
         }
         else if (msg.type === 'node-left') {
@@ -968,7 +986,6 @@
         };
     }
 
-    // --- REALTIME ANALÝZA WEBRTC STATISTIK A SMĚROVÁNÍ ---
     setInterval(async () => {
         for (const [peerId, pc] of Object.entries(connections)) {
             if (!pc || pc.iceConnectionState !== 'connected') continue;
@@ -977,14 +994,12 @@
                 if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, protocol: 'udp', server: 'Local LAN', lastBytes: 0, lastTime: Date.now() };
                 
                 let activePair = null;
-                // Metoda 1: Přes transport (Nejspolehlivější v moderních prohlížečích)
                 stats.forEach(report => {
                     if (report.type === 'transport' && report.selectedCandidatePairId) {
                         activePair = stats.get(report.selectedCandidatePairId);
                     }
                 });
                 
-                // Metoda 2: Fallback skrze candidate-pair
                 if (!activePair) {
                     stats.forEach(report => {
                         if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.nominated) {
@@ -1045,7 +1060,6 @@
         }
     }, 2000);
 
-    // Aktualizace UI Zdraví sítě
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
@@ -1071,21 +1085,30 @@
             if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>';
             else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
 
-            let pStats = peerStats[id] || (isMe ? null : peerStats['hub']); 
             let displayLink = isMe ? '-' : '<span style="color:#777">Nepřímý</span>';
             let displayRtt = isMe ? '-' : '?';
             let displayBitrate = isMe ? '-' : '0 kbps';
 
-            if (!isMe && connections[id] && pStats) {
-                let protoStr = (pStats.protocol || 'UDP').toUpperCase();
-                let serverStr = pStats.server || 'Local LAN';
-                if(serverStr.length > 15) serverStr = serverStr.substr(0,12) + '...';
+            if (!isMe) {
+                if (connections[id] && peerStats[id]) {
+                    let pStats = peerStats[id];
+                    let protoStr = (pStats.protocol || 'UDP').toUpperCase();
+                    let serverStr = pStats.server || 'Local LAN';
+                    if(serverStr.length > 15) serverStr = serverStr.substr(0,12) + '...';
 
-                displayLink = pStats.isRelay ? `<span style="color:#feca57">TURN (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>` : `<span style="color:#2ed573">Direct (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>`;
-                displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?';
-                displayBitrate = `${pStats.bitrate} kbps`;
-            } else if (!isMe && !connections[id]) {
-                displayRtt = node.ping !== undefined ? `~${node.ping} ms` : '?';
+                    displayLink = pStats.isRelay ? `<span style="color:#feca57">TURN (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>` : `<span style="color:#2ed573">Direct (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>`;
+                    displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?';
+                    displayBitrate = `${pStats.bitrate} kbps`;
+                } else {
+                    // Spoke sync logiky - vykreslení stavu cizích uzlů podle dat od Mastera
+                    const edgeData = (networkGraph.edges || []).find(e => (e.id || e) === id);
+                    if (edgeData) {
+                        let protoStr = (edgeData.protocol || 'UDP').toUpperCase();
+                        displayLink = edgeData.isRelay ? `<span style="color:#feca57">TURN (${protoStr}) via Master</span>` : `<span style="color:#2ed573">Direct (${protoStr}) via Master</span>`;
+                        displayRtt = edgeData.rtt > 0 ? `~${edgeData.rtt} ms` : '?';
+                        displayBitrate = `${edgeData.bitrate} kbps`;
+                    }
+                }
             }
 
             if(knownNodes[id]) {
@@ -1337,7 +1360,6 @@
 
     setInterval(() => {
         if (isDnsHost) {
-            // Master rozesílá detailní data o hranách, aby se Spokům správně kreslila mapa
             const edgesInfo = Object.keys(channels).map(id => {
                 const s = peerStats[id] || {};
                 return { 
@@ -1403,7 +1425,6 @@
                         x1: pos[rootId].x, y1: pos[rootId].y,
                         x2: pos[target].x, y2: pos[target].y,
                         isRelay: isRelayLink,
-                        // Pokud nemáme lokální data (jsme Spoke, který kouká na cizího Spoka), použijeme ta od Mastera
                         stats: peerStats[target] || { rtt: edge.rtt, bitrate: edge.bitrate, protocol: edge.protocol, server: edge.server }
                     });
                 }
