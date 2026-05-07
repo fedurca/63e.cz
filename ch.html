@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.9 (Precision Telemetry & Global Log)</title>
+    <title>E2E Tree P2P Chat v4.0 (Anti Split-Brain & Watchdog)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -131,7 +131,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.9 (Precision Telemetry)</span>
+            <span class="version-badge">v4.0 (Anti Split-Brain & Watchdog)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -182,7 +182,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.9: Přesnější CPU benchmark (zahřátí JIT), detekce Mac obrazovek a broadcast logů.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.0: Vylepšená ochrana proti zamrznutí spojení a Split-Brain defektům.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -274,17 +274,17 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE, BENCHMARK A GEO-PING (V3.9) ---
+    // --- HW TELEMETRIE, BENCHMARK A GEO-PING ---
     let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, dpi: '?', diag: '?', bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
     
     async function estimateDevicePower() {
         return new Promise((resolve) => {
             setTimeout(() => {
-                // WARM-UP JIT KOMPILÁTORU (Probudí pomalejší prohlížeče typu Firefox před ostrým testem)
+                // WARM-UP JIT KOMPILÁTORU
                 let w = 0;
                 for (let i = 1; i < 500000; i++) { w += Math.sqrt(i); }
 
-                // OSTRÉ MĚŘENÍ (Zvětšená zátěž, eliminuje nepřesnosti timeru)
+                // OSTRÉ MĚŘENÍ
                 const start = performance.now();
                 let result = 0;
                 for (let i = 1; i < 10000000; i++) { result += Math.sqrt(i) * Math.sin(i); }
@@ -292,7 +292,6 @@
                 
                 const durationMs = Math.round(end - start) || 1;
 
-                // Abstraktní skóre přepočítané pro 10M smyčku (cca 20ms v Chrome na M1 = 10000)
                 let score = Math.round(200000 / durationMs);
                 let year = "Neznámý";
 
@@ -330,7 +329,6 @@
         const ping = async (url) => {
             const start = performance.now();
             try {
-                // Fetch no-cors je síťově čistší než stahování Image
                 await fetch(url + '?t=' + Math.random(), { mode: 'no-cors', cache: 'no-store' });
                 return performance.now() - start;
             } catch(e) {
@@ -375,11 +373,10 @@
         const dpr = window.devicePixelRatio || 1;
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
         
-        // Zpřesnění výpočtu fyzické obrazovky pro macOS Retinu
         if (myTelemetry.os === 'macOS' && dpr >= 2) {
             myTelemetry.dpi = Math.round(dpr * 115) + " (Retina)"; 
             const physDiag = Math.sqrt(Math.pow(screen.width * dpr, 2) + Math.pow(screen.height * dpr, 2));
-            myTelemetry.diag = `~${(physDiag / 230).toFixed(1)}"`; // Průměrné fyzické PPI pro MacBooky
+            myTelemetry.diag = `~${(physDiag / 230).toFixed(1)}"`; 
         } else if (isMobile) {
             myTelemetry.dpi = Math.round(dpr * 150);
             myTelemetry.diag = '~6" (Mobil)';
@@ -607,6 +604,7 @@
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
 
+        // AUTO-SEND LOGIKA
         if (pendingAutoMsg) {
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info');
             const msgToSend = pendingAutoMsg;
@@ -1087,7 +1085,6 @@
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
                 
-                // Globální Log při připojení uzlu
                 if (isNewNode) {
                     const t = msg.tele || {};
                     const teleStr = `Info: ${t.browser || '?'} na ${t.os || '?'}, ${t.perf || 'Výkon nezměřen'}`;
@@ -1572,7 +1569,22 @@
         }
 
         for (const [peerId, pc] of Object.entries(allConnections)) {
-            if (!pc || (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed')) continue;
+            if (!pc) continue;
+
+            // V4.0: Watchdog pro zaseknuty ICE (checking > 15s)
+            if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+                if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
+                if (Date.now() - pc.checkingStartTime > 15000) {
+                    logDebug(`[WebRTC] Spojeni s ${peerId} zamrzlo. Ukoncuji.`, 'error');
+                    cleanupConnection(peerId);
+                    continue;
+                }
+            } else {
+                pc.checkingStartTime = null; 
+            }
+
+            if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') continue;
+
             try {
                 const stats = await pc.getStats();
                 if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, protocol: 'udp', server: 'Local LAN', lastBytes: 0, lastTime: Date.now() };
@@ -1804,7 +1816,7 @@
         aliveIds.sort();
 
         if (aliveIds[0] === myId) {
-            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
+            logDebug(`Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc");
             isCheckingIsolation = false;
             startDnsHostLoop();
         } else {
@@ -1851,7 +1863,8 @@
             
             const aliveCheck = await readSignal('host-alive');
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && aliveCheck.id < myId && (Date.now() - aliveCheck.timestamp < 60000)) {
-                logDebug(`Nalezen silnější Hub (${aliveCheck.id}). Ústup do Spoke režimu.`, "error");
+                // V4.0: Reseni Split-Brain defektu
+                logDebug(`[SPLIT-BRAIN] Detekovan silnejsi Master (${aliveCheck.id}). Menim roli na Spoke a mazu blacklist.`, "error");
                 blacklistedHubId = null;
                 fullResetAndReconnect();
                 return;
@@ -1896,7 +1909,7 @@
                     
                     try {
                         const safeType = String(offerData.type).toLowerCase().trim();
-                        if (safeType !== 'offer') throw new Error(`SDP Typ musí být 'offer'`);
+                        if (safeType !== 'offer') throw new Error(`SDP Typ musi byt 'offer'`);
 
                         const rtcOffer = new RTCSessionDescription({ type: safeType, sdp: String(offerData.sdp) });
                         await pc.setRemoteDescription(rtcOffer);
@@ -1941,11 +1954,12 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            if (pokusy > 15) { 
+            // V4.0: Zkraceny timeout z 30s na 20s
+            if (pokusy > 10) { 
                 clearInterval(joinInterval);
-                logDebug(`Spojení vypršelo. Ignoruji zlobivý Hub pro další 2 minuty.`, "error");
+                logDebug(`Spojeni vyprselo. Ignoruji hub pro dalsich 45 vterin.`, "error");
                 blacklistedHubId = knownHubId; 
-                blacklistedHubTimeout = Date.now() + 120000;
+                blacklistedHubTimeout = Date.now() + 45000;
                 cleanupConnection('hub'); 
                 checkIsolation(); 
                 return;
