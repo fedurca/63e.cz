@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.13</title>
+    <title>E2E Tree P2P Chat v2.2.15</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -113,7 +113,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.13 (Spoke Sync Fix)</span>
+            <span class="version-badge">v2.2.15 (Mobile Timing & State Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -164,7 +164,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.13: Opravena synchronizace Spoke uzlů (vidí vše co Master).</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.15: Ochrana proti pádu spojení na mobilních sítích s pomalým ICE.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -218,7 +218,7 @@
     let dnsInterval = null;
     let isResetting = false;
     let isCheckingIsolation = false;
-    let currentSessionId = null;
+    let currentSessionId = null; // Globální Session ID uzlu
     let fileBuffers = {};
     
     let blacklistedHubId = null;
@@ -282,7 +282,6 @@
                 let protoStr = (s.protocol || 'UDP').toUpperCase();
                 let serverStr = s.server || 'Local LAN';
                 
-                // Dynamická popiska směru na základě role
                 const direction = (!isDnsHost && hoveredEdge.id === myId) ? `Ty ↔ Master` : `Master ↔ ${name}`;
                 
                 tooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>${direction}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`;
@@ -549,27 +548,39 @@
         let contentHtml = escapeHTML(text);
 
         if (fileObj) {
-            const isImage = fileObj.dataUrl.startsWith('data:image/');
-            
-            if (isImage) {
+            if (!fileObj.dataUrl) {
                 contentHtml += `
-                    <div style="margin-top: 5px;">
-                        <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek">
-                            <img src="${fileObj.dataUrl}" alt="${escapeHTML(fileObj.name)}" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight">
-                        </a>
-                        <div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div>
-                    </div>
-                `;
-            } else {
-                contentHtml += `
-                    <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
+                    <div class="file-attachment" style="opacity: 0.6;">
                         <div class="file-icon">📁</div>
                         <div>
                             <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
-                            <div class="file-size">${formatBytes(fileObj.size)}</div>
+                            <div class="file-size">${formatBytes(fileObj.size)} (Nedostupné z historie)</div>
                         </div>
-                    </a>
+                    </div>
                 `;
+            } else {
+                const isImage = fileObj.dataUrl.startsWith('data:image/');
+                
+                if (isImage) {
+                    contentHtml += `
+                        <div style="margin-top: 5px;">
+                            <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" title="Stáhnout obrázek">
+                                <img src="${fileObj.dataUrl}" alt="${escapeHTML(fileObj.name)}" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight">
+                            </a>
+                            <div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div>
+                        </div>
+                    `;
+                } else {
+                    contentHtml += `
+                        <a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment">
+                            <div class="file-icon">📁</div>
+                            <div>
+                                <div class="file-name" title="${escapeHTML(fileObj.name)}">${escapeHTML(fileObj.name)}</div>
+                                <div class="file-size">${formatBytes(fileObj.size)}</div>
+                            </div>
+                        </a>
+                    `;
+                }
             }
         }
 
@@ -638,17 +649,25 @@
                 let chunkIndex = 1;
                 const totalChunks = Math.ceil(chatHistory.length / batchSize);
                 
-                logDebug(`[SYNC START] Odesílám CELOU historii (${chatHistory.length} zpráv, ${totalChunks} dávek) pro ${knownNodes[msg.sender].name}.`, 'sync');
+                logDebug(`[SYNC START] Odesílám historii (${chatHistory.length} zpráv) pro ${knownNodes[msg.sender].name}...`, 'sync');
                 
                 const sendBatch = async () => {
                     if (i >= chatHistory.length) {
-                        logDebug(`[SYNC DONE] Všechny historické dávky úspěšně odeslány.`, 'sync');
+                        logDebug(`[SYNC DONE] Historie úspěšně odeslána.`, 'sync');
                         return;
                     }
                     const batch = chatHistory.slice(i, i + batchSize);
+                    
+                    const safeBatch = batch.map(m => {
+                        if (m.file && m.file.dataUrl) {
+                            return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } };
+                        }
+                        return m;
+                    });
+
                     try {
-                        const encrypted = await encryptE2E(JSON.stringify(batch), msg.sender);
-                        logDebug(`[SYNC OUT] Odesílám dávku #${chunkIndex}/${totalChunks} pro ${knownNodes[msg.sender].name}...`, 'info');
+                        const encrypted = await encryptE2E(JSON.stringify(safeBatch), msg.sender);
+                        logDebug(`[SYNC OUT] Dávka #${chunkIndex}/${totalChunks}...`, 'info');
                         routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted });
                         chunkIndex++;
                     } catch(e) { logDebug(`[SYNC ERR] Šifrování selhalo: ${e.message}`, 'error'); }
@@ -744,7 +763,6 @@
                     const targetId = edge.id || edge;
                     if (knownNodes[targetId]) {
                         knownNodes[targetId].lastSeen = now;
-                        // Spoke přebírá aplikační ping z pohledu Mastera
                         if (edge.ping && !connections[targetId]) {
                             knownNodes[targetId].ping = edge.ping;
                         }
@@ -896,12 +914,12 @@
         pc.onicecandidate = (e) => {
             if (e.candidate) {
                 clearTimeout(candidateTimer);
-                candidateTimer = setTimeout(finish, 500); 
+                candidateTimer = setTimeout(finish, 800); // 800ms pro mobilní sítě
             } else {
                 finish(); 
             }
         };
-        setTimeout(finish, 3000); 
+        setTimeout(finish, 4500); // Prodlouženo na 4.5s kvůli pomalým 4G sítím
     }
 
     async function createP2PNode(targetId, isInitiator, useDns = false) {
@@ -1113,7 +1131,6 @@
             let displayBitrate = isMe ? '-' : '0 kbps';
 
             if (!isMe) {
-                // OPRAVA: Pro Spoke je Master schovaný pod connections['hub'] a peerStats['hub']
                 let activeConnection = connections[id];
                 let pStats = peerStats[id];
 
@@ -1135,7 +1152,6 @@
                     if (edgeData) {
                         let protoStr = (edgeData.protocol || 'UDP').toUpperCase();
                         displayLink = edgeData.isRelay ? `<span style="color:#feca57">TURN (${protoStr}) via Master</span>` : `<span style="color:#2ed573">Direct (${protoStr}) via Master</span>`;
-                        // Spoke načítá i ping, který nasbíral Master
                         displayRtt = edgeData.rtt > 0 ? `~${edgeData.rtt} ms` : (node.ping ? `~${node.ping} ms` : '?');
                         displayBitrate = `${edgeData.bitrate} kbps`;
                     }
@@ -1154,6 +1170,7 @@
         if (isResetting) return;
         isResetting = true;
         appSessionTime = 0; 
+        currentSessionId = null; // KLÍČOVÁ OPRAVA PRO RACE CONDITION
 
         logDebug("Provádím kompletní reset...", "info");
         
@@ -1373,6 +1390,12 @@
                 }
 
                 if (answerData && answerData.sdp && answerData.type) {
+                    // KLÍČOVÁ OPRAVA RACE CONDITION PRO MOBILY:
+                    if (connections['hub'].signalingState !== 'have-local-offer') {
+                        logDebug(`[API WARN] Čekám na dokončení lokálního Offeru (stav: ${connections['hub'].signalingState})...`, 'info');
+                        return; 
+                    }
+
                     clearInterval(joinInterval);
                     logDebug(`[API IN] Answer nalezen a ověřen, aplikuji...`, 'success');
                     try {
@@ -1453,7 +1476,6 @@
                     ctx.strokeStyle = isRelayLink ? '#feca57' : '#2ed573';
                     ctx.stroke();
                     
-                    // OPRAVA: Mapování lokálních stats pro Spoka (hub místo target ID)
                     let localStats = peerStats[target];
                     if (!isDnsHost && target === myId) {
                         localStats = peerStats['hub'];
