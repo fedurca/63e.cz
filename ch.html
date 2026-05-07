@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v2.2.12</title>
+    <title>E2E Tree P2P Chat v2.2.13</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -65,7 +65,6 @@
         #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        /* MOBILNÍ OPRAVY PRO DEBUG PANEL */
         #debug-panel { 
             display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; 
             font-family: monospace; width: 100%; flex-shrink: 0; 
@@ -93,12 +92,11 @@
         
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12;} .log-file { color: #00d2d3; font-weight: bold;}
 
-        /* DESKTOP ZOBRAZENÍ */
         @media (min-width: 800px) { 
             .main-content { flex-direction: row; }
             #chat-container { border-right: 1px solid #ddd; }
-            #debug-panel { width: 500px; height: 100%; max-height: none; overflow-y: hidden; border-top: none; border-left: 1px solid #333; } 
-            #debug-log { flex: 1; height: auto; } /* Na desktopu vyplní zbytek místa */
+            #debug-panel { width: 550px; height: 100%; max-height: none; overflow-y: hidden; border-top: none; border-left: 1px solid #333; } 
+            #debug-log { flex: 1; height: auto; } 
         }
 
         #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -115,7 +113,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v2.2.12 (Mobile Fix & Images)</span>
+            <span class="version-badge">v2.2.13 (Spoke Sync Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -166,7 +164,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.12: Plynulý mobilní posun, náhledy obrázků v chatu.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V2.2.13: Opravena synchronizace Spoke uzlů (vidí vše co Master).</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -284,7 +282,10 @@
                 let protoStr = (s.protocol || 'UDP').toUpperCase();
                 let serverStr = s.server || 'Local LAN';
                 
-                tooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>Master ↔ ${name}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`;
+                // Dynamická popiska směru na základě role
+                const direction = (!isDnsHost && hoveredEdge.id === myId) ? `Ty ↔ Master` : `Master ↔ ${name}`;
+                
+                tooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>${direction}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`;
             } else {
                 tooltip.style.display = 'none';
             }
@@ -548,7 +549,6 @@
         let contentHtml = escapeHTML(text);
 
         if (fileObj) {
-            // Detekce, jestli je soubor obrázek
             const isImage = fileObj.dataUrl.startsWith('data:image/');
             
             if (isImage) {
@@ -744,6 +744,10 @@
                     const targetId = edge.id || edge;
                     if (knownNodes[targetId]) {
                         knownNodes[targetId].lastSeen = now;
+                        // Spoke přebírá aplikační ping z pohledu Mastera
+                        if (edge.ping && !connections[targetId]) {
+                            knownNodes[targetId].ping = edge.ping;
+                        }
                     }
                 });
             }
@@ -1109,8 +1113,16 @@
             let displayBitrate = isMe ? '-' : '0 kbps';
 
             if (!isMe) {
-                if (connections[id] && peerStats[id]) {
-                    let pStats = peerStats[id];
+                // OPRAVA: Pro Spoke je Master schovaný pod connections['hub'] a peerStats['hub']
+                let activeConnection = connections[id];
+                let pStats = peerStats[id];
+
+                if (isMaster && connections['hub']) {
+                    activeConnection = connections['hub'];
+                    pStats = peerStats['hub'];
+                }
+
+                if (activeConnection && pStats) {
                     let protoStr = (pStats.protocol || 'UDP').toUpperCase();
                     let serverStr = pStats.server || 'Local LAN';
                     if(serverStr.length > 15) serverStr = serverStr.substr(0,12) + '...';
@@ -1123,7 +1135,8 @@
                     if (edgeData) {
                         let protoStr = (edgeData.protocol || 'UDP').toUpperCase();
                         displayLink = edgeData.isRelay ? `<span style="color:#feca57">TURN (${protoStr}) via Master</span>` : `<span style="color:#2ed573">Direct (${protoStr}) via Master</span>`;
-                        displayRtt = edgeData.rtt > 0 ? `~${edgeData.rtt} ms` : '?';
+                        // Spoke načítá i ping, který nasbíral Master
+                        displayRtt = edgeData.rtt > 0 ? `~${edgeData.rtt} ms` : (node.ping ? `~${node.ping} ms` : '?');
                         displayBitrate = `${edgeData.bitrate} kbps`;
                     }
                 }
@@ -1380,13 +1393,15 @@
         if (isDnsHost) {
             const edgesInfo = Object.keys(channels).map(id => {
                 const s = peerStats[id] || {};
+                const n = knownNodes[id] || {};
                 return { 
                     id: id, 
                     isRelay: s.isRelay || false,
                     protocol: s.protocol || 'udp',
                     server: s.server || 'Local LAN',
                     rtt: s.rtt || 0,
-                    bitrate: s.bitrate || 0
+                    bitrate: s.bitrate || 0,
+                    ping: n.ping || 0
                 };
             });
             networkGraph = { root: myId, edges: edgesInfo };
@@ -1438,12 +1453,18 @@
                     ctx.strokeStyle = isRelayLink ? '#feca57' : '#2ed573';
                     ctx.stroke();
                     
+                    // OPRAVA: Mapování lokálních stats pro Spoka (hub místo target ID)
+                    let localStats = peerStats[target];
+                    if (!isDnsHost && target === myId) {
+                        localStats = peerStats['hub'];
+                    }
+
                     drawnEdges.push({
                         id: target,
                         x1: pos[rootId].x, y1: pos[rootId].y,
                         x2: pos[target].x, y2: pos[target].y,
                         isRelay: isRelayLink,
-                        stats: peerStats[target] || { rtt: edge.rtt, bitrate: edge.bitrate, protocol: edge.protocol, server: edge.server }
+                        stats: localStats || { rtt: edge.rtt, bitrate: edge.bitrate, protocol: edge.protocol, server: edge.server }
                     });
                 }
             });
