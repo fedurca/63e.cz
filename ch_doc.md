@@ -1,12 +1,16 @@
 Dokumentace k aplikaci E2E Tree P2P Chat
+
 Verze: 3.8
+
 Typ aplikace: Serverless / P2P Web Application (HTML/JS/CSS)
 Klíčové technologie: WebRTC, WebCrypto API, Canvas API, JS Performance API
 
 Uvod
+
 Aplikace E2E Tree P2P Chat je plně decentralizovaný textový a video komunikátor běžící přímo v prohlížeči. Nevyžaduje žádný backend pro uchovávání dat - externí API (api.63e.cz) je využito pouze jako Signaling server pro počáteční výměnu spojovacích údajů (SDP, ICE). Komunikace a přenos dat následně probíhá čistě napřímo (P2P) mezi uživateli.
 
 Klicove vlastnosti
+
 1. Sitova architektura (Hub & Spoke)
 Síť se automaticky formuje do stromové topologie (tzv. Hvězda / Hub & Spoke).
 
