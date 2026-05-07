@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v3.8 (DPI & Odhad obrazovky)</title>
+    <title>E2E Tree P2P Chat v3.9 (Precision Telemetry & Global Log)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -42,7 +42,7 @@
         .msg { max-width: 85%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
         .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
         .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
-        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; }
+        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; text-align: center; }
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; }
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
@@ -93,6 +93,7 @@
 
         #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12; border-radius: 4px; margin: 2px 0;} .log-file { color: #00d2d3; font-weight: bold;}
+        .log-announce { color: #00ff00; background: rgba(0,255,0,0.1); padding: 2px 4px; border-left: 2px solid #00ff00; margin-top: 2px;}
 
         @media (min-width: 800px) { 
             .main-content { flex-direction: row; }
@@ -130,7 +131,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v3.8 (DPI & Screen Size)</span>
+            <span class="version-badge">v3.9 (Precision Telemetry)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -181,7 +182,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.8: Přidáno měření DPI a odhad fyzické velikosti (úhlopříčky) displeje.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V3.9: Přesnější CPU benchmark (zahřátí JIT), detekce Mac obrazovek a broadcast logů.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -273,30 +274,36 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
 
-    // --- HW TELEMETRIE, BENCHMARK, GEO-PING A DPI (V3.8) ---
+    // --- HW TELEMETRIE, BENCHMARK A GEO-PING (V3.9) ---
     let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, dpi: '?', diag: '?', bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
     
     async function estimateDevicePower() {
         return new Promise((resolve) => {
             setTimeout(() => {
+                // WARM-UP JIT KOMPILÁTORU (Probudí pomalejší prohlížeče typu Firefox před ostrým testem)
+                let w = 0;
+                for (let i = 1; i < 500000; i++) { w += Math.sqrt(i); }
+
+                // OSTRÉ MĚŘENÍ (Zvětšená zátěž, eliminuje nepřesnosti timeru)
                 const start = performance.now();
                 let result = 0;
-                for (let i = 1; i < 5000000; i++) { result += Math.sqrt(i) * Math.sin(i); }
+                for (let i = 1; i < 10000000; i++) { result += Math.sqrt(i) * Math.sin(i); }
                 const end = performance.now();
-                const durationMs = Math.round(end - start);
+                
+                const durationMs = Math.round(end - start) || 1;
 
-                let score = Math.round(100000 / (durationMs || 1));
+                // Abstraktní skóre přepočítané pro 10M smyčku (cca 20ms v Chrome na M1 = 10000)
+                let score = Math.round(200000 / durationMs);
                 let year = "Neznámý";
 
-                if (durationMs <= 15) year = "2023-2024";
-                else if (durationMs <= 35) year = "2021-2022";
-                else if (durationMs <= 70) year = "2019-2020";
-                else if (durationMs <= 130) year = "2016-2018";
-                else if (durationMs <= 250) year = "2013-2015";
-                else year = "Starší / Úsporný režim";
+                if (score >= 8000) year = "2022-2024 (High-End)";
+                else if (score >= 4000) year = "2020-2021 (Moderní CPU)";
+                else if (score >= 1500) year = "2017-2019 (Mainstream)";
+                else if (score >= 500) year = "Starší / Střední třída";
+                else year = "Omezený výkon / Úspora baterie";
 
-                resolve(`Skóre: ${score} (Odhad: ${year})`);
-            }, 50);
+                resolve(`Skóre: ${score} (${year})`);
+            }, 100);
         });
     }
 
@@ -313,25 +320,23 @@
             { id: 'ES', url: 'https://www.dominios.es/favicon.ico' },
             { id: 'CH', url: 'https://www.nic.ch/favicon.ico' },
             { id: 'NL', url: 'https://www.sidn.nl/favicon.ico' },
-            { id: 'BE', url: 'https://www.dnsbelgium.be/favicon.ico' },
-            { id: 'SE', url: 'https://internetstiftelsen.se/favicon.ico' },
-            { id: 'NO', url: 'https://www.norid.no/favicon.ico' },
-            { id: 'FI', url: 'https://www.traficom.fi/favicon.ico' },
             { id: 'US', url: 'https://www.about.us/favicon.ico' },
             { id: 'CA', url: 'https://www.cira.ca/favicon.ico' },
             { id: 'AU', url: 'https://www.auda.org.au/favicon.ico' },
             { id: 'JP', url: 'https://jprs.jp/favicon.ico' },
-            { id: 'BR', url: 'https://registro.br/favicon.ico' },
             { id: 'IN', url: 'https://www.registry.in/favicon.ico' }
         ];
 
-        const ping = (url) => new Promise((resolve) => {
-            const img = new Image();
+        const ping = async (url) => {
             const start = performance.now();
-            img.onload = img.onerror = () => resolve(performance.now() - start);
-            img.src = url + '?t=' + Math.random(); 
-            setTimeout(() => resolve(9999), 3000); 
-        });
+            try {
+                // Fetch no-cors je síťově čistší než stahování Image
+                await fetch(url + '?t=' + Math.random(), { mode: 'no-cors', cache: 'no-store' });
+                return performance.now() - start;
+            } catch(e) {
+                return 9999;
+            }
+        };
 
         let promises = regions.map(async (r) => {
             let time = await ping(r.url);
@@ -344,7 +349,7 @@
         if (results.length > 0) {
             myTelemetry.loc = results.slice(0, 3).map(x => `${x.id} (${Math.round(x.time)}ms)`).join(', ');
         } else {
-            myTelemetry.loc = "Neznámá (Blokováno)";
+            myTelemetry.loc = "Neznámá (Blokováno/Privacy)";
         }
     }
 
@@ -367,14 +372,19 @@
         
         myTelemetry.lang = navigator.languages ? navigator.languages.join(', ') : (navigator.language || '?');
 
-        // Odhad DPI a Úhlopříčky displeje
         const dpr = window.devicePixelRatio || 1;
-        myTelemetry.dpi = Math.round(dpr * 96);
-        
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-        if (isMobile) {
+        
+        // Zpřesnění výpočtu fyzické obrazovky pro macOS Retinu
+        if (myTelemetry.os === 'macOS' && dpr >= 2) {
+            myTelemetry.dpi = Math.round(dpr * 115) + " (Retina)"; 
+            const physDiag = Math.sqrt(Math.pow(screen.width * dpr, 2) + Math.pow(screen.height * dpr, 2));
+            myTelemetry.diag = `~${(physDiag / 230).toFixed(1)}"`; // Průměrné fyzické PPI pro MacBooky
+        } else if (isMobile) {
+            myTelemetry.dpi = Math.round(dpr * 150);
             myTelemetry.diag = '~6" (Mobil)';
         } else {
+            myTelemetry.dpi = Math.round(dpr * 96);
             const cssDiagonal = Math.sqrt(screen.width * screen.width + screen.height * screen.height);
             myTelemetry.diag = `~${(cssDiagonal / 96).toFixed(1)}"`;
         }
@@ -384,9 +394,9 @@
                 const b = await navigator.getBattery();
                 myTelemetry.bat = Math.round(b.level * 100) + "%" + (b.charging ? " ⚡" : "");
             } else {
-                myTelemetry.bat = "N/A";
+                myTelemetry.bat = "N/A (Blokováno)";
             }
-        } catch(e) {}
+        } catch(e) { myTelemetry.bat = "N/A"; }
 
         if (myTelemetry.perf === 'Měřím...') {
             myTelemetry.perf = await estimateDevicePower();
@@ -597,7 +607,6 @@
         document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
         document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
 
-        // AUTO-SEND LOGIKA
         if (pendingAutoMsg) {
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info');
             const msgToSend = pendingAutoMsg;
@@ -1077,7 +1086,14 @@
 
                 updateDebugStats('nodes', Object.keys(knownNodes).length);
                 document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
-                if (isNewNode) renderMessage('System', `${msg.name} se připojil(a) do sítě.`, 'system');
+                
+                // Globální Log při připojení uzlu
+                if (isNewNode) {
+                    const t = msg.tele || {};
+                    const teleStr = `Info: ${t.browser || '?'} na ${t.os || '?'}, ${t.perf || 'Výkon nezměřen'}`;
+                    renderMessage('System', `${msg.name} se připojil(a) do sítě. <br><span style="font-size: 0.7rem; color: #888;">${teleStr}</span>`, 'system');
+                    logDebug(`[TELEMETRIE] ${msg.name} připojen: ${t.os}, ${t.browser}, ${t.res}, ${t.perf}`, 'announce');
+                }
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
                 routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
@@ -1650,7 +1666,6 @@
         }
     }, 5000);
 
-    // V3.8: Vykreslení telemetrie do tabulky s přidaným DPI a Úhlopříčkou
     setInterval(() => {
         const list = document.getElementById('net-health-list');
         if(!list) return;
