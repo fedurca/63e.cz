@@ -1,4 +1,4 @@
 order deny,allow 
 deny from all 
 allow from 46.135.3.64/32
-allow from 127.0.0.1/8
+allow from 127.0.0.1/8 
