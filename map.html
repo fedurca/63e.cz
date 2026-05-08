@@ -3,194 +3,236 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Geo-Latency Radar (110 Uzlů + Trajektorie)</title>
-    
+    <title>Advanced Geo-Latency Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
         body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, sans-serif; background: #0a0a0a; color: #00ff00; overflow: hidden; }
         #map { height: 100vh; width: 100vw; z-index: 1; }
         
-        #overlay {
-            position: absolute; top: 20px; left: 20px; z-index: 1000;
-            background: rgba(10, 10, 15, 0.9); border: 1px solid #333;
-            padding: 15px; border-radius: 8px; width: 330px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.8); backdrop-filter: blur(5px);
-        }
-        
-        #debug-panel {
-            position: absolute; bottom: 20px; right: 20px; z-index: 1000;
-            background: rgba(10, 10, 15, 0.9); border: 1px solid #333;
-            padding: 10px; border-radius: 8px; width: 350px; height: 250px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.8); display: flex; flex-direction: column;
+        .panel {
+            position: absolute; z-index: 1000;
+            background: rgba(15, 15, 20, 0.9); border: 1px solid #333;
+            padding: 15px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
         }
 
-        #debug-log {
-            flex: 1; overflow-y: auto; font-family: monospace; font-size: 11px;
-            color: #aaa; padding-right: 5px; margin-top: 5px; border-top: 1px solid #333; padding-top: 5px;
-        }
+        /* Levý panel - Filtry a Ovládání */
+        #control-panel { top: 20px; left: 20px; width: 280px; max-height: 90vh; overflow-y: auto; }
         
-        h2 { margin: 0 0 10px 0; font-size: 14px; color: #fff; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 5px;}
-        .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; font-family: monospace; }
+        /* Pravý panel - Debug a Výsledky */
+        #results-panel { top: 20px; right: 20px; width: 320px; display: flex; flex-direction: column; }
         
-        #estimated-loc {
-            margin-top: 15px; padding: 10px; background: rgba(0, 120, 255, 0.1);
-            border-left: 3px solid #0078FF; font-size: 13px; line-height: 1.4;
-        }
+        h2 { margin: 0 0 10px 0; font-size: 15px; color: #fff; text-transform: uppercase; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        h3 { margin: 10px 0 5px 0; font-size: 12px; color: #8be9fd; text-transform: uppercase; }
         
-        .ping-green { color: #2ed573; }
-        .ping-yellow { color: #feca57; }
-        .ping-red { color: #ff4757; }
-        .log-err { color: #ff4757; }
-        .log-ok { color: #2ed573; }
-        .log-info { color: #00d2d3; }
-
-        #debug-log::-webkit-scrollbar { width: 5px; }
-        #debug-log::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+        label { display: block; font-size: 13px; color: #ccc; margin-bottom: 4px; cursor: pointer; }
+        input[type="checkbox"] { margin-right: 8px; accent-color: #0078FF; }
+        select { width: 100%; padding: 6px; background: #222; color: #fff; border: 1px solid #444; border-radius: 4px; margin-top: 5px; font-size: 13px; }
+        
+        .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; font-family: monospace; }
+        .ping-green { color: #50fa7b; } .ping-yellow { color: #f1fa8c; } .ping-red { color: #ff5555; }
+        
+        #debug-log { height: 150px; overflow-y: auto; font-family: monospace; font-size: 11px; color: #aaa; border-top: 1px solid #333; margin-top: 10px; padding-top: 5px; }
+        .log-err { color: #ff5555; } .log-ok { color: #50fa7b; } .log-info { color: #8be9fd; }
+        
+        #estimated-loc { margin-top: 15px; padding: 10px; background: rgba(0, 120, 255, 0.1); border-left: 3px solid #0078FF; font-size: 13px; line-height: 1.4; }
+        
+        /* Scrollbary */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
     </style>
 </head>
 <body>
 
-    <div id="overlay">
-        <h2>Mikro-Trilaterace (110 uzlů)</h2>
-        <div id="status" style="font-size: 11px; color: #888; margin-bottom: 15px;">Iniciuji síťové sondy...</div>
+    <div id="control-panel" class="panel">
+        <h2>Nastavení Cílů</h2>
         
-        <div id="top-nodes"></div>
+        <h3>Typ uzlu</h3>
+        <label><input type="checkbox" id="chk-type-registry" onchange="buildFilters()"> 🏢 Národní registry (NIC)</label>
+        <label><input type="checkbox" id="chk-type-university" checked onchange="buildFilters()"> 🎓 Univerzitní AS (NREN)</label>
 
-        <div id="estimated-loc">
-            <b style="color:#fff;">Odhad polohy (Střední bod):</b><br>
-            <span id="loc-coords" style="font-family: monospace;">Čekám na data...</span>
-            <div style="margin-top: 10px; border-top: 1px dashed #444; padding-top: 5px;">
-                <b style="color:#f1c40f;">Skutečná poloha:</b><br>
-                <span style="font-family: monospace; color:#ccc;">Mšené-lázně, ČR</span>
-            </div>
+        <h3>Kontinent</h3>
+        <label><input type="checkbox" class="chk-cont" value="Evropa" checked onchange="buildFilters()"> Evropa</label>
+        <label><input type="checkbox" class="chk-cont" value="Severní Amerika" onchange="buildFilters()"> Severní Amerika</label>
+        <label><input type="checkbox" class="chk-cont" value="Jižní Amerika" onchange="buildFilters()"> Jižní Amerika</label>
+        <label><input type="checkbox" class="chk-cont" value="Asie" onchange="buildFilters()"> Asie</label>
+        <label><input type="checkbox" class="chk-cont" value="Afrika" onchange="buildFilters()"> Afrika</label>
+        <label><input type="checkbox" class="chk-cont" value="Oceánie" onchange="buildFilters()"> Oceánie</label>
+
+        <h3>Země (V rámci výběru)</h3>
+        <select id="sel-country" onchange="applyCountryFilter()">
+            <option value="ALL">-- Všechny dostupné země --</option>
+        </select>
+        
+        <div style="margin-top: 15px; font-size: 12px; color: #888;">
+            Aktivních cílů k měření: <b id="active-count" style="color:#fff;">0</b>
         </div>
     </div>
 
-    <div id="debug-panel">
-        <h2>System Debug Log</h2>
+    <div id="results-panel" class="panel">
+        <h2>Trilaterace & Latence</h2>
+        <div id="status" style="font-size: 11px; color: #888; margin-bottom: 10px;">Čekám na zahájení...</div>
+        
+        <div id="top-nodes" style="min-height: 80px;"></div>
+
+        <div id="estimated-loc">
+            <b style="color:#fff;">Odhad polohy (Triangulace):</b><br>
+            <span id="loc-coords" style="font-family: monospace;">Čekám na data...</span>
+        </div>
+
         <div id="debug-log"></div>
     </div>
 
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
     <script>
-        const map = L.map('map').setView([49.8, 15.5], 7); // Výchozí zoom na ČR
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '© OpenStreetMap © CartoDB', maxZoom: 19
-        }).addTo(map);
+        // --- MAPA A SKUTEČNÁ POLOHA ---
+        const map = L.map('map').setView([48, 15], 4);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
 
-        const realLat = 50.369; const realLon = 14.053;
-        const realIcon = L.divIcon({
-            className: 'real-icon',
-            html: "<div style='background-color:#f1c40f; width:14px; height:14px; clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); box-shadow: 0 0 10px #f1c40f;'></div>",
-            iconSize: [14, 14], iconAnchor: [7, 7]
-        });
-        L.marker([realLat, realLon], {icon: realIcon}).bindTooltip("<b>Skutečná poloha</b><br>Mšené-lázně", {permanent: true, direction: 'bottom'}).addTo(map);
+        const realLat = 50.369, realLon = 14.053;
+        L.marker([realLat, realLon], {
+            icon: L.divIcon({ className: '', html: "<div style='background:#f1c40f; width:12px; height:12px; border-radius:50%; box-shadow: 0 0 10px #f1c40f;'></div>", iconSize: [12, 12] })
+        }).bindTooltip("Skutečná poloha (ČR)").addTo(map);
 
-        // 68 Kotevních NIC uzlů z předchozího kroku
-        const globalNodes = [
-            { id: "AD", name: "Andorra", url: "https://nic.ad/favicon.ico", lat: 42.50, lon: 1.52 }, { id: "AE", name: "SAE", url: "https://nic.ae/favicon.ico", lat: 24.45, lon: 54.37 }, { id: "AF", name: "Afghánistán", url: "https://nic.af/favicon.ico", lat: 34.55, lon: 69.20 }, { id: "AM", name: "Arménie", url: "https://nic.am/favicon.ico", lat: 40.18, lon: 44.51 }, { id: "AR", name: "Argentina", url: "https://nic.ar/favicon.ico", lat: -34.60, lon: -58.38 }, { id: "AZ", name: "Ázerbájdžán", url: "https://nic.az/favicon.ico", lat: 40.40, lon: 49.86 }, { id: "BA", name: "Bosna a Her.", url: "https://nic.ba/favicon.ico", lat: 43.85, lon: 18.41 }, { id: "BE", name: "Belgie", url: "https://nic.be/favicon.ico", lat: 50.85, lon: 4.35 }, { id: "BI", name: "Burundi", url: "https://nic.bi/favicon.ico", lat: -3.38, lon: 29.36 }, { id: "BJ", name: "Benin", url: "https://nic.bj/favicon.ico", lat: 6.49, lon: 2.62 }, { id: "BO", name: "Bolívie", url: "https://nic.bo/favicon.ico", lat: -16.50, lon: -68.11 }, { id: "BR", name: "Brazílie", url: "https://registro.br/favicon.ico", lat: -23.55, lon: -46.63 }, { id: "BT", name: "Bhútán", url: "https://nic.bt/favicon.ico", lat: 27.47, lon: 89.64 }, { id: "BY", name: "Bělorusko", url: "https://nic.by/favicon.ico", lat: 53.90, lon: 27.56 }, { id: "CD", name: "DR Kongo", url: "https://nic.cd/favicon.ico", lat: -4.44, lon: 15.26 }, { id: "CH", name: "Švýcarsko", url: "https://nic.ch/favicon.ico", lat: 46.94, lon: 7.44 }, { id: "CK", name: "Cookovy ost.", url: "https://nic.ck/favicon.ico", lat: -21.23, lon: -159.77 }, { id: "CL", name: "Chile", url: "https://nic.cl/favicon.ico", lat: -33.44, lon: -70.66 }, { id: "CM", name: "Kamerun", url: "https://nic.cm/favicon.ico", lat: 3.84, lon: 11.50 }, { id: "CR", name: "Kostarika", url: "https://nic.cr/favicon.ico", lat: 9.92, lon: -84.09 }, { id: "CZ", name: "Česko", url: "https://nic.cz/favicon.ico", lat: 50.08, lon: 14.43 }, { id: "DE", name: "Německo", url: "https://nic.de/favicon.ico", lat: 52.52, lon: 13.40 }, { id: "DJ", name: "Džibutsko", url: "https://nic.dj/favicon.ico", lat: 11.82, lon: 42.59 }, { id: "DK", name: "Dánsko", url: "https://nic.dk/favicon.ico", lat: 55.67, lon: 12.56 }, { id: "DM", name: "Dominika", url: "https://nic.dm/favicon.ico", lat: 15.30, lon: -61.38 }, { id: "DO", name: "Dominikánská r.", url: "https://nic.do/favicon.ico", lat: 18.48, lon: -69.93 }, { id: "DZ", name: "Alžírsko", url: "https://nic.dz/favicon.ico", lat: 36.75, lon: 3.05 }, { id: "EE", name: "Estonsko", url: "https://nic.ee/favicon.ico", lat: 59.43, lon: 24.75 }, { id: "EG", name: "Egypt", url: "https://nic.eg/favicon.ico", lat: 30.04, lon: 31.23 }, { id: "ES", name: "Španělsko", url: "https://nic.es/favicon.ico", lat: 40.41, lon: -3.70 }, { id: "FI", name: "Finsko", url: "https://nic.fi/favicon.ico", lat: 60.16, lon: 24.93 }, { id: "FM", name: "Mikronésie", url: "https://nic.fm/favicon.ico", lat: 6.91, lon: 158.18 }, { id: "FO", name: "Faerské ostrovy", url: "https://nic.fo/favicon.ico", lat: 62.00, lon: -6.77 }, { id: "GA", name: "Gabon", url: "https://nic.ga/favicon.ico", lat: 0.41, lon: 9.46 }, { id: "GD", name: "Grenada", url: "https://nic.gd/favicon.ico", lat: 12.05, lon: -61.74 }, { id: "GE", name: "Gruzie", url: "https://nic.ge/favicon.ico", lat: 41.71, lon: 44.82 }, { id: "GH", name: "Ghana", url: "https://nic.gh/favicon.ico", lat: 5.60, lon: -0.18 }, { id: "GM", name: "Gambie", url: "https://nic.gm/favicon.ico", lat: 13.45, lon: -16.57 }, { id: "GP", name: "Guadeloupe", url: "https://nic.gp/favicon.ico", lat: 16.26, lon: -61.55 }, { id: "GS", name: "Jižní Georgie", url: "https://nic.gs/favicon.ico", lat: -54.28, lon: -36.28 }, { id: "GT", name: "Guatemala", url: "https://nic.gt/favicon.ico", lat: 14.63, lon: -90.52 }, { id: "GW", name: "Guinea-Bissau", url: "https://nic.gw/favicon.ico", lat: 11.86, lon: -15.59 }, { id: "HR", name: "Chorvatsko", url: "https://nic.hr/favicon.ico", lat: 45.81, lon: 15.98 }, { id: "HT", name: "Haiti", url: "https://nic.ht/favicon.ico", lat: 18.53, lon: -72.33 }, { id: "HU", name: "Maďarsko", url: "https://nic.hu/favicon.ico", lat: 47.49, lon: 19.04 }, { id: "IM", name: "Ostrov Man", url: "https://nic.im/favicon.ico", lat: 54.15, lon: -4.48 }, { id: "IR", name: "Írán", url: "https://nic.ir/favicon.ico", lat: 35.68, lon: 51.38 }, { id: "IS", name: "Island", url: "https://nic.is/favicon.ico", lat: 64.14, lon: -21.89 }, { id: "IT", name: "Itálie", url: "https://nic.it/favicon.ico", lat: 41.90, lon: 12.49 }, { id: "JM", name: "Jamajka", url: "https://nic.jm/favicon.ico", lat: 18.01, lon: -76.80 }, { id: "KZ", name: "Kazachstán", url: "https://nic.kz/favicon.ico", lat: 51.16, lon: 71.42 }, { id: "LA", name: "Laos", url: "https://nic.la/favicon.ico", lat: 17.97, lon: 102.60 }, { id: "LK", name: "Srí Lanka", url: "https://nic.lk/favicon.ico", lat: 6.92, lon: 79.86 }, { id: "LS", name: "Lesotho", url: "https://nic.ls/favicon.ico", lat: -29.31, lon: 27.48 }, { id: "LT", name: "Litva", url: "https://nic.lt/favicon.ico", lat: 54.68, lon: 25.27 }, { id: "LV", name: "Lotyšsko", url: "https://nic.lv/favicon.ico", lat: 56.94, lon: 24.10 }, { id: "LY", name: "Libye", url: "https://nic.ly/favicon.ico", lat: 32.88, lon: 13.19 }, { id: "MG", name: "Madagaskar", url: "https://nic.mg/favicon.ico", lat: -18.87, lon: 47.50 }, { id: "MK", name: "Makedonie", url: "https://nic.mk/favicon.ico", lat: 42.00, lon: 21.42 }, { id: "MN", name: "Mongolsko", url: "https://nic.mn/favicon.ico", lat: 47.92, lon: 106.91 }, { id: "MR", name: "Mauritánie", url: "https://nic.mr/favicon.ico", lat: 18.07, lon: -15.96 }, { id: "MS", name: "Montserrat", url: "https://nic.ms/favicon.ico", lat: 16.74, lon: -62.18 }, { id: "MT", name: "Malta", url: "https://nic.mt/favicon.ico", lat: 35.89, lon: 14.51 }, { id: "MX", name: "Mexiko", url: "https://nic.mx/favicon.ico", lat: 19.43, lon: -99.13 }, { id: "MZ", name: "Mosambik", url: "https://nic.mz/favicon.ico", lat: -25.96, lon: 32.58 }, { id: "SK", name: "Slovensko", url: "https://nic.sk/favicon.ico", lat: 48.14, lon: 17.10 }, { id: "PL", name: "Polsko", url: "https://nic.pl/favicon.ico", lat: 52.22, lon: 21.01 }, { id: "RO", name: "Rumunsko", url: "https://nic.ro/favicon.ico", lat: 44.42, lon: 26.10 }
+        // --- DATABÁZE UZLŮ ---
+        const allNodes = [
+            // UNIVERZITY (Unicast / Vlastní AS z analýzy)
+            { id: "UNI-CZ1", name: "UK Praha", type: "university", country: "Česko", continent: "Evropa", url: "https://www.cuni.cz/favicon.ico", lat: 50.08, lon: 14.43 },
+            { id: "UNI-CZ2", name: "ČVUT Praha", type: "university", country: "Česko", continent: "Evropa", url: "https://www.cvut.cz/favicon.ico", lat: 50.10, lon: 14.39 },
+            { id: "UNI-CZ3", name: "MUNI Brno", type: "university", country: "Česko", continent: "Evropa", url: "https://www.muni.cz/favicon.ico", lat: 49.20, lon: 16.60 },
+            { id: "UNI-AT1", name: "TU Wien", type: "university", country: "Rakousko", continent: "Evropa", url: "https://tuwien.ac.at/favicon.ico", lat: 48.20, lon: 16.37 },
+            { id: "UNI-AT2", name: "Uni Graz", type: "university", country: "Rakousko", continent: "Evropa", url: "https://kfunigraz.ac.at/favicon.ico", lat: 47.07, lon: 15.43 },
+            { id: "UNI-DE1", name: "TU Köln", type: "university", country: "Německo", continent: "Evropa", url: "https://th-koeln.de/favicon.ico", lat: 50.93, lon: 6.95 },
+            { id: "UNI-DE2", name: "FH Münster", type: "university", country: "Německo", continent: "Evropa", url: "https://fh-muenster.de/favicon.ico", lat: 51.96, lon: 7.62 },
+            { id: "UNI-IT1", name: "Uni Torino", type: "university", country: "Itálie", continent: "Evropa", url: "https://unito.it/favicon.ico", lat: 45.07, lon: 7.68 },
+            { id: "UNI-IT2", name: "Uni Udine", type: "university", country: "Itálie", continent: "Evropa", url: "https://uniud.it/favicon.ico", lat: 46.06, lon: 13.23 },
+            { id: "UNI-HR1", name: "Uni Zagreb", type: "university", country: "Chorvatsko", continent: "Evropa", url: "https://unizg.hr/favicon.ico", lat: 45.81, lon: 15.98 },
+            { id: "UNI-NL1", name: "TU Delft", type: "university", country: "Nizozemsko", continent: "Evropa", url: "https://tudelft.nl/favicon.ico", lat: 52.01, lon: 4.35 },
+            { id: "UNI-PL1", name: "AGH Kraków", type: "university", country: "Polsko", continent: "Evropa", url: "https://agh.edu.pl/favicon.ico", lat: 50.06, lon: 19.92 },
+            { id: "UNI-FI1", name: "Aalto Uni", type: "university", country: "Finsko", continent: "Evropa", url: "https://hkkk.fi/favicon.ico", lat: 60.18, lon: 24.83 },
+            
+            { id: "UNI-AR1", name: "Uni Buenos Aires", type: "university", country: "Argentina", continent: "Jižní Amerika", url: "https://uba.ar/favicon.ico", lat: -34.60, lon: -58.38 },
+            { id: "UNI-AR2", name: "Uni Cordoba", type: "university", country: "Argentina", continent: "Jižní Amerika", url: "https://unc.edu.ar/favicon.ico", lat: -31.42, lon: -64.18 },
+            { id: "UNI-BR1", name: "Uni Bahia", type: "university", country: "Brazílie", continent: "Jižní Amerika", url: "https://ufba.br/favicon.ico", lat: -12.97, lon: -38.51 },
+            
+            { id: "UNI-AU1", name: "ANU Canberra", type: "university", country: "Austrálie", continent: "Oceánie", url: "https://anu.edu.au/favicon.ico", lat: -35.27, lon: 149.11 },
+            { id: "UNI-AU2", name: "Deakin Uni", type: "university", country: "Austrálie", continent: "Oceánie", url: "https://deakin.edu.au/favicon.ico", lat: -38.14, lon: 144.36 },
+            
+            { id: "UNI-BD1", name: "BUET Dhaka", type: "university", country: "Bangladéš", continent: "Asie", url: "https://buet.ac.bd/favicon.ico", lat: 23.72, lon: 90.39 },
+            { id: "UNI-IR1", name: "Amirkabir Uni", type: "university", country: "Írán", continent: "Asie", url: "https://aut.ac.ir/favicon.ico", lat: 35.70, lon: 51.40 },
+            { id: "UNI-CN1", name: "Southeast Uni", type: "university", country: "Čína", continent: "Asie", url: "https://seu.edu.cn/favicon.ico", lat: 32.06, lon: 118.79 },
+            
+            { id: "UNI-KE1", name: "Kenyatta Uni", type: "university", country: "Keňa", continent: "Afrika", url: "https://ku.ac.ke/favicon.ico", lat: -1.18, lon: 36.93 },
+            { id: "UNI-DZ1", name: "Uni Constantine", type: "university", country: "Alžírsko", continent: "Afrika", url: "https://umc.edu.dz/favicon.ico", lat: 36.36, lon: 6.61 },
+
+            // REGISTRY (Ověřené UNICAST z předchozích analýz)
+            { id: "NIC-CZ", name: "NIC Česko", type: "registry", country: "Česko", continent: "Evropa", url: "https://nic.cz/favicon.ico", lat: 50.08, lon: 14.43 },
+            { id: "NIC-DE", name: "NIC Německo", type: "registry", country: "Německo", continent: "Evropa", url: "https://nic.de/favicon.ico", lat: 52.52, lon: 13.40 },
+            { id: "NIC-FR", name: "NIC Francie", type: "registry", country: "Francie", continent: "Evropa", url: "https://nic.fr/favicon.ico", lat: 48.85, lon: 2.35 },
+            { id: "NIC-IT", name: "NIC Itálie", type: "registry", country: "Itálie", continent: "Evropa", url: "https://nic.it/favicon.ico", lat: 41.90, lon: 12.49 },
+            { id: "NIC-CH", name: "NIC Švýcarsko", type: "registry", country: "Švýcarsko", continent: "Evropa", url: "https://nic.ch/favicon.ico", lat: 46.94, lon: 7.44 },
+            { id: "NIC-AR", name: "NIC Argentina", type: "registry", country: "Argentina", continent: "Jižní Amerika", url: "https://nic.ar/favicon.ico", lat: -34.60, lon: -58.38 },
+            { id: "NIC-BR", name: "NIC Brazílie", type: "registry", country: "Brazílie", continent: "Jižní Amerika", url: "https://registro.br/favicon.ico", lat: -15.79, lon: -47.88 },
+            { id: "NIC-MX", name: "NIC Mexiko", type: "registry", country: "Mexiko", continent: "Severní Amerika", url: "https://nic.mx/favicon.ico", lat: 19.43, lon: -99.13 },
+            { id: "NIC-JP", name: "NIC Japonsko", type: "registry", country: "Japonsko", continent: "Asie", url: "https://jprs.jp/favicon.ico", lat: 35.68, lon: 139.76 },
+            { id: "NIC-ZA", name: "NIC J. Afrika", type: "registry", country: "J. Afrika", continent: "Afrika", url: "https://nic.za/favicon.ico", lat: -25.74, lon: 28.18 },
+            { id: "NIC-AU", name: "NIC Austrálie", type: "registry", country: "Austrálie", continent: "Oceánie", url: "https://nic.au/favicon.ico", lat: -35.28, lon: 149.13 }
         ];
 
-        // 42 Nových Mikro-Uzlů z krajských měst ČR
-        const czNodes = [
-            // Praha
-            { id: "CZ-PR1", name: "UK (Praha)", url: "https://www.cuni.cz/favicon.ico", lat: 50.08, lon: 14.43 },
-            { id: "CZ-PR2", name: "ČVUT (Praha)", url: "https://www.cvut.cz/favicon.ico", lat: 50.10, lon: 14.39 },
-            { id: "CZ-PR3", name: "VŠE (Praha)", url: "https://www.vse.cz/favicon.ico", lat: 50.08, lon: 14.44 },
-            // Brno
-            { id: "CZ-BR1", name: "MUNI (Brno)", url: "https://www.muni.cz/favicon.ico", lat: 49.20, lon: 16.60 },
-            { id: "CZ-BR2", name: "VUT (Brno)", url: "https://www.vut.cz/favicon.ico", lat: 49.22, lon: 16.58 },
-            { id: "CZ-BR3", name: "MENDELU (Brno)", url: "https://www.mendelu.cz/favicon.ico", lat: 49.21, lon: 16.61 },
-            // Ostrava
-            { id: "CZ-OS1", name: "OSU (Ostrava)", url: "https://www.osu.cz/favicon.ico", lat: 49.83, lon: 18.28 },
-            { id: "CZ-OS2", name: "VŠB (Ostrava)", url: "https://www.vsb.cz/favicon.ico", lat: 49.83, lon: 18.16 },
-            { id: "CZ-OS3", name: "VŠPP (Ostrava)", url: "https://www.vspp.cz/favicon.ico", lat: 49.82, lon: 18.26 },
-            // Plzeň
-            { id: "CZ-PL1", name: "ZČU (Plzeň)", url: "https://www.zcu.cz/favicon.ico", lat: 49.72, lon: 13.35 },
-            { id: "CZ-PL2", name: "LFP UK (Plzeň)", url: "https://lfp.cuni.cz/favicon.ico", lat: 49.75, lon: 13.37 },
-            { id: "CZ-PL3", name: "SPŠE (Plzeň)", url: "https://www.spseplzen.cz/favicon.ico", lat: 49.74, lon: 13.38 },
-            // Olomouc
-            { id: "CZ-OL1", name: "UPOL (Olomouc)", url: "https://www.upol.cz/favicon.ico", lat: 49.59, lon: 17.25 },
-            { id: "CZ-OL2", name: "MVŠO (Olomouc)", url: "https://www.mvso.cz/favicon.ico", lat: 49.59, lon: 17.26 },
-            { id: "CZ-OL3", name: "CARITAS (Olomouc)", url: "https://www.caritas-vos.cz/favicon.ico", lat: 49.59, lon: 17.27 },
-            // České Budějovice
-            { id: "CZ-CB1", name: "JČU (Č. Buděj)", url: "https://www.jcu.cz/favicon.ico", lat: 48.97, lon: 14.44 },
-            { id: "CZ-CB2", name: "VŠTE (Č. Buděj)", url: "https://www.vste.cz/favicon.ico", lat: 48.98, lon: 14.48 },
-            { id: "CZ-CB3", name: "VŠERS (Č. Buděj)", url: "https://www.vsers.cz/favicon.ico", lat: 48.97, lon: 14.47 },
-            // Hradec Králové
-            { id: "CZ-HK1", name: "UHK (H. Králové)", url: "https://www.uhk.cz/favicon.ico", lat: 50.20, lon: 15.83 },
-            { id: "CZ-HK2", name: "LFHK UK (HK)", url: "https://www.lfhk.cuni.cz/favicon.ico", lat: 50.20, lon: 15.82 },
-            { id: "CZ-HK3", name: "FAF UK (HK)", url: "https://www.faf.cuni.cz/favicon.ico", lat: 50.20, lon: 15.83 },
-            // Pardubice
-            { id: "CZ-PA1", name: "UPCE (Pardubice)", url: "https://www.upce.cz/favicon.ico", lat: 50.04, lon: 15.76 },
-            { id: "CZ-PA2", name: "Delta SŠ (PCE)", url: "https://www.delta-skola.cz/favicon.ico", lat: 50.03, lon: 15.77 },
-            { id: "CZ-PA3", name: "SPŠCH (PCE)", url: "https://www.spsch.cz/favicon.ico", lat: 50.04, lon: 15.76 },
-            // Liberec
-            { id: "CZ-LI1", name: "TUL (Liberec)", url: "https://www.tul.cz/favicon.ico", lat: 50.77, lon: 15.07 },
-            { id: "CZ-LI2", name: "SPŠSE (Liberec)", url: "https://www.spsselib.cz/favicon.ico", lat: 50.76, lon: 15.06 },
-            { id: "CZ-LI3", name: "Gymnázium (LBC)", url: "https://www.gymlib.cz/favicon.ico", lat: 50.77, lon: 15.06 },
-            // Ústí nad Labem
-            { id: "CZ-UL1", name: "UJEP (Ústí n. L.)", url: "https://www.ujep.cz/favicon.ico", lat: 50.66, lon: 14.02 },
-            { id: "CZ-UL2", name: "SPŠ (Ústí n. L.)", url: "https://www.spsul.cz/favicon.ico", lat: 50.67, lon: 14.03 },
-            { id: "CZ-UL3", name: "Gymnázium (UL)", url: "https://www.gymnaziumusti.cz/favicon.ico", lat: 50.66, lon: 14.03 },
-            // Zlín
-            { id: "CZ-ZL1", name: "UTB (Zlín)", url: "https://www.utb.cz/favicon.ico", lat: 49.22, lon: 17.66 },
-            { id: "CZ-ZL2", name: "SPŠP (Zlín)", url: "https://www.spspzlin.cz/favicon.ico", lat: 49.22, lon: 17.66 },
-            { id: "CZ-ZL3", name: "Gymnázium (Zlín)", url: "https://www.gymzlin.cz/favicon.ico", lat: 49.22, lon: 17.67 },
-            // Jihlava
-            { id: "CZ-JI1", name: "VŠPJ (Jihlava)", url: "https://www.vspj.cz/favicon.ico", lat: 49.39, lon: 15.59 },
-            { id: "CZ-JI2", name: "SŠPTA (Jihlava)", url: "https://www.ssptaji.cz/favicon.ico", lat: 49.40, lon: 15.58 },
-            { id: "CZ-JI3", name: "Gymnázium (JI)", url: "https://www.gymji.cz/favicon.ico", lat: 49.40, lon: 15.59 },
-            // Karlovy Vary
-            { id: "CZ-KV1", name: "SŠKKV (K. Vary)", url: "https://www.sskkv.cz/favicon.ico", lat: 50.23, lon: 12.87 },
-            { id: "CZ-KV2", name: "SPŠ (K. Vary)", url: "https://www.spskv.cz/favicon.ico", lat: 50.23, lon: 12.86 },
-            { id: "CZ-KV3", name: "Gymnázium (KV)", url: "https://www.gymkv.cz/favicon.ico", lat: 50.23, lon: 12.87 },
-            // Středočeský kraj (Kladno)
-            { id: "CZ-KL1", name: "FBMI ČVUT (Kladno)", url: "https://www.fbmi.cvut.cz/favicon.ico", lat: 50.14, lon: 14.10 },
-            { id: "CZ-KL2", name: "SPŠ (Kladno)", url: "https://www.spskladno.cz/favicon.ico", lat: 50.14, lon: 14.10 },
-            { id: "CZ-KL3", name: "Gymnázium (KL)", url: "https://www.gymnasiumkladno.cz/favicon.ico", lat: 50.14, lon: 14.11 }
-        ];
-
-        const allNodes = [...globalNodes, ...czNodes];
-
+        let activeNodes = [];
         let markers = {};
         let myLocationMarker = null;
-        let trajectoryPath = []; // Uchovává historii odhadů
-        let polyline = L.polyline([], {color: '#00d2d3', weight: 3, opacity: 0.8, dashArray: '5, 5'}).addTo(map);
-
-        allNodes.forEach(node => {
-            markers[node.id] = L.circleMarker([node.lat, node.lon], {
-                radius: 3, fillColor: "#747d8c", color: "#000", weight: 1, opacity: 1, fillOpacity: 0.5
-            }).bindTooltip(node.name).addTo(map);
-        });
+        let polyline = L.polyline([], {color: '#0078FF', weight: 2, opacity: 0.6, dashArray: '4,4'}).addTo(map);
+        let pathHistory = [];
 
         function log(msg, type="info") {
-            const logWindow = document.getElementById('debug-log');
+            const el = document.getElementById('debug-log');
             const time = new Date().toLocaleTimeString('cs-CZ');
-            let colorClass = type === 'error' ? 'log-err' : (type === 'success' ? 'log-ok' : 'log-info');
-            logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="${colorClass}">${msg}</span></div>`;
-            logWindow.scrollTop = logWindow.scrollHeight;
+            let color = type === 'error' ? 'log-err' : (type === 'success' ? 'log-ok' : 'log-info');
+            el.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="${color}">${msg}</span></div>`;
+            el.scrollTop = el.scrollHeight;
         }
 
+        // --- FILTROVACÍ LOGIKA ---
+        function buildFilters() {
+            // 1. Získání stavu checkboxů
+            const allowReg = document.getElementById('chk-type-registry').checked;
+            const allowUni = document.getElementById('chk-type-university').checked;
+            const activeConts = Array.from(document.querySelectorAll('.chk-cont:checked')).map(cb => cb.value);
+
+            // 2. Před-filtrace pro výběr zemí
+            let availableCountries = new Set();
+            let preFilteredNodes = allNodes.filter(n => {
+                let typeOk = (n.type === 'registry' && allowReg) || (n.type === 'university' && allowUni);
+                let contOk = activeConts.includes(n.continent);
+                if (typeOk && contOk) availableCountries.add(n.country);
+                return typeOk && contOk;
+            });
+
+            // 3. Aktualizace roletky Zemí
+            const selCountry = document.getElementById('sel-country');
+            const currentSel = selCountry.value;
+            selCountry.innerHTML = '<option value="ALL">-- Všechny dostupné země --</option>';
+            Array.from(availableCountries).sort().forEach(c => {
+                let opt = document.createElement('option');
+                opt.value = c; opt.innerText = c;
+                if (c === currentSel) opt.selected = true;
+                selCountry.appendChild(opt);
+            });
+
+            applyCountryFilter(preFilteredNodes);
+        }
+
+        function applyCountryFilter(preFilteredNodes = null) {
+            const allowReg = document.getElementById('chk-type-registry').checked;
+            const allowUni = document.getElementById('chk-type-university').checked;
+            const activeConts = Array.from(document.querySelectorAll('.chk-cont:checked')).map(cb => cb.value);
+            const selCountry = document.getElementById('sel-country').value;
+
+            // Vyčištění starých markerů
+            Object.values(markers).forEach(m => map.removeLayer(m));
+            markers = {};
+
+            // Finální filtrace
+            activeNodes = allNodes.filter(n => {
+                let typeOk = (n.type === 'registry' && allowReg) || (n.type === 'university' && allowUni);
+                let contOk = activeConts.includes(n.continent);
+                let countryOk = (selCountry === "ALL" || n.country === selCountry);
+                return typeOk && contOk && countryOk;
+            });
+
+            document.getElementById('active-count').innerText = activeNodes.length;
+            log(`Filtry aplikovány. Aktivních cílů: ${activeNodes.length}`, "info");
+
+            // Vykreslení nových markerů
+            activeNodes.forEach(node => {
+                let iconColor = node.type === 'university' ? '#8be9fd' : '#bd93f9';
+                markers[node.id] = L.circleMarker([node.lat, node.lon], {
+                    radius: 4, fillColor: iconColor, color: "#000", weight: 1, fillOpacity: 0.6
+                }).bindTooltip(`${node.name} (${node.type})`).addTo(map);
+            });
+        }
+
+        // --- MĚŘÍCÍ LOGIKA ---
         async function ping(node) {
             const start = performance.now();
             try {
-                await fetch(node.url + "?t=" + Math.random(), { mode: 'no-cors', cache: 'no-store' });
+                await fetch(node.url + "?no-cache=" + Math.random(), { mode: 'no-cors', cache: 'no-store' });
                 return performance.now() - start;
-            } catch (e) { 
-                return 9999; 
-            }
+            } catch (e) { return 9999; }
         }
 
         async function scanNetwork() {
-            document.getElementById('status').innerText = `Skenuji ${allNodes.length} uzlů (ČR + Svět)...`;
-            log("--- ZAHÁJENO NOVÉ MĚŘENÍ ---", "info");
+            if (activeNodes.length === 0) {
+                document.getElementById('status').innerText = "Žádné uzly k měření. Upravte filtry.";
+                return;
+            }
 
-            let promises = allNodes.map(async (node) => {
+            document.getElementById('status').innerText = `Odesílám pakety na ${activeNodes.length} cílů...`;
+            
+            let promises = activeNodes.map(async (node) => {
                 let time = await ping(node);
                 return { ...node, time: time };
             });
@@ -198,28 +240,29 @@
             let results = await Promise.all(promises);
             results = results.filter(r => r.time < 9999).sort((a, b) => a.time - b.time);
 
-            document.getElementById('status').innerText = `Úspěch: ${results.length} uzlů. Další sken za 15s.`;
+            document.getElementById('status').innerText = `Odpovědělo ${results.length} uzlů. Reset za 15s.`;
 
             let topHtml = "";
             results.forEach((r, index) => {
-                let color = "#ff4757"; 
-                let cssClass = "ping-red";
-                if (r.time < 40) { color = "#2ed573"; cssClass = "ping-green"; }
-                else if (r.time < 90) { color = "#feca57"; cssClass = "ping-yellow"; } 
+                let color = "#ff5555"; let cssClass = "ping-red";
+                if (r.time < 60) { color = "#50fa7b"; cssClass = "ping-green"; }
+                else if (r.time < 150) { color = "#f1fa8c"; cssClass = "ping-yellow"; } 
 
-                markers[r.id].setStyle({ fillColor: color, radius: index < 7 ? 7 : 3, fillOpacity: 0.9 });
+                if(markers[r.id]) markers[r.id].setStyle({ fillColor: color, radius: index < 4 ? 8 : 4, fillOpacity: 0.9 });
 
-                if (index < 7) { // Nyní vypisujeme 7 nejrychlejších kvůli detailnějšímu ČR
+                if (index < 5) {
                     topHtml += `<div class="stat-row"><span>${r.name}</span><span class="${cssClass}">${Math.round(r.time)} ms</span></div>`;
                 }
             });
             document.getElementById('top-nodes').innerHTML = topHtml;
 
-            // Výpočet pozice (Použijeme 7 nejrychlejších uzlů pro jemnější přesnost)
-            if (results.length >= 7) {
+            // --- VÝPOČET POLOHY ---
+            // Použijeme až 4 nejrychlejší uzly
+            const limit = Math.min(results.length, 4);
+            if (limit > 0) {
                 let sumWeights = 0, sumLat = 0, sumLon = 0;
                 
-                for (let i = 0; i < 7; i++) {
+                for (let i = 0; i < limit; i++) {
                     let r = results[i];
                     let weight = 1 / Math.pow(r.time, 2); 
                     sumWeights += weight;
@@ -230,35 +273,30 @@
                 let estLat = sumLat / sumWeights;
                 let estLon = sumLon / sumWeights;
 
-                // Odchylka
                 let dLat = (estLat - realLat) * 111; 
                 let dLon = (estLon - realLon) * 71;  
                 let errorKm = Math.sqrt(dLat*dLat + dLon*dLon);
 
-                document.getElementById('loc-coords').innerHTML = `LAT: <span style="color:#00d2d3">${estLat.toFixed(4)}</span><br>LON: <span style="color:#00d2d3">${estLon.toFixed(4)}</span><br><br><span style="color:#888; font-size:11px;">Odchylka od reality: ~${Math.round(errorKm)} km</span>`;
-                log(`Výpočet polohy dokončen. Odchylka: ${Math.round(errorKm)} km`, "info");
+                document.getElementById('loc-coords').innerHTML = `LAT: <span style="color:#8be9fd">${estLat.toFixed(4)}</span><br>LON: <span style="color:#8be9fd">${estLon.toFixed(4)}</span><br><br><span style="color:#aaa; font-size:11px;">Odchylka: ~${Math.round(errorKm)} km</span>`;
+                log(`Odhad z ${limit} uzlů. Odchylka: ${Math.round(errorKm)} km`, "success");
 
-                // Uložení do historie pro trajektorii
-                trajectoryPath.push([estLat, estLon]);
-                if (trajectoryPath.length > 30) trajectoryPath.shift(); // Ponechat jen posledních 30 měření
-                
-                polyline.setLatLngs(trajectoryPath); // Vykreslení čáry historie
+                pathHistory.push([estLat, estLon]);
+                if (pathHistory.length > 20) pathHistory.shift();
+                polyline.setLatLngs(pathHistory);
 
                 if (!myLocationMarker) {
                     const icon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: "<div style='background-color:#0078FF; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow: 0 0 20px #0078FF;'></div>",
-                        iconSize: [22, 22], iconAnchor: [11, 11]
+                        className: '', html: "<div style='background:#0078FF; width:16px; height:16px; border-radius:50%; border:2px solid #fff; box-shadow: 0 0 15px #0078FF;'></div>", iconSize: [20, 20]
                     });
-                    myLocationMarker = L.marker([estLat, estLon], {icon: icon})
-                        .bindTooltip("<b>Aktuální odhad</b>", {permanent: true, direction: 'top'})
-                        .addTo(map);
+                    myLocationMarker = L.marker([estLat, estLon], {icon: icon}).bindTooltip("Odhad polohy").addTo(map);
                 } else {
                     myLocationMarker.setLatLng([estLat, estLon]);
                 }
             }
         }
 
+        // Inicializace
+        buildFilters();
         setTimeout(scanNetwork, 1000);
         setInterval(scanNetwork, 15000); 
     </script>
