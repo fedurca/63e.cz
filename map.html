@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geo-Latency Trilateration Radar</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: -apple-system, sans-serif; background: #111; color: #00ff00; }
+        #map { height: 100vh; width: 100vw; z-index: 1; }
+        
+        #overlay {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            background: rgba(0, 0, 0, 0.85); border: 1px solid #333;
+            padding: 15px; border-radius: 8px; width: 300px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); backdrop-filter: blur(5px);
+        }
+        
+        h2 { margin: 0 0 10px 0; font-size: 16px; color: #fff; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #333; padding-bottom: 5px;}
+        .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; font-family: monospace; }
+        
+        #estimated-loc {
+            margin-top: 15px; padding: 10px; background: rgba(0, 120, 255, 0.2);
+            border-left: 3px solid #0078FF; font-size: 14px;
+        }
+        
+        .ping-green { color: #2ed573; }
+        .ping-yellow { color: #feca57; }
+        .ping-red { color: #ff4757; }
+        .ping-dead { color: #747d8c; }
+    </style>
+</head>
+<body>
+
+    <div id="overlay">
+        <h2>Latency Radar</h2>
+        <div id="status" style="font-size: 11px; color: #888; margin-bottom: 15px;">Iniciuji síťové sondy...</div>
+        
+        <div id="top-nodes">
+            </div>
+
+        <div id="estimated-loc">
+            <b style="color:#fff;">Odhad tvé polohy:</b><br>
+            <span id="loc-coords" style="font-family: monospace;">Čekám na data...</span>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // 1. Inicializace mapy (Dark mode CartoDB)
+        const map = L.map('map').setView([20, 0], 3);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap © CartoDB',
+            maxZoom: 19
+        }).addTo(map);
+
+        // 2. Unicast Uzly (Ověřeno z tvého Python skriptu + GPS Hlavních měst)
+        const nodes = [
+            { id: "CZ", name: "Česko", url: "https://www.nic.cz/favicon.ico", lat: 50.08, lon: 14.43 },
+            { id: "SK", name: "Slovensko", url: "https://sk-nic.sk/favicon.ico", lat: 48.14, lon: 17.10 },
+            { id: "DE", name: "Německo", url: "https://www.denic.de/favicon.ico", lat: 50.11, lon: 8.68 },
+            { id: "PL", name: "Polsko", url: "https://www.dns.pl/favicon.ico", lat: 52.22, lon: 21.01 },
+            { id: "FR", name: "Francie", url: "https://www.afnic.fr/favicon.ico", lat: 48.85, lon: 2.35 },
+            { id: "IT", name: "Itálie", url: "https://www.nic.it/favicon.ico", lat: 41.90, lon: 12.49 },
+            { id: "ES", name: "Španělsko", url: "https://www.dominios.es/favicon.ico", lat: 40.41, lon: -3.70 },
+            { id: "CH", name: "Švýcarsko", url: "https://www.nic.ch/favicon.ico", lat: 47.37, lon: 8.54 },
+            { id: "SI", name: "Slovinsko", url: "https://www.register.si/favicon.ico", lat: 46.05, lon: 14.50 },
+            { id: "HR", name: "Chorvatsko", url: "https://www.domene.hr/favicon.ico", lat: 45.81, lon: 15.98 },
+            { id: "RU", name: "Rusko", url: "https://cctld.ru/favicon.ico", lat: 55.75, lon: 37.61 },
+            { id: "AR", name: "Argentina", url: "https://nic.ar/favicon.ico", lat: -34.60, lon: -58.38 },
+            { id: "BR", name: "Brazílie", url: "https://registro.br/favicon.ico", lat: -23.55, lon: -46.63 },
+            { id: "CL", name: "Chile", url: "https://www.nic.cl/favicon.ico", lat: -33.44, lon: -70.66 },
+            { id: "MX", name: "Mexiko", url: "https://www.akky.mx/favicon.ico", lat: 19.43, lon: -99.13 },
+            { id: "BO", name: "Bolívie", url: "https://nic.bo/favicon.ico", lat: -16.50, lon: -68.11 },
+            { id: "CR", name: "Kostarika", url: "https://www.nic.cr/favicon.ico", lat: 9.92, lon: -84.09 },
+            { id: "PE", name: "Peru", url: "https://punto.pe/favicon.ico", lat: -12.04, lon: -77.02 },
+            { id: "PY", name: "Paraguay", url: "https://www.nic.py/favicon.ico", lat: -25.26, lon: -57.57 },
+            { id: "MZ", name: "Mosambik", url: "https://www.nic.mz/favicon.ico", lat: -25.96, lon: 32.58 },
+            { id: "EG", name: "Egypt", url: "https://dotmasr.eg/favicon.ico", lat: 30.04, lon: 31.23 },
+            { id: "MN", name: "Mongolsko", url: "https://www.nic.mn/favicon.ico", lat: 47.92, lon: 106.91 },
+            { id: "IR", name: "Írán", url: "https://www.nic.ir/favicon.ico", lat: 35.68, lon: 51.38 },
+            { id: "JP", name: "Japonsko", url: "https://jprs.jp/favicon.ico", lat: 35.68, lon: 139.76 }
+        ];
+
+        let markers = {};
+        let myLocationMarker = null;
+
+        // Vykreslení počátečních markerů
+        nodes.forEach(node => {
+            markers[node.id] = L.circleMarker([node.lat, node.lon], {
+                radius: 6, fillColor: "#747d8c", color: "#000", weight: 1, opacity: 1, fillOpacity: 0.8
+            }).bindTooltip(node.id).addTo(map);
+        });
+
+        // 3. Ping funkce
+        async function ping(url) {
+            const start = performance.now();
+            try {
+                await fetch(url + "?t=" + Math.random(), { mode: 'no-cors', cache: 'no-store' });
+                return performance.now() - start;
+            } catch (e) { return 9999; }
+        }
+
+        // 4. Hlavní smyčka měření
+        async function scanNetwork() {
+            document.getElementById('status').innerText = "Skenuji síť...";
+            
+            let promises = nodes.map(async (node) => {
+                let time = await ping(node.url);
+                return { ...node, time: time };
+            });
+
+            let results = await Promise.all(promises);
+            results = results.filter(r => r.time < 9999).sort((a, b) => a.time - b.time);
+
+            document.getElementById('status').innerText = `Odpovědělo ${results.length} uzlů. Další sken za 10s...`;
+
+            // Aktualizace barev na mapě a výpisu
+            let topHtml = "";
+            results.forEach((r, index) => {
+                let color = "#ff4757"; // Červená (daleko)
+                let cssClass = "ping-red";
+                if (r.time < 60) { color = "#2ed573"; cssClass = "ping-green"; } // Zelená (blízko)
+                else if (r.time < 150) { color = "#feca57"; cssClass = "ping-yellow"; } // Žlutá (středně)
+
+                markers[r.id].setStyle({ fillColor: color, radius: index < 3 ? 10 : 6 });
+
+                if (index < 3) {
+                    topHtml += `<div class="stat-row"><span>${r.name} (${r.id})</span><span class="${cssClass}">${Math.round(r.time)} ms</span></div>`;
+                }
+            });
+            document.getElementById('top-nodes').innerHTML = topHtml;
+
+            // 5. Výpočet tvé polohy (Inverse Distance Weighting ze 3 nejrychlejších)
+            if (results.length >= 3) {
+                let sumWeights = 0, sumLat = 0, sumLon = 0;
+                
+                // Použijeme jen 3 nejbližší uzly, abychom odstranili šum
+                for (let i = 0; i < 3; i++) {
+                    let r = results[i];
+                    // Váha je převrácená hodnota druhé mocniny pingu (čím menší ping, tím exponenciálně větší tah)
+                    let weight = 1 / Math.pow(r.time, 2); 
+                    sumWeights += weight;
+                    sumLat += r.lat * weight;
+                    sumLon += r.lon * weight;
+                }
+
+                let estLat = sumLat / sumWeights;
+                let estLon = sumLon / sumWeights;
+
+                document.getElementById('loc-coords').innerText = `LAT: ${estLat.toFixed(4)}\nLON: ${estLon.toFixed(4)}`;
+
+                // Aktualizace pozice křížku na mapě
+                if (!myLocationMarker) {
+                    // Vytvoření pulzujícího markeru pro tvou lokaci
+                    const icon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: "<div style='background-color:#0078FF; width:16px; height:16px; border-radius:50%; border:3px solid white; box-shadow: 0 0 20px #0078FF;'></div>",
+                        iconSize: [22, 22], iconAnchor: [11, 11]
+                    });
+                    myLocationMarker = L.marker([estLat, estLon], {icon: icon}).bindTooltip("Tvá odhadovaná poloha", {permanent: true, direction: 'top'}).addTo(map);
+                } else {
+                    myLocationMarker.setLatLng([estLat, estLon]);
+                }
+            }
+        }
+
+        // Spuštění po načtení a pak každých 10 vteřin
+        scanNetwork();
+        setInterval(scanNetwork, 10000);
+    </script>
+</body>
+</html>
