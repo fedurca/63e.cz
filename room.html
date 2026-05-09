@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>E2E Tree P2P Chat v5.0 (Rooms & DMs)</title>
+    
+    <script src="./pako.min.js"></script>
+    <script>
+        if (typeof pako === 'undefined') {
+            console.warn("Lokální pako.min.js nenalezeno, stahuji z CDN jako zálohu.");
+            document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"><\/script>');
+        }
+    </script>
+
+    <style>
+        :root { --primary: #0078FF; --bg-color: #f4f7f6; --chat-bg: #ffffff; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+        
+        body, html { background-color: var(--bg-color); overflow: hidden; height: 100%; width: 100%; }
+        
+        #app { 
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            display: flex; flex-direction: column; 
+            max-width: 1200px; margin: 0 auto; background: var(--chat-bg); 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+
+        header { background: var(--primary); color: white; padding: 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
+        .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+        .status-dot.online { background: #2ed573; }
+        .status-dot.host { background: #feca57; box-shadow: 0 0 8px #feca57; }
+        #status-timer { font-size: 0.75rem; color: rgba(255,255,255,0.9); margin-left: 5px; font-variant-numeric: tabular-nums; background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 10px; vertical-align: middle; }
+        .secure-badge { background: #2ed573; color: #000; font-size: 0.7rem; padding: 3px 6px; border-radius: 10px; font-weight: bold; margin-left: 10px; }
+        .version-badge { font-size: 0.75rem; opacity: 0.8; margin-left: 10px; }
+        
+        .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: column; min-height: 0; }
+        
+        #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border-right: 1px solid #ddd;}
+        
+        /* ROOMS & TABS UI */
+        #room-header { display: flex; background: #e0e0e0; border-bottom: 1px solid #ccc; padding: 5px 10px 0 10px; align-items: flex-end; flex-shrink: 0; }
+        #tabs-container { flex: 1; display: flex; overflow-x: auto; gap: 5px; scrollbar-width: none; }
+        #tabs-container::-webkit-scrollbar { display: none; }
+        .tab-btn { padding: 8px 15px; background: #cfcfcf; border: none; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 0.85rem; color: #555; white-space: nowrap; transition: 0.2s;}
+        .tab-btn:hover { background: #dcdcdc; }
+        .tab-btn.active { background: #e5ddd5; font-weight: bold; color: #000; box-shadow: 0 -2px 5px rgba(0,0,0,0.05); }
+        #new-dm-select { padding: 6px; border-radius: 6px; border: 1px solid #aaa; font-size: 0.8rem; margin-bottom: 5px; background: #fff; cursor: pointer; max-width: 150px;}
+        #room-controls { display: none; background: #d0d0d0; padding: 6px 15px; gap: 10px; flex-wrap: wrap; justify-content: center; border-bottom: 1px solid #bbb; flex-shrink: 0;}
+        #room-controls button { background: white; border: 1px solid #aaa; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; }
+        #room-controls button:hover { background: #eee; }
+        #room-controls button.btn-danger { background: #ff4757; color: white; border-color: #ff4757; }
+        .btn-danger-main { background: #ff4757; color: white; border: none; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; font-weight: bold; margin-left: 15px; }
+        .unread-badge { display: inline-block; background: #ff4757; color: white; border-radius: 50%; padding: 0 5px; font-size: 0.65rem; margin-left: 5px; }
+
+        #chat-area { flex: 1; padding: 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 10px; }
+        .msg { max-width: 85%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
+        .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; }
+        .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
+        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; text-align: center; }
+        
+        .file-attachment { display: flex; align-items: center; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; margin-top: 5px; text-decoration: none; color: #333;}
+        .file-attachment:hover { background: rgba(0,0,0,0.1); }
+        .file-icon { font-size: 1.5rem; margin-right: 10px; }
+        .file-name { font-size: 0.85rem; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;}
+        .file-size { font-size: 0.7rem; color: #777; }
+        .img-preview { max-width: 100%; max-height: 250px; border-radius: 8px; display: block; margin-top: 5px; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; }
+
+        #input-area { 
+            display: flex; padding: 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; 
+            padding-bottom: calc(10px + env(safe-area-inset-bottom)); flex-shrink: 0;
+        }
+        #ui-my-name { font-weight: bold; color: #333; margin-right: 10px; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+        #file-input { display: none; }
+        .btn-attach { background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 0 10px; opacity: 0.6; transition: 0.2s; }
+        .btn-attach:hover { opacity: 1; }
+        #chat-input { flex: 1; padding: 12px; border: none; border-radius: 20px; font-size: 1rem; margin-right: 10px; }
+        #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 20px; font-weight: bold; cursor: pointer; height: 100%; min-height: 40px;}
+        #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        #debug-panel { 
+            display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; 
+            font-family: monospace; width: 100%; flex-shrink: 0; 
+            max-height: 45vh; overflow-y: auto; -webkit-overflow-scrolling: touch; border-top: 1px solid #333;
+        }
+        
+        .debug-header { background: #333; padding: 8px 10px; font-size: 0.8rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
+        .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.75rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; }
+        .debug-stats span { color: #00ff00; font-weight: bold; }
+        
+        #topo-container { height: 180px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; }
+        #topo-canvas { width: 100%; height: 100%; cursor: crosshair; }
+        .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.7rem; pointer-events: none; }
+        
+        #net-health-panel { height: 150px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; }
+        #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.75rem; color: #ccc; }
+        #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;}
+        #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
+
+        .btn-call { background:#0078FF; color:white; border:none; border-radius:4px; padding:2px 6px; cursor:pointer; margin-left:5px; font-size:0.75rem; }
+        .btn-call:hover { background:#005bb5; }
+
+        #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
+        .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold;} .log-file { color: #00d2d3; font-weight: bold;}
+
+        @media (min-width: 800px) { 
+            .main-content { flex-direction: row; }
+            #debug-panel { width: 550px; height: 100%; max-height: none; overflow-y: hidden; border-top: none; border-left: 1px solid #333; } 
+            #debug-log { flex: 1; height: auto; } 
+        }
+
+        #setup-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); z-index: 20; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); width: 100%; max-width: 400px; text-align: center; }
+        .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center;}
+        .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
+
+        #video-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; flex-direction: column; }
+        #video-container { flex: 1; display: flex; position: relative; justify-content: center; align-items: center; overflow: hidden; }
+        #remote-video { max-width: 100%; max-height: 100%; object-fit: contain; }
+        #local-video { position: absolute; bottom: 20px; right: 20px; width: 120px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.5); object-fit: cover; background: #000; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .video-controls { padding: 15px; text-align: center; background: #111; border-top: 1px solid #333; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+        .video-btn { background: #333; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: bold; }
+        .video-btn:hover { background: #444; }
+        .video-btn.active { background: #2ed573; color: #000; }
+        .video-btn.danger { background: #ff4757; }
+
+        #incoming-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 12px; z-index: 10000; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 2px solid var(--primary); min-width: 250px;}
+        .modal-btns { margin-top: 20px; display: flex; justify-content: center; gap: 10px; }
+        .modal-btns button { border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <header>
+        <div>
+            <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
+            <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
+            <span class="secure-badge">🔒 E2E</span>
+            <span class="version-badge">v5.0 (Rooms & DMs)</span>
+            <button class="btn-danger-main" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;" title="Vymaže historii aktuální místnosti">🗑️ Smazat historii</button>
+        </div>
+        <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
+    </header>
+
+    <div class="main-content">
+        <div id="chat-container">
+            
+            <div id="room-header">
+                <div id="tabs-container">
+                    <button class="tab-btn active" id="tab-main" onclick="switchRoom('main')">Společný chat</button>
+                </div>
+                <select id="new-dm-select" onchange="handleNewDmSelect(this)">
+                    <option value="">+ Nová zpráva pro...</option>
+                </select>
+            </div>
+
+            <div id="room-controls">
+                <button onclick="renameCurrentRoom()">✏️ Přejmenovat</button>
+                <button onclick="addParticipantToRoom()">👤 Přidat člena</button>
+                <button class="btn-danger" onclick="destroyCurrentRoom()">❌ Zrušit místnost všem</button>
+            </div>
+
+            <div id="chat-area"></div>
+            
+            <div id="input-area">
+                <div id="ui-my-name">...</div>
+                <input type="file" id="file-input" onchange="handleFileUpload(event)">
+                <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-input').click()" disabled title="Poslat soubor">📎</button>
+                <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
+                <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
+            </div>
+        </div>
+
+        <div id="debug-panel">
+            <div id="topo-container">
+                <div class="topo-label">STROMOVÁ TOPOLOGIE (HUB & SPOKE)</div>
+                <canvas id="topo-canvas"></canvas>
+            </div>
+            
+            <div class="debug-stats">
+                <div>Moje ID: <span id="dbg-id"></span></div>
+                <div>Stav API: <span id="dbg-dns">IDLE</span></div>
+                <div>Přímé linky: <span id="dbg-peers">0</span></div>
+                <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
+            </div>
+
+            <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ</div>
+            <div id="net-health-panel">
+                <div id="net-health-list"></div>
+            </div>
+
+            <div class="debug-header">📜 SYSTÉMOVÝ LOG</div>
+            <div id="debug-log"></div>
+        </div>
+    </div>
+
+    <div id="setup-screen">
+        <div class="setup-box">
+            <h2>Vstup do sítě</h2>
+            <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
+            <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
+        </div>
+    </div>
+
+    <div id="video-overlay">
+        <div id="video-container">
+            <video id="remote-video" autoplay playsinline></video>
+            <video id="local-video" autoplay playsinline muted></video>
+        </div>
+        <div class="video-controls">
+            <div style="color:#aaa; display:flex; align-items:center; margin-right:auto;" id="video-peer-name">Spojuji...</div>
+            <button class="video-btn" id="btn-vid-mic" onclick="toggleAudio()">🎤 Vypnout mikrofon</button>
+            <button class="video-btn" id="btn-vid-cam" onclick="toggleVideo()">📷 Vypnout kameru</button>
+            <button class="video-btn danger" onclick="endVideoCall()">❌ Ukončit</button>
+        </div>
+    </div>
+
+    <div id="incoming-modal">
+        <h3 style="margin-bottom: 5px;">Příchozí videohovor</h3>
+        <p id="incoming-name" style="font-size: 1.2rem; color: var(--primary); font-weight: bold;"></p>
+        <div class="modal-btns">
+            <button style="background: #2ed573; color: #000;" onclick="acceptCall()">Přijmout</button>
+            <button style="background: #ff4757; color: #fff;" onclick="rejectCall()">Odmítnout</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const WORKER_URL = "https://api.63e.cz";
+    const MAX_HISTORY = 500; // Zvýšeno pro víc místností
+    
+    const WEBRTC_CONFIG = {
+        iceServers: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+        ]
+    };
+    
+    function getStableNodeId() {
+        let saved = localStorage.getItem('p2p_stable_id');
+        if (saved) return saved;
+        let id = Math.random().toString(36).substring(2, 8);
+        localStorage.setItem('p2p_stable_id', id);
+        return id;
+    }
+    function generateMsgId() { return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); }
+
+    let myId = getStableNodeId(); 
+    let myName = "";
+    let isDnsHost = false;
+    let connections = {}; 
+    let channels = {}; 
+    let networkGraph = { root: myId, edges: [] }; 
+    
+    let seenMessages = new Set(); 
+    let knownNodes = {}; 
+    let chatHistory = []; 
+    let myKeyPair = null; 
+
+    let joinInterval = null; 
+    let dnsInterval = null;
+    let fileBuffers = {};
+
+    let peerStats = {};
+    let drawnEdges = []; 
+    let appSessionTime = 0;
+    let watchdogTick = Date.now();
+
+    // --- MÍSTNOSTI (ROOMS) ---
+    let rooms = { 'main': { id: 'main', name: 'Společný chat', members: 'ALL' } };
+    let currentRoom = 'main';
+    let unreadCounts = {};
+
+    let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}` };
+
+    let activeCall = { pc: null, peerId: null, localStream: null };
+    let incomingCallData = null; 
+
+    document.getElementById('dbg-id').innerText = myId;
+
+    window.addEventListener('DOMContentLoaded', () => {
+        const savedName = localStorage.getItem('chat_nickname');
+        if (savedName) document.getElementById('username').value = savedName;
+        window.addEventListener('resize', drawTopology);
+    });
+
+    setInterval(() => {
+        const now = Date.now();
+        if (now - watchdogTick < 2000) appSessionTime++;
+        const m = String(Math.floor(appSessionTime / 60)).padStart(2, '0');
+        const s = String(appSessionTime % 60).padStart(2, '0');
+        document.getElementById('status-timer').innerText = `${m}:${s}`;
+        
+        if (now - watchdogTick > 10000) { 
+            appSessionTime = 0; 
+            fullResetAndReconnect();
+        }
+        watchdogTick = now;
+    }, 1000);
+
+    function escapeHTML(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
+    }
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+    function buf2b64(buf) {
+        let binary = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        return window.btoa(binary);
+    }
+    function b642buf(b64) {
+        const str = window.atob(b64);
+        const bytes = new Uint8Array(str.length);
+        for (let i = 0; i < str.length; i++) bytes[i] = str.charCodeAt(i);
+        return bytes.buffer;
+    }
+    function komprimovat(data) {
+        const deflated = pako.deflate(JSON.stringify(data));
+        let binary = '';
+        for (let i = 0; i < deflated.length; i++) binary += String.fromCharCode(deflated[i]);
+        return window.btoa(binary);
+    }
+    function dekomprimovat(b64) {
+        const str = window.atob(b64); 
+        const pole = new Uint8Array(str.length);
+        for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i);
+        return JSON.parse(pako.inflate(pole, { to: 'string' }));
+    }
+
+    function logDebug(msg, type = 'info') {
+        const logWindow = document.getElementById('debug-log');
+        const time = new Date().toLocaleTimeString('cs-CZ');
+        logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`;
+        logWindow.scrollTop = logWindow.scrollHeight;
+    }
+    
+    function updateDebugStats(stat, value) { document.getElementById(`dbg-${stat}`).innerText = value; }
+    
+    function unlockChat() {
+        document.getElementById('setup-screen').style.display = 'none';
+        document.getElementById('chat-input').disabled = false;
+        document.getElementById('send-btn').disabled = false;
+        document.getElementById('btn-attach').disabled = false;
+        document.getElementById('btn-clear-history').style.display = 'inline-block';
+        document.getElementById('status-dot').className = `status-dot ${isDnsHost ? 'host' : 'online'}`;
+        document.getElementById('ui-role').innerText = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)';
+    }
+
+    // --- ROOM UI LOGIC ---
+    function updateUserDropdown() {
+        const select = document.getElementById('new-dm-select');
+        select.innerHTML = '<option value="">+ Nová zpráva pro...</option>';
+        Object.keys(knownNodes).forEach(id => {
+            if (id !== myId) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.innerText = knownNodes[id].name;
+                select.appendChild(opt);
+            }
+        });
+    }
+
+    function renderTabs() {
+        const container = document.getElementById('tabs-container');
+        container.innerHTML = '';
+        Object.values(rooms).forEach(room => {
+            const btn = document.createElement('button');
+            btn.className = `tab-btn ${room.id === currentRoom ? 'active' : ''}`;
+            btn.onclick = () => switchRoom(room.id);
+            
+            let unread = unreadCounts[room.id] ? `<span class="unread-badge">${unreadCounts[room.id]}</span>` : '';
+            btn.innerHTML = `${escapeHTML(room.name)} ${unread}`;
+            container.appendChild(btn);
+        });
+        document.getElementById('room-controls').style.display = (currentRoom === 'main') ? 'none' : 'flex';
+    }
+
+    window.switchRoom = function(roomId) {
+        currentRoom = roomId;
+        unreadCounts[roomId] = 0;
+        renderTabs();
+        reRenderAllHistory();
+    }
+
+    window.handleNewDmSelect = function(select) {
+        const targetId = select.value;
+        select.value = "";
+        if (!targetId) return;
+
+        let existingRoom = Object.values(rooms).find(r => r.members !== 'ALL' && r.members.length === 2 && r.members.includes(targetId));
+        
+        if (existingRoom) {
+            switchRoom(existingRoom.id);
+        } else {
+            const roomId = 'room_' + generateMsgId();
+            rooms[roomId] = { id: roomId, name: knownNodes[targetId].name, members: [myId, targetId] };
+            switchRoom(roomId);
+            sendRoomControl(roomId, 'invite', rooms[roomId]);
+        }
+    }
+
+    window.renameCurrentRoom = function() {
+        const newName = prompt("Nové jméno místnosti:", rooms[currentRoom].name);
+        if (newName) {
+            rooms[currentRoom].name = newName;
+            renderTabs();
+            sendRoomControl(currentRoom, 'rename', newName);
+        }
+    }
+
+    window.addParticipantToRoom = function() {
+        const targetId = prompt("Zadejte ID účastníka, kterého chcete přidat:\n" + Object.keys(knownNodes).filter(id=>id!==myId).map(id => `${knownNodes[id].name} (${id})`).join('\n'));
+        if (targetId && knownNodes[targetId] && !rooms[currentRoom].members.includes(targetId)) {
+            rooms[currentRoom].members.push(targetId);
+            sendRoomControl(currentRoom, 'add', targetId);
+            setTimeout(() => sendRoomControl(currentRoom, 'invite', rooms[currentRoom]), 500);
+            alert(`Uživatel ${knownNodes[targetId].name} přidán.`);
+        } else {
+            alert("Neplatné ID nebo uživatel už v místnosti je.");
+        }
+    }
+
+    window.destroyCurrentRoom = function() {
+        if(confirm("Opravdu zrušit místnost všem účastníkům?")) {
+            sendRoomControl(currentRoom, 'destroy', null);
+            chatHistory = chatHistory.filter(m => m.roomId !== currentRoom);
+            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+            delete rooms[currentRoom];
+            switchRoom('main');
+        }
+    }
+
+    async function sendRoomControl(roomId, action, data) {
+        const room = rooms[roomId];
+        if (!room || room.members === 'ALL') return;
+        
+        const payload = JSON.stringify({ action, data, roomId });
+        let encryptedPayloads = {};
+        
+        for (const peerId of room.members) {
+            if (peerId !== myId) {
+                encryptedPayloads[peerId] = await encryptE2E(payload, peerId);
+            }
+        }
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'room-control', sender: myId, payloads: encryptedPayloads });
+    }
+
+    // --- E2E CRYPTO ---
+    async function initCrypto() {
+        myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]);
+        const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+        knownNodes[myId] = { name: myName, publicKeyJWK: myJwk, lastSeen: Date.now() }; 
+        return myJwk;
+    }
+
+    async function deriveAesKey(peerId, peerJwk) {
+        if(knownNodes[peerId] && knownNodes[peerId].derivedAesKey) return knownNodes[peerId].derivedAesKey;
+        const importedPubKey = await crypto.subtle.importKey("jwk", peerJwk, { name: "ECDH", namedCurve: "P-256" }, true, []);
+        const aesKey = await crypto.subtle.deriveKey(
+            { name: "ECDH", public: importedPubKey }, myKeyPair.privateKey,
+            { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+        );
+        knownNodes[peerId] = { ...knownNodes[peerId], derivedAesKey: aesKey };
+        return aesKey;
+    }
+
+    async function encryptE2E(plaintext, targetId) {
+        const aesKey = await deriveAesKey(targetId, knownNodes[targetId].publicKeyJWK);
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, new TextEncoder().encode(plaintext));
+        return { iv: buf2b64(iv), cipher: buf2b64(cipherBuf) };
+    }
+
+    async function decryptE2E(ivB64, cipherB64, senderId) {
+        try {
+            if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) return null;
+            const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK);
+            const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64));
+            return new TextDecoder().decode(plainBuf);
+        } catch(e) { return null; }
+    }
+
+    // --- API SIGNALING ---
+    async function writeSignal(subdomena, data, retry = 2) {
+        while (retry > 0) {
+            try {
+                const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) });
+                if((await res.json()).success) return true;
+            } catch (e) { }
+            retry--; if(retry > 0) await new Promise(r => setTimeout(r, 800)); 
+        }
+        return false;
+    }
+
+    async function readSignal(subdomena) {
+        try {
+            const res = await fetch(`${WORKER_URL}?key=${subdomena}&_t=${Date.now()}`);
+            const json = await res.json();
+            if(json.success && json.content) return dekomprimovat(json.content.replace(/["\s\n\r\\]/g, ''));
+        } catch(e) { } 
+        return null;
+    }
+
+    // --- HISTORY RENDERING ---
+    window.reRenderAllHistory = function() {
+        const chat = document.getElementById('chat-area');
+        chat.innerHTML = ''; 
+        const filteredHistory = chatHistory.filter(m => (m.roomId === currentRoom) || (!m.roomId && currentRoom === 'main'));
+        
+        filteredHistory.forEach(msg => { renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file); });
+        chat.scrollTop = chat.scrollHeight; 
+    }
+
+    function loadHistory() {
+        const saved = localStorage.getItem('chat_history');
+        if(saved) {
+            try {
+                chatHistory = JSON.parse(saved);
+                chatHistory.sort((a,b) => a.time - b.time); 
+                reRenderAllHistory();
+            } catch(e) { chatHistory = []; }
+        }
+    }
+
+    function saveMessage(msgObj) {
+        if(chatHistory.some(m => m.id === msgObj.id)) return false; 
+        chatHistory.push(msgObj);
+        chatHistory.sort((a,b) => a.time - b.time); 
+        if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY);
+        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+        return true;
+    }
+
+    window.broadcastClearHistory = function() {
+        if(confirm("Opravdu vymazat historii této místnosti pro všechny?")) {
+            if (currentRoom === 'main') {
+                chatHistory = chatHistory.filter(m => m.roomId && m.roomId !== 'main');
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'clear-history', sender: myId });
+            } else {
+                chatHistory = chatHistory.filter(m => m.roomId !== currentRoom);
+                sendRoomControl(currentRoom, 'clear', null);
+            }
+            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+            reRenderAllHistory();
+        }
+    }
+
+    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false) {
+        const chat = document.getElementById('chat-area');
+        const div = document.createElement('div');
+        div.className = `msg msg-${type}`;
+        
+        const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined });
+        const safeAuthor = escapeHTML(author);
+        let contentHtml = rawHtml ? text : escapeHTML(text);
+
+        if (fileObj) {
+            if (!fileObj.dataUrl) {
+                contentHtml += `<div class="file-attachment" style="opacity: 0.6;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)} (Odebráno z RAM)</div></div></div>`;
+            } else {
+                if (fileObj.dataUrl.startsWith('data:image/')) {
+                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}"><img src="${fileObj.dataUrl}" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`;
+                } else {
+                    contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`;
+                }
+            }
+        }
+
+        if (type !== 'system') {
+            div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;"><b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${contentHtml}`;
+        } else {
+            div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${contentHtml}`;
+        }
+        
+        chat.appendChild(div);
+        if(scroll) chat.scrollTop = chat.scrollHeight;
+    }
+
+    // --- P2P ROUTING ---
+    function routeMessage(msgObj, sourceChannel = null) {
+        if (msgObj.type !== 'sync-history' && msgObj.type !== 'file-chunk') {
+            if (seenMessages.has(msgObj.id)) return; 
+            seenMessages.add(msgObj.id);
+            if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value);
+        }
+
+        processPayload(msgObj);
+
+        msgObj.ttl -= 1; 
+        if (msgObj.ttl <= 0) return; 
+
+        if (!msgObj.path) msgObj.path = [];
+        msgObj.path.push(myId);
+
+        Object.values(channels).forEach(ch => {
+            if (ch.readyState === 'open' && ch !== sourceChannel) {
+                try { ch.send(JSON.stringify(msgObj)); } catch(err) {}
+            }
+        });
+    }
+
+    async function processPayload(msg) {
+        if (msg.sender && knownNodes[msg.sender]) knownNodes[msg.sender].lastSeen = Date.now();
+
+        if (msg.type === 'announce') {
+            const isNewNode = !knownNodes[msg.sender];
+            if (isNewNode || JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk)) {
+                knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now() };
+                updateDebugStats('nodes', Object.keys(knownNodes).length);
+                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
+                updateUserDropdown(); // Aktualizace UI
+
+                if (isNewNode) {
+                    if (currentRoom === 'main') renderMessage('System', `${escapeHTML(msg.name)} se připojil(a).`, 'system', Date.now(), true, null, true);
+                }
+                
+                const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+            }
+        } 
+        else if (msg.type === 'node-left') {
+            if (knownNodes[msg.target]) {
+                delete knownNodes[msg.target];
+                updateDebugStats('nodes', Object.keys(knownNodes).length);
+                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
+                updateUserDropdown();
+            }
+        }
+        else if (msg.type === 'room-control') {
+            if (msg.payloads[myId]) {
+                const plain = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
+                if (plain) {
+                    const ctrl = JSON.parse(plain);
+                    const rId = ctrl.roomId;
+                    
+                    if (ctrl.action === 'invite') {
+                        rooms[rId] = ctrl.data;
+                        renderTabs();
+                    } else if (ctrl.action === 'rename') {
+                        if (rooms[rId]) rooms[rId].name = ctrl.data;
+                        renderTabs();
+                    } else if (ctrl.action === 'add') {
+                        if (rooms[rId] && !rooms[rId].members.includes(ctrl.data)) rooms[rId].members.push(ctrl.data);
+                    } else if (ctrl.action === 'clear') {
+                        chatHistory = chatHistory.filter(m => m.roomId !== rId);
+                        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+                        if (currentRoom === rId) reRenderAllHistory();
+                    } else if (ctrl.action === 'destroy') {
+                        chatHistory = chatHistory.filter(m => m.roomId !== rId);
+                        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+                        delete rooms[rId];
+                        if (currentRoom === rId) switchRoom('main');
+                        else renderTabs();
+                    }
+                }
+            }
+        }
+        else if (msg.type === 'chat') {
+            if (msg.payloads[myId]) {
+                const plainJson = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
+                if (plainJson) {
+                    const secretData = JSON.parse(plainJson);
+                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
+                    const incomingRoomId = secretData.roomId || 'main';
+
+                    if (incomingRoomId !== 'main' && !rooms[incomingRoomId]) {
+                        rooms[incomingRoomId] = { id: incomingRoomId, name: `${authorName} (DM)`, members: [myId, msg.sender] };
+                        renderTabs();
+                    }
+
+                    const msgObjForStorage = { id: msg.id, author: authorName, text: secretData.text, time: secretData.time, roomId: incomingRoomId };
+                    
+                    if(saveMessage(msgObjForStorage)) {
+                        if (currentRoom === incomingRoomId) {
+                            renderMessage(authorName, secretData.text, 'other', secretData.time);
+                        } else {
+                            unreadCounts[incomingRoomId] = (unreadCounts[incomingRoomId] || 0) + 1;
+                            renderTabs();
+                        }
+                    }
+                }
+            }
+        }
+        else if (msg.type === 'file-chunk') {
+            if (msg.target !== myId) return; 
+            const plainChunk = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
+            if (plainChunk) {
+                const chunkData = JSON.parse(plainChunk);
+                const fileId = chunkData.fileId;
+                
+                if (!fileBuffers[fileId]) {
+                    fileBuffers[fileId] = { chunks: [], received: 0, total: chunkData.totalChunks, meta: chunkData.meta };
+                }
+                
+                fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data;
+                fileBuffers[fileId].received++;
+                
+                if (fileBuffers[fileId].received === fileBuffers[fileId].total) {
+                    const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fileBuffers[fileId].chunks.join('')}`;
+                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
+                    const timeNow = Date.now();
+                    const incomingRoomId = fileBuffers[fileId].meta.roomId || 'main';
+                    
+                    const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl };
+                    const msgObjForStorage = { id: fileId, author: authorName, text: "Odeslán soubor.", time: timeNow, file: fileObj, roomId: incomingRoomId };
+                    
+                    if(saveMessage(msgObjForStorage)) {
+                        if (currentRoom === incomingRoomId) {
+                            renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj);
+                        } else {
+                            unreadCounts[incomingRoomId] = (unreadCounts[incomingRoomId] || 0) + 1;
+                            renderTabs();
+                        }
+                    }
+                    delete fileBuffers[fileId];
+                }
+            }
+        }
+        else if (msg.type === 'clear-history') {
+            chatHistory = chatHistory.filter(m => m.roomId && m.roomId !== 'main');
+            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+            if(currentRoom === 'main') reRenderAllHistory();
+        }
+        else if (msg.type === 'topo-sync') {
+            networkGraph = msg.graph;
+            drawTopology();
+        }
+    }
+
+    // --- CHAT INTERACTION ---
+    window.sendMsg = async function() {
+        const text = document.getElementById('chat-input').value.trim();
+        if (!text) return;
+        
+        const timeNow = Date.now();
+        let encryptedPayloads = {};
+        const room = rooms[currentRoom];
+        const targetMembers = room.members === 'ALL' ? Object.keys(knownNodes) : room.members;
+
+        for (const peerId of targetMembers) {
+            if (peerId !== myId) {
+                const secretPayload = JSON.stringify({ text: text, time: timeNow, roomId: currentRoom });
+                encryptedPayloads[peerId] = await encryptE2E(secretPayload, peerId);
+            }
+        }
+
+        const msgId = generateMsgId(); 
+        const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads };
+
+        saveMessage({ id: msgId, author: myName, text: text, time: timeNow, roomId: currentRoom });
+        renderMessage('Ty', text, 'self', timeNow);
+        routeMessage(msgObj); 
+        document.getElementById('chat-input').value = '';
+    }
+
+    window.handleFileUpload = async function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const result = e.target.result; 
+            const base64Data = result.split(',')[1]; 
+            const fileId = "FILE_" + generateMsgId();
+            const timeNow = Date.now();
+            const chunkSize = 16384; 
+            const totalChunks = Math.ceil(base64Data.length / chunkSize);
+            
+            const fileMeta = { name: file.name, size: file.size, type: file.type, roomId: currentRoom };
+            const fileObj = { name: file.name, size: file.size, dataUrl: result };
+            
+            const room = rooms[currentRoom];
+            const targetMembers = room.members === 'ALL' ? Object.keys(knownNodes) : room.members;
+
+            saveMessage({ id: fileId, author: myName, text: "Odeslán soubor.", time: timeNow, file: fileObj, roomId: currentRoom });
+            renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
+                let encryptedPayloads = {};
+                
+                for (const peerId of targetMembers) {
+                    if (peerId !== myId) {
+                        const chunkObj = { fileId, chunkIndex: i, totalChunks, meta: fileMeta, data: chunkData };
+                        encryptedPayloads[peerId] = await encryptE2E(JSON.stringify(chunkObj), peerId);
+                    }
+                }
+                
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, payloads: encryptedPayloads });
+                await new Promise(r => setTimeout(r, 50)); 
+            }
+        };
+        reader.readAsDataURL(file);
+        event.target.value = ''; 
+    }
+
+    // --- TOPOLOGY & HEALTH ---
+    function drawTopology() {
+        const canvas = document.getElementById('topo-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.offsetWidth || canvas.width;
+        const h = canvas.offsetHeight || canvas.height;
+        canvas.width = w; canvas.height = h;
+        
+        ctx.clearRect(0, 0, w, h);
+        if (!networkGraph || !networkGraph.root) return;
+
+        const rootX = w / 2, rootY = 30;
+        ctx.beginPath(); ctx.arc(rootX, rootY, 12, 0, Math.PI * 2);
+        ctx.fillStyle = (networkGraph.root === myId) ? '#0078FF' : '#555'; ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = 'bold 10px sans-serif';
+        const rootName = knownNodes[networkGraph.root] ? knownNodes[networkGraph.root].name : networkGraph.root;
+        ctx.fillText(rootName.substring(0, 6), rootX, rootY + 25);
+
+        const edges = networkGraph.edges || [];
+        const spacing = w / (edges.length + 1);
+
+        edges.forEach((edge, i) => {
+            const nodeX = spacing * (i + 1), nodeY = h - 40;
+            ctx.beginPath(); ctx.moveTo(rootX, rootY); ctx.lineTo(nodeX, nodeY);
+            ctx.strokeStyle = '#2ed573'; ctx.lineWidth = 2; ctx.stroke();
+
+            ctx.beginPath(); ctx.arc(nodeX, nodeY, 10, 0, Math.PI * 2);
+            ctx.fillStyle = (edge.id === myId) ? '#0078FF' : '#555'; ctx.fill();
+            ctx.fillStyle = '#aaa';
+            const nodeName = knownNodes[edge.id] ? knownNodes[edge.id].name : edge.id;
+            ctx.fillText(nodeName.substring(0, 6), nodeX, nodeY + 25);
+        });
+    }
+
+    setInterval(() => {
+        const list = document.getElementById('net-health-list');
+        if(!list) return;
+        let html = '<table><tr><th>Uzel</th><th>Status</th><th>Akce</th></tr>';
+        
+        Object.keys(knownNodes).sort().forEach(id => {
+            const node = knownNodes[id];
+            const isMe = id === myId;
+            let status = (Date.now() - node.lastSeen > 25000 && !isMe) ? '<span style="color:#ff4757">Mrtvý</span>' : '<span style="color:#2ed573">Aktivní</span>';
+            let btn = !isMe ? `<button class="btn-call" onclick="startVideoCall('${id}')">📞 Video</button>` : '-';
+            html += `<tr><td>${escapeHTML(node.name)} ${isMe ? '(Ty)' : ''}</td><td>${status}</td><td>${btn}</td></tr>`;
+        });
+        list.innerHTML = html + '</table>';
+    }, 2000);
+
+    // --- CONNECTION HANDLING ---
+    function cleanupConnection(targetId) {
+        if(channels[targetId]) { channels[targetId].close(); delete channels[targetId]; }
+        if(connections[targetId]) { connections[targetId].close(); delete connections[targetId]; }
+        updateDebugStats('peers', Object.keys(channels).length);
+        if (!isDnsHost && targetId === 'hub') fullResetAndReconnect();
+    }
+
+    async function fullResetAndReconnect() {
+        if (joinInterval) clearInterval(joinInterval);
+        if (dnsInterval) clearInterval(dnsInterval);
+        
+        Object.values(channels).forEach(ch => ch.close());
+        Object.values(connections).forEach(pc => pc.close());
+        connections = {}; channels = {}; networkGraph = { root: null, edges: [] };
+        
+        isDnsHost = false;
+        await initCrypto();
+        const hostAlive = await readSignal('host-alive');
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
+        else startDnsHostLoop();
+    }
+
+    window.initSystem = async function() {
+        document.getElementById('join-btn').disabled = true;
+        document.getElementById('ui-role').innerText = "Kontroluji API...";
+        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId;
+        document.getElementById('ui-my-name').innerText = escapeHTML(myName); 
+        document.getElementById('setup-screen').style.display = 'none'; 
+        
+        loadHistory();
+        renderTabs();
+        await initCrypto();
+        
+        const hostAlive = await readSignal('host-alive');
+        if (hostAlive && (Date.now() - hostAlive.timestamp < 120000)) joinViaDns();
+        else startDnsHostLoop();
+    }
+
+    // --- MASTER LOGIC ---
+    async function startDnsHostLoop() {
+        isDnsHost = true; networkGraph.root = myId; unlockChat();
+        await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
+        
+        dnsInterval = setInterval(async () => {
+            await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
+            let edges = []; Object.keys(knownNodes).forEach(id => { if(id!==myId) edges.push({id}); });
+            networkGraph.edges = edges; routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph });
+            drawTopology();
+            
+            const q = await readSignal('queue');
+            if (Array.isArray(q) && q.length > 0) {
+                const guestId = q[0];
+                await writeSignal('queue', q.filter(id => id !== guestId));
+                const offerPayload = await readSignal(`offer-${guestId}`);
+                
+                if (offerPayload && offerPayload.sdp && !offerPayload.consumed) {
+                    const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+                    connections[guestId] = pc;
+                    pc.ondatachannel = (e) => {
+                        channels[guestId] = e.channel;
+                        updateDebugStats('peers', Object.keys(channels).length);
+                        e.channel.onmessage = (ev) => { try { routeMessage(JSON.parse(ev.data), e.channel); } catch(err){} };
+                    };
+                    
+                    await pc.setRemoteDescription(new RTCSessionDescription(offerPayload.sdp));
+                    await writeSignal(`offer-${guestId}`, { consumed: true });
+                    await pc.setLocalDescription(await pc.createAnswer());
+                    
+                    setTimeout(async () => {
+                        await writeSignal(`answer-${guestId}`, { sdp: pc.localDescription, sid: offerPayload.sid });
+                    }, 1000);
+                }
+            }
+        }, 3000);
+    }
+
+    // --- SPOKE LOGIC ---
+    async function joinViaDns() {
+        document.getElementById('ui-role').innerText = "Spojuji se...";
+        const sid = generateMsgId();
+        const pc = new RTCPeerConnection(WEBRTC_CONFIG);
+        connections['hub'] = pc;
+        
+        const ch = pc.createDataChannel('chat');
+        ch.onopen = () => {
+            channels['hub'] = ch; updateDebugStats('peers', 1); unlockChat(); clearInterval(joinInterval);
+            ch.onmessage = (ev) => { try { routeMessage(JSON.parse(ev.data), ch); } catch(err){} };
+            setTimeout(async () => {
+                const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk });
+            }, 1000);
+        };
+        
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        setTimeout(async () => {
+            await writeSignal(`offer-${myId}`, { sdp: pc.localDescription, sid: sid });
+            await writeSignal('queue', [myId]);
+        }, 1000);
+        
+        joinInterval = setInterval(async () => {
+            const answerPayload = await readSignal(`answer-${myId}`);
+            if (answerPayload && !answerPayload.consumed && answerPayload.sid === sid) {
+                await pc.setRemoteDescription(new RTCSessionDescription(answerPayload.sdp));
+                await writeSignal(`answer-${myId}`, { consumed: true });
+            }
+        }, 2000);
+    }
+
+    // --- ZÁKLADNÍ VIDEO CALL LOGIKA (Mock pro zachování UI konzistence) ---
+    window.startVideoCall = function(targetId) { alert("Video hovory jsou v této zjednodušené ukázce vypnuty pro úsporu místa. Lze je doplnit z původní verze."); }
+    window.endVideoCall = function() {}
+</script>
+</body>
+</html>
