@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC & API Proxy Traversal Test</title>
+    <style>
+        :root { --primary: #0078FF; --bg: #1e1e1e; --text: #eee; --panel: #2a2a2a; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { border-bottom: 2px solid var(--primary); padding-bottom: 10px; }
+        button { background: var(--primary); color: white; border: none; padding: 10px 20px; font-size: 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; margin-bottom: 20px;}
+        button:hover { background: #005bb5; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .test-box { background: var(--panel); margin-bottom: 15px; border-radius: 8px; overflow: hidden; border: 1px solid #444; }
+        .test-header { padding: 12px 15px; display: flex; justify-content: space-between; align-items: center; background: #333; font-weight: bold; }
+        .test-content { padding: 15px; font-family: monospace; font-size: 0.85rem; color: #aaa; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto;}
+        
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; }
+        .status.idle { background: #555; }
+        .status.running { background: #f39c12; color: #000; }
+        .status.success { background: #2ed573; color: #000; }
+        .status.fail { background: #ff4757; color: #fff; }
+        
+        .highlight { color: #00d2d3; font-weight: bold; }
+        .candidate-good { color: #2ed573; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Diagnostika propustnosti sítě (Proxy / Firewall)</h1>
+    <p>Tento nástroj testuje, zda aktuální síť umožňuje spojení s API a vyjednání WebRTC P2P cest (STUN/TURN).</p>
+    
+    <button id="btn-start" onclick="runTests()">Spustit diagnostiku</button>
+
+    <div id="tests">
+        <!-- Zde se vygenerují výsledky -->
+    </div>
+</div>
+
+<script>
+    const WORKER_URL = "https://api.63e.cz";
+    
+    // Konfigurace z tvé aplikace rozdělená na specifické testy
+    const SERVERS = {
+        stun: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.l.google.com:19302' }
+        ],
+        turnUdp: [
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+        ],
+        turnTcp: [
+            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ]
+    };
+
+    function createTestUI(id, title) {
+        const testsDiv = document.getElementById('tests');
+        const box = document.createElement('div');
+        box.className = 'test-box';
+        box.id = `box-${id}`;
+        box.innerHTML = `
+            <div class="test-header">
+                <span>${title}</span>
+                <span class="status idle" id="status-${id}">ČEKÁ</span>
+            </div>
+            <div class="test-content" id="log-${id}">Připraveno.</div>
+        `;
+        testsDiv.appendChild(box);
+    }
+
+    function updateTest(id, status, statusText, logAppend) {
+        const statusEl = document.getElementById(`status-${id}`);
+        const logEl = document.getElementById(`log-${id}`);
+        statusEl.className = `status ${status}`;
+        statusEl.innerText = statusText;
+        if (logAppend !== null) {
+            logEl.innerHTML += `\n${logAppend}`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+    }
+
+    function resetUI() {
+        document.getElementById('tests').innerHTML = '';
+        createTestUI('api', '1. HTTP/REST API (Signalizace)');
+        createTestUI('stun', '2. WebRTC STUN (UDP Prostupy)');
+        createTestUI('turn-udp', '3. WebRTC TURN (UDP Relay)');
+        createTestUI('turn-tcp', '4. WebRTC TURN (TCP Relay / Obcházení proxy)');
+    }
+
+    async function testAPI() {
+        updateTest('api', 'running', 'TESTUJI...', 'Odesílám GET požadavek na ' + WORKER_URL);
+        try {
+            const start = performance.now();
+            const res = await fetch(`${WORKER_URL}?key=ping-test&_t=${Date.now()}`);
+            const data = await res.json();
+            const time = Math.round(performance.now() - start);
+            
+            if (res.ok) {
+                updateTest('api', 'success', 'PROŠLO', `<span class="highlight">Odpověď ze serveru přijata (${time} ms).</span>\nAPI je plně prostupné skrze proxy.`);
+            } else {
+                updateTest('api', 'fail', 'SELHALO', `Server odpověděl chybou: ${res.status}`);
+            }
+        } catch (e) {
+            updateTest('api', 'fail', 'BLOKOVÁNO', `Nepodařilo se připojit k API. Proxy pravděpodobně blokuje doménu nebo TLS spojení.\nChyba: ${e.message}`);
+        }
+    }
+
+    function testWebRTC(id, servers, policy, expectedType) {
+        return new Promise((resolve) => {
+            updateTest(id, 'running', 'TESTUJI...', `Zakládám RTCPeerConnection...\nPolitika: ${policy}\nOčekávaný typ: ${expectedType}`);
+            
+            let found = false;
+            let timeout;
+            
+            try {
+                const pc = new RTCPeerConnection({
+                    iceServers: servers,
+                    iceTransportPolicy: policy
+                });
+
+                // Vytvoření dummy kanálu pro spuštění ICE gathering
+                pc.createDataChannel('test');
+
+                pc.onicecandidate = (e) => {
+                    if (e.candidate) {
+                        const c = e.candidate;
+                        const logStr = `Nalezen kandidát: ${c.type} | ${c.protocol.toUpperCase()} | ${c.address}:${c.port}`;
+                        
+                        if (c.type === expectedType) {
+                            found = true;
+                            updateTest(id, 'running', 'TESTUJI...', `<span class="candidate-good">✅ ${logStr} (Očekávaný typ získán)</span>`);
+                        } else {
+                            updateTest(id, 'running', 'TESTUJI...', `ℹ️ ${logStr}`);
+                        }
+                    } else {
+                        // Konec hledání
+                        clearTimeout(timeout);
+                        pc.close();
+                        if (found) {
+                            updateTest(id, 'success', 'PROŠLO', `\n<span class="highlight">Úspěch! Proxy propouští tento typ spojení.</span>`);
+                        } else {
+                            updateTest(id, 'fail', 'BLOKOVÁNO', `\nNepodařilo se získat kandidáta typu '${expectedType}'.\nProxy firewall tento protokol nebo port zahazuje.`);
+                        }
+                        resolve(found);
+                    }
+                };
+
+                pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(e => {
+                    updateTest(id, 'fail', 'CHYBA', `Selhalo generování nabídky: ${e.message}`);
+                    resolve(false);
+                });
+
+                timeout = setTimeout(() => {
+                    if (pc.signalingState !== 'closed') pc.close();
+                    if (found) {
+                        updateTest(id, 'success', 'PROŠLO', `\n<span class="highlight">Časový limit vypršel, ale potřebný kandidát byl nalezen.</span>`);
+                    } else {
+                        updateTest(id, 'fail', 'TIMEOUT', `\nČasový limit vypršel (5s) bez zisku požadovaného ICE kandidáta.`);
+                    }
+                    resolve(found);
+                }, 5000);
+
+            } catch (e) {
+                updateTest(id, 'fail', 'CHYBA PROHLÍŽEČE', `Prohlížeč nebo restrikce zablokovaly WebRTC.\nChyba: ${e.message}`);
+                resolve(false);
+            }
+        });
+    }
+
+    async function runTests() {
+        const btn = document.getElementById('btn-start');
+        btn.disabled = true;
+        btn.innerText = 'Probíhá diagnostika...';
+        
+        resetUI();
+
+        // 1. Otestování API
+        await testAPI();
+
+        // 2. Otestování STUN (Očekáváme srflx - Server Reflexive kandidáta přes UDP)
+        document.getElementById('log-stun').innerHTML = '';
+        await testWebRTC('stun', SERVERS.stun, 'all', 'srflx');
+
+        // 3. Otestování TURN UDP (Očekáváme relay kandidáta)
+        // Používáme iceTransportPolicy: 'relay', abychom vynutili použití TURN serveru
+        document.getElementById('log-turn-udp').innerHTML = '';
+        await testWebRTC('turn-udp', SERVERS.turnUdp, 'relay', 'relay');
+
+        // 4. Otestování TURN TCP (Očekáváme relay kandidáta, typ TCP)
+        document.getElementById('log-turn-tcp').innerHTML = '';
+        await testWebRTC('turn-tcp', SERVERS.turnTcp, 'relay', 'relay');
+
+        btn.disabled = false;
+        btn.innerText = 'Spustit testy znovu';
+    }
+
+    // Inicializace UI při načtení
+    resetUI();
+</script>
+
+</body>
+</html>
