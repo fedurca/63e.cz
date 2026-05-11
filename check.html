@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diag v2</title>
+    <title>NetDIAG v3</title>
     <style>
         :root { --primary: #0078FF; --bg: #1e1e1e; --text: #eee; --panel: #2a2a2a; }
         body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; line-height: 1.5; }
@@ -35,8 +35,8 @@
 <body>
 
 <div class="container">
-    <h1>Pokročilá diagnostika sítě (Proxy/NAT)</h1>
-    <div class="subtitle">Prověřuje HTTP, UDP STUN, TCP STUN a komplexní TURN scénáře s podrobným výpisem ICE sběru.</div>
+    <h1>Rozšířená diagnostika sítě (Proxy/NAT) v2</h1>
+    <div class="subtitle">Prověřuje HTTP, UDP STUN (včetně alt. portů), TURN UDP, TURN TCP a zabezpečený TURN TLS.</div>
     
     <button id="btn-start" onclick="runTests()">Zahájit hloubkovou diagnostiku</button>
 
@@ -47,24 +47,34 @@
 
 <script>
     const WORKER_URL = "https://api.63e.cz";
-    const TIMEOUT_MS = 8000; // 8 vteřin pro těžkopádné proxy
+    const TIMEOUT_MS = 8000; 
 
-    // Rozšířené servery včetně TCP STUN
     const SERVERS = {
-        stunUdp: [
+        // Standardní STUN (Port 3478, 19302)
+        stunStandard: [
             { urls: 'stun:stun.cloudflare.com:3478' },
-            { urls: 'stun:stun.l.google.com:19302' }
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
         ],
-        stunTcp: [
-            // Přidán transport=tcp parametr pro otestování STUN komunikace výhradně po TCP
-            { urls: 'stun:stun.cloudflare.com:3478?transport=tcp' },
-            { urls: 'stun:openrelay.metered.ca:80?transport=tcp' }
+        // STUN na nestandardních portech (obejití restrikcí na port 3478)
+        stunAltPorts: [
+            { urls: 'stun:stun.l.google.com:443' },
+            { urls: 'stun:stun1.l.google.com:19305' },
+            { urls: 'stun:stun.twilio.com:443' }
         ],
+        // Standardní UDP Relay
         turnUdp: [
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' }
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
         ],
+        // TCP Relay (obejití UDP blokace)
         turnTcp: [
+            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ],
+        // TLS Relay (obejití Deep Packet Inspection proxy)
+        turnTls: [
+            { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ]
     };
 
@@ -102,10 +112,11 @@
     function resetUI() {
         document.getElementById('tests').innerHTML = '';
         createTestUI('api', '1. HTTP / REST API (Signalizace)');
-        createTestUI('stun-udp', '2. WebRTC STUN (UDP Prostupy)');
-        createTestUI('stun-tcp', '3. WebRTC STUN (TCP Prostupy)');
+        createTestUI('stun-std', '2. WebRTC STUN (Standardní UDP 3478)');
+        createTestUI('stun-alt', '3. WebRTC STUN (Alternativní porty 443/19305)');
         createTestUI('turn-udp', '4. WebRTC TURN (UDP Relay)');
         createTestUI('turn-tcp', '5. WebRTC TURN (TCP Relay pro těžké proxy)');
+        createTestUI('turn-tls', '6. WebRTC TURNS (Šifrované TLS spojení přes port 443)');
     }
 
     async function testAPI() {
@@ -135,8 +146,7 @@
         return new Promise((resolve) => {
             setStatus(id, 'running', 'TESTUJI...');
             logToTest(id, `Konfiguruji RTCPeerConnection...`);
-            logToTest(id, `Politika směrování (ICE Policy): ${policy.toUpperCase()}`);
-            logToTest(id, `Očekávaný typ kandidáta: ${expectedType.toUpperCase()}`, 'log-highlight');
+            logToTest(id, `Politika směrování: ${policy.toUpperCase()} | Očekáváno: ${expectedType.toUpperCase()}`, 'log-highlight');
             
             let found = false;
             let timeout;
@@ -149,17 +159,12 @@
                     iceCandidatePoolSize: 1
                 });
 
-                // Detailní sledování stavů
                 pc.onicegatheringstatechange = () => {
                     logToTest(id, `ICE Gathering State: ${pc.iceGatheringState}`, 'log-state');
                     if (pc.iceGatheringState === 'complete') {
                         clearTimeout(timeout);
                         finalizeTest();
                     }
-                };
-
-                pc.onsignalingstatechange = () => {
-                    logToTest(id, `Signaling State: ${pc.signalingState}`, 'log-state');
                 };
 
                 pc.createDataChannel('diagnostics');
@@ -170,7 +175,7 @@
                         let tcpTypeInfo = c.tcpType ? ` [TCP typ: ${c.tcpType}]` : '';
                         let relatedInfo = c.relatedAddress ? ` (Rel: ${c.relatedAddress}:${c.relatedPort})` : '';
                         
-                        const logStr = `Nalezen: ${c.type.toUpperCase()} | Proto: ${c.protocol.toUpperCase()}${tcpTypeInfo} | ${c.address}:${c.port}${relatedInfo} | Pri: ${c.priority}`;
+                        const logStr = `Nalezen: ${c.type.toUpperCase()} | Proto: ${c.protocol.toUpperCase()}${tcpTypeInfo} | ${c.address}:${c.port}${relatedInfo}`;
                         
                         if (c.type === expectedType) {
                             found = true;
@@ -178,16 +183,10 @@
                         } else {
                             logToTest(id, `ℹ️ ${logStr}`, 'log-info');
                         }
-                    } else {
-                        logToTest(id, `Sběr kandidátů ukončen (NULL candidate).`, 'log-state');
                     }
                 };
 
-                logToTest(id, `Generuji lokální SDP nabídku (Offer)...`);
-                pc.createOffer().then(offer => {
-                    logToTest(id, `SDP nabídka vygenerována. Nastavuji jako LocalDescription.`);
-                    return pc.setLocalDescription(offer);
-                }).catch(e => {
+                pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(e => {
                     logToTest(id, `Chyba při tvorbě SDP: ${e.message}`, 'log-err');
                     clearTimeout(timeout);
                     finalizeTest();
@@ -199,7 +198,7 @@
                         logToTest(id, `Úspěch! Síť tuto vrstvu nezablokovala.`, 'log-highlight');
                         setStatus(id, 'success', 'PROŠLO');
                     } else {
-                        logToTest(id, `Chyba STUN/TURN: Proxy nebo Firewall tuto komunikaci zahazuje / blokuje.`, 'log-err');
+                        logToTest(id, `Chyba STUN/TURN: Proxy nebo Firewall tuto komunikaci zahazuje.`, 'log-err');
                         setStatus(id, 'fail', 'BLOKOVÁNO');
                     }
                     resolve(found);
@@ -211,7 +210,7 @@
                 }, TIMEOUT_MS);
 
             } catch (e) {
-                logToTest(id, `Selhání na úrovni prohlížeče: ${e.message}`, 'log-err');
+                logToTest(id, `Selhání prohlížeče/API: ${e.message}`, 'log-err');
                 setStatus(id, 'fail', 'CHYBA API');
                 resolve(false);
             }
@@ -221,31 +220,21 @@
     async function runTests() {
         const btn = document.getElementById('btn-start');
         btn.disabled = true;
-        btn.innerText = 'Probíhá diagnostika (může trvat i 30 vteřin)...';
+        btn.innerText = 'Probíhá diagnostika (může trvat i 40 vteřin)...';
         
         resetUI();
 
-        // 1. API
         await testAPI();
-
-        // 2. STUN UDP (Server Reflexive)
-        await testWebRTC('stun-udp', SERVERS.stunUdp, 'all', 'srflx');
-
-        // 3. STUN TCP (Server Reflexive over TCP)
-        // Zjišťuje, jestli proxy pustí aspoň TCP provoz na STUN porty a umožní přímé P2P přes TCP
-        await testWebRTC('stun-tcp', SERVERS.stunTcp, 'all', 'srflx');
-
-        // 4. TURN UDP (Relay)
+        await testWebRTC('stun-std', SERVERS.stunStandard, 'all', 'srflx');
+        await testWebRTC('stun-alt', SERVERS.stunAltPorts, 'all', 'srflx');
         await testWebRTC('turn-udp', SERVERS.turnUdp, 'relay', 'relay');
-
-        // 5. TURN TCP (Relay) - Poslední záchrana v enterprise korporátních sítích
         await testWebRTC('turn-tcp', SERVERS.turnTcp, 'relay', 'relay');
+        await testWebRTC('turn-tls', SERVERS.turnTls, 'relay', 'relay');
 
         btn.disabled = false;
         btn.innerText = 'Spustit diagnostiku znovu';
     }
 
-    // Příprava UI
     resetUI();
 </script>
 
