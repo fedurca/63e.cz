@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.3 (ROBUST: Relay-Only Fallback & ICE Debug)</title>
+    <title>E2E Tree P2P Chat v4.2 (Geo-Continent, Mac Fix & Loop Break)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -131,7 +131,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.3 (ROBUST Fallback)</span>
+            <span class="version-badge">v4.2 (Geo-Continent & Mac Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -182,7 +182,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.3 ROBUST: Fallback režim, čisté STUN/TURN parsování a opravené timeouty.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.2: Přesnější detekce MacBooků, odhad kontinentu a ochrana proti zamrznutí ICE.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -217,32 +217,19 @@
     const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
-    // ZÁKLADNÍ BEZPEČNÁ KONFIGURACE (V4.3 SANITIZACE)
-    const RAW_ICE_SERVERS = [
-        { urls: 'stun:stun.cloudflare.com:3478' },
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-    ];
-
-    function getSanitizedConfig(forceRelay = false) {
-        let cleanServers = [];
-        RAW_ICE_SERVERS.forEach(server => {
-            if (server && server.urls && typeof server.urls === 'string' && server.urls.length > 0) {
-                // Odstranění nechtěných znaků z URL pro zamezení chyb parsování
-                let safeUrl = server.urls.replace(/[";']/g, '').trim();
-                cleanServers.push({ ...server, urls: safeUrl });
-            }
-        });
-        
-        let config = { iceServers: cleanServers };
-        if (forceRelay) {
-            config.iceTransportPolicy = 'relay';
-        }
-        return config;
-    }
+    // ZDE BLA APLIKOVÁNA VARIANTA 1 - PŘIDÁN TURNS PROTOKOL (TLS)
+    const WEBRTC_CONFIG = {
+        iceServers: [
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            // ŠIFROVANÝ TURN (TURNS) PROTI DPI FIREWALLŮM
+            { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ]
+    };
     
     function getStableNodeId() {
         let saved = localStorage.getItem('p2p_stable_id');
@@ -264,7 +251,6 @@
     let isDnsHost = false;
     let connections = {}; 
     let channels = {}; 
-    let connectionAttempts = {}; // V4.3 Ochrana zacyklení a fallback tracker
     let networkGraph = { root: myId, edges: [] }; 
     
     let seenMessages = new Set(); 
@@ -347,6 +333,7 @@
             { id: 'BR', url: 'https://registro.br/favicon.ico' }
         ];
 
+        // V4.2: Mapa kontinentů
         const continents = {
             'CZ': 'Evropa', 'SK': 'Evropa', 'DE': 'Evropa', 'AT': 'Evropa', 'PL': 'Evropa',
             'UK': 'Evropa', 'FR': 'Evropa', 'IT': 'Evropa', 'ES': 'Evropa', 'CH': 'Evropa',
@@ -403,6 +390,7 @@
         const dpr = window.devicePixelRatio || 1;
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
         
+        // V4.2: Oprava detekce pro moderní MacBooky (zohlednění Scaled UI)
         if (myTelemetry.os === 'macOS') {
             const w = screen.width;
             if (w === 1512 || w === 1800 || w === 1352 || w === 1470) myTelemetry.diag = '~14.2" (MBP 14)';
@@ -820,7 +808,7 @@
         if (activeCall.pc) return activeCall.pc;
 
         logDebug(`[VIDEO] Inicializace WebRTC (Video) s ${peerId}`, 'webrtc');
-        const pc = new RTCPeerConnection(getSanitizedConfig());
+        const pc = new RTCPeerConnection(WEBRTC_CONFIG);
         activeCall.pc = pc;
         activeCall.peerId = peerId;
 
@@ -829,10 +817,6 @@
             if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
                 endVideoCall(false); 
             }
-        };
-
-        pc.onicecandidateerror = (e) => {
-             logDebug(`[VIDEO] ICE candidate chyba: ${e.url || 'neznámo'} - ${e.errorText}`, 'error');
         };
 
         pc.onicecandidate = (e) => {
@@ -1028,7 +1012,7 @@
                 activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
                 const screenTrack = activeCall.screenStream.getVideoTracks()[0];
                 await videoSender.replaceTrack(screenTrack);
-                document.getElementById('local-video').srcObject = activeCall.screenStream;
+                document.getElementById('local-video').srcObject = activeCall.screenStream; // Ukázat náhled plochy
                 activeCall.isScreenSharing = true;
                 btn.className = 'video-btn active';
                 btn.innerText = '🖥️ Zastavit sdílení';
@@ -1075,6 +1059,7 @@
             isIceRestarting = false; 
         }
     }
+    // --- KONEC VIDEO CALL LOKÁLNÍ FUNKCE ---
 
 
     function routeMessage(msgObj, sourceChannel = null) {
@@ -1122,6 +1107,7 @@
                 if (isNewNode) {
                     const safeName = escapeHTML(msg.name);
                     const teleStr = formatTelemetry(msg.tele);
+                    // V4.1: Oprava escapování pomocí volání renderMessage s flagem rawHtml=true, ID doplněno
                     renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true);
                     logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce');
                 }
@@ -1425,7 +1411,6 @@
             connections[targetId].oniceconnectionstatechange = null; 
             connections[targetId].ondatachannel = null;
             connections[targetId].onicegatheringstatechange = null;
-            connections[targetId].onicecandidateerror = null;
             connections[targetId].close(); 
             delete connections[targetId]; 
         }
@@ -1468,43 +1453,23 @@
                 finish(); 
             }
         };
-        // V4.3: Zvýšený timeout pro záchyt ICE u TURN serverů
-        setTimeout(finish, 8000); 
+        setTimeout(finish, 4500); 
     }
 
-    async function createP2PNode(targetId, isInitiator, useDns = false, sid = null, forceRelay = false) {
-        if (connections[targetId] && connections[targetId].connectionState !== 'closed') return; 
-        logDebug(`[WebRTC] Zakládám linku pro: ${targetId} (Relay Fallback: ${forceRelay})`, 'webrtc');
+    async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) {
+        if (connections[targetId]) return; 
+        logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc');
         
-        const pc = new RTCPeerConnection(getSanitizedConfig(forceRelay));
+        const pc = new RTCPeerConnection(WEBRTC_CONFIG);
         connections[targetId] = pc;
-        pc.isRelayFallback = forceRelay; // Označíme, zda se jedná o fallback pokus
-
-        pc.onicecandidateerror = (e) => {
-            logDebug(`[ICE ERROR] Chyba navázání kandidáta URL: ${e.url || 'neznámo'}, Kód: ${e.errorCode}`, 'error');
-        };
 
         pc.oniceconnectionstatechange = () => {
             const state = pc.iceConnectionState;
             const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57');
             logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}">${state}</span>`, 'info');
             
-            if (state === 'failed') {
-                let attempts = connectionAttempts[targetId] || 0;
-                // Pokud selhal běžný pokus (forceRelay = false), zkusíme relay-only fallback.
-                if (!forceRelay && attempts < 1) {
-                    connectionAttempts[targetId] = attempts + 1;
-                    logDebug(`[WebRTC] Spojení selhalo. Vynucuji RELAY-ONLY (TURN) mód pro ${targetId}...`, 'error');
-                    cleanupConnection(targetId);
-                    setTimeout(() => createP2PNode(targetId, isInitiator, useDns, sid, true), 1000);
-                } else {
-                    logDebug(`[WebRTC] Fallback na Relay pro ${targetId} selhal, nebo max pokusů vyčerpáno. (Anti-Thrashing)`, 'error');
-                    cleanupConnection(targetId);
-                }
-            } else if (state === 'disconnected') {
+            if (state === 'disconnected' || state === 'failed') {
                 cleanupConnection(targetId);
-            } else if (state === 'connected' || state === 'completed') {
-                connectionAttempts[targetId] = 0; // Úspěch = reset counteru
             }
         };
 
@@ -1626,13 +1591,12 @@
         for (const [peerId, pc] of Object.entries(allConnections)) {
             if (!pc) continue;
 
+            // V4.2: WebRTC Watchdog s okamžitým banem mrtvého Hubu
             if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
                 if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
-                if (Date.now() - pc.checkingStartTime > 15000) { // Zvýšeno na 15 vteřin pro pomalejší TURN servery
-                    logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění ICE). Ukončuji pro fallback vyhodnocení.`, 'error');
-                    if (peerId === 'hub' && !pc.isRelayFallback) {
-                        // Nucený Fail zvedne Relay fallback loopu v oniceconnectionstatechange eventu
-                    } else if (peerId === 'hub') {
+                if (Date.now() - pc.checkingStartTime > 10000) {
+                    logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error');
+                    if (peerId === 'hub') {
                         blacklistedHubTimeout = Date.now() + 30000;
                     }
                     cleanupConnection(peerId);
@@ -1833,7 +1797,6 @@
         Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; pc.close(); });
         
         connections = {}; channels = {}; knownNodes = {}; networkGraph = { root: null, edges: [] };
-        connectionAttempts = {}; // Reset fail counterů
         processingOffers.clear(); 
         peerStats = {};
         isDnsHost = false;
@@ -1918,6 +1881,7 @@
             
             const aliveCheck = await readSignal('host-alive');
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) {
+                // V4.1: Deterministická oprava Split-Brain pomocí porovnání ID
                 if (myId > aliveCheck.id) {
                     logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error");
                     blacklistedHubId = null;
@@ -2012,6 +1976,7 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
+            // V4.2: Snížen limit na 12 vteřin pro Fail-Fast zotavení
             if (pokusy > 6) { 
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo (nedostupné ICE kandidáty). Ignoruji Hub pro 30 vteřin.`, "error");
