@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.4 turns</title>
+    <title>E2E Tree P2P Chat v4.3 (Deep Proxy Bypass & Max Debug)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -94,6 +94,7 @@
         #debug-log { height: 150px; padding: 10px; overflow-y: auto; font-size: 0.75rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; flex-shrink: 0; }
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-api { color: #00d2d3; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12; border-radius: 4px; margin: 2px 0;} .log-file { color: #00d2d3; font-weight: bold;}
         .log-announce { color: #00ff00; background: rgba(0,255,0,0.1); padding: 2px 4px; border-left: 2px solid #00ff00; margin-top: 2px;}
+        .log-ice { color: #9b59b6; font-size: 0.7rem; margin-left: 10px; display: block; }
 
         @media (min-width: 800px) { 
             .main-content { flex-direction: row; }
@@ -131,7 +132,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.2 (Geo-Continent & Mac Fix)</span>
+            <span class="version-badge">v4.3 (Deep Proxy Bypass)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -182,7 +183,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.2: Přesnější detekce MacBooků, odhad kontinentu a ochrana proti zamrznutí ICE.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.3: Přidána podpora pro TURNS (TLS) a detailní ICE debug logování pro prostup korporátními firewally.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -217,18 +218,18 @@
     const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
-    // ZDE BLA APLIKOVÁNA VARIANTA 1 - PŘIDÁN TURNS PROTOKOL (TLS)
+    // V4.3: Optimalizovaná konfigurace pro DPI a strict firewalls
     const WEBRTC_CONFIG = {
         iceServers: [
-            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun.cloudflare.com:3478' }, // Potvrzeno, že funguje
+            { urls: 'stun:stun1.l.google.com:3478' },  // Přidán Google na port 3478
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+            // Změna z turn na turns (TLS over TCP 443) pro obejití DPI
+            { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-            // ŠIFROVANÝ TURN (TURNS) PROTI DPI FIREWALLŮM
-            { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-        ]
+            { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+        ],
+        iceCandidatePoolSize: 2 // Urychlí zisk kandidátů
     };
     
     function getStableNodeId() {
@@ -333,7 +334,6 @@
             { id: 'BR', url: 'https://registro.br/favicon.ico' }
         ];
 
-        // V4.2: Mapa kontinentů
         const continents = {
             'CZ': 'Evropa', 'SK': 'Evropa', 'DE': 'Evropa', 'AT': 'Evropa', 'PL': 'Evropa',
             'UK': 'Evropa', 'FR': 'Evropa', 'IT': 'Evropa', 'ES': 'Evropa', 'CH': 'Evropa',
@@ -390,7 +390,6 @@
         const dpr = window.devicePixelRatio || 1;
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
         
-        // V4.2: Oprava detekce pro moderní MacBooky (zohlednění Scaled UI)
         if (myTelemetry.os === 'macOS') {
             const w = screen.width;
             if (w === 1512 || w === 1800 || w === 1352 || w === 1470) myTelemetry.diag = '~14.2" (MBP 14)';
@@ -610,7 +609,7 @@
     function logDebug(msg, type = 'info') {
         const logWindow = document.getElementById('debug-log');
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-        logWindow.innerHTML += `<div><span style="color:#555">[${time}] [ID: ${myId}]</span> <span class="log-${type}">${msg}</span></div>`;
+        logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`;
         logWindow.scrollTop = logWindow.scrollHeight;
     }
     
@@ -821,6 +820,7 @@
 
         pc.onicecandidate = (e) => {
             if (e.candidate) {
+                logDebug(`[VIDEO ICE] Nalezen kandidát: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Z: ${e.candidate.address}:${e.candidate.port}`, 'webrtc');
                 sendVideoSignal(peerId, 'ice', e.candidate);
             }
         };
@@ -1059,8 +1059,6 @@
             isIceRestarting = false; 
         }
     }
-    // --- KONEC VIDEO CALL LOKÁLNÍ FUNKCE ---
-
 
     function routeMessage(msgObj, sourceChannel = null) {
         if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal') {
@@ -1107,7 +1105,6 @@
                 if (isNewNode) {
                     const safeName = escapeHTML(msg.name);
                     const teleStr = formatTelemetry(msg.tele);
-                    // V4.1: Oprava escapování pomocí volání renderMessage s flagem rawHtml=true, ID doplněno
                     renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true);
                     logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce');
                 }
@@ -1447,6 +1444,8 @@
 
         pc.onicecandidate = (e) => {
             if (e.candidate) {
+                // V4.3: Detailní log ICE kandidáta zrychlí ladění proxy problémů
+                logDebug(`[ICE] Kandidát pro data: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Port: ${e.candidate.port}`, 'webrtc');
                 clearTimeout(candidateTimer);
                 candidateTimer = setTimeout(finish, 800); 
             } else {
@@ -1466,7 +1465,7 @@
         pc.oniceconnectionstatechange = () => {
             const state = pc.iceConnectionState;
             const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57');
-            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}">${state}</span>`, 'info');
+            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}; font-weight:bold">${state}</span>`, 'info');
             
             if (state === 'disconnected' || state === 'failed') {
                 cleanupConnection(targetId);
@@ -1591,7 +1590,6 @@
         for (const [peerId, pc] of Object.entries(allConnections)) {
             if (!pc) continue;
 
-            // V4.2: WebRTC Watchdog s okamžitým banem mrtvého Hubu
             if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
                 if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
                 if (Date.now() - pc.checkingStartTime > 10000) {
@@ -1788,7 +1786,7 @@
 
         logDebug("Provádím kompletní reset...", "info");
         
-        endVideoCall(true); // Ukončíme i video při pádu sítě
+        endVideoCall(true);
 
         if (joinInterval) clearInterval(joinInterval);
         if (dnsInterval) clearInterval(dnsInterval);
@@ -1881,7 +1879,6 @@
             
             const aliveCheck = await readSignal('host-alive');
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) {
-                // V4.1: Deterministická oprava Split-Brain pomocí porovnání ID
                 if (myId > aliveCheck.id) {
                     logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error");
                     blacklistedHubId = null;
@@ -1976,7 +1973,6 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            // V4.2: Snížen limit na 12 vteřin pro Fail-Fast zotavení
             if (pokusy > 6) { 
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo (nedostupné ICE kandidáty). Ignoruji Hub pro 30 vteřin.`, "error");
