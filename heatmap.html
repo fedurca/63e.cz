@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Heatmap Location Estimator (JS single-file)</title>
+
+<style>
+  html,body,#map{height:100%;margin:0;background:#000;}
+
+  #panel{
+    position:absolute;top:10px;left:10px;z-index:2000;
+    background:#111;color:#ddd;border:1px solid #333;
+    padding:10px;width:460px;font-family:system-ui;
+  }
+  #debug{
+    position:absolute;right:10px;bottom:10px;z-index:3000;
+    background:rgba(0,0,0,.92);color:#9cff9c;border:1px solid #555;
+    padding:8px;width:760px;height:420px;overflow:auto;
+    font-family:ui-monospace,Consolas,monospace;font-size:12px;
+    white-space:pre-wrap;box-shadow:0 0 18px #000;
+  }
+  #debugToolbar{
+    display:flex; gap:8px; align-items:center; justify-content:space-between;
+    border-top:1px solid #333; padding-top:8px; margin-top:8px;
+  }
+  #spark{width:740px;height:120px;border:1px solid #333;display:block;margin-top:8px;background:#050505;}
+  .btn{background:#222;color:#eee;border:1px solid #444;margin:2px;padding:6px 10px;cursor:pointer;}
+  .small{opacity:.85;font-size:12px;line-height:1.35;}
+  .kv{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .kv span{background:#181818;border:1px solid #2d2d2d;padding:2px 6px;border-radius:4px}
+
+  #overlay{
+    position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+    z-index:5000;background:rgba(0,0,0,.85);color:#fff;font-family:system-ui;
+  }
+  #overlay div{
+    max-width:980px;background:#111;border:1px solid #444;padding:14px;border-radius:10px;
+    box-shadow:0 0 22px #000
+  }
+  code{background:#1a1a1a;padding:1px 4px;border-radius:4px}
+  input[type="file"]{width:100%; margin-top:6px;}
+
+  /* TRUE position cross (no external images) */
+  .true-cross{
+    width:18px;height:18px; position:relative;
+  }
+  .true-cross:before, .true-cross:after{
+    content:""; position:absolute; left:50%; top:50%;
+    width:18px; height:2px; background:#00ff9a;
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 8px rgba(0,255,154,.35);
+  }
+  .true-cross:after{
+    transform:translate(-50%,-50%) rotate(90deg);
+  }
+
+  textarea{
+    width:100%; min-height:76px; background:#0d0d0d; color:#ddd;
+    border:1px solid #333; padding:6px; font-family:ui-monospace,Consolas,monospace;
+    font-size:12px;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="overlay"><div>
+  <b>Leaflet se nepodařilo načíst.</b>
+  <p class="small">
+    Aplikace potřebuje <code>Leaflet</code> a <code>leaflet-heat</code>.
+    Loader zkouší lokální soubory a pak CDN fallback.
+  </p>
+  <p class="small"><b>Offline režim:</b> dej vedle tohoto HTML buď:</p>
+  <ul class="small">
+    <li><code>leaflet.css</code>, <code>leaflet.js</code>, <code>leaflet-heat.js</code></li>
+    <li>nebo do <code>lib/</code>: <code>lib/leaflet.css</code>, <code>lib/leaflet.js</code>, <code>lib/leaflet-heat.js</code></li>
+  </ul>
+  <p class="small">
+    A pro automatické načítání <code>targets_fixed_world.json</code> používej <b>http://</b> (např. <code>python -m http.server</code>).
+  </p>
+  <p class="small">Podrobnosti jsou v debug logu.</p>
+</div></div>
+
+<div id="panel">
+  <div><b>Controls</b></div>
+  <div class="small">
+    Klik na mapu = TRUE poloha (zelený kříž). Fialová = odhad. Červený kruh = chyba (m). Červená čárkovaná = vektor chyby.
+  </div>
+
+  <div style="margin-top:6px">
+    <button class="btn" onclick="stepIter()">Step</button>
+    <button class="btn" onclick="toggleRun()" id="btnRun">Run</button>
+    <button class="btn" onclick="resetAll()">Reset</button>
+  </div>
+
+  <div class="kv">
+    <span id="src">source: …</span>
+    <span id="cnt">targets: …</span>
+    <span id="bw">bw_km: …</span>
+    <span id="it">iter: …</span>
+    <span id="err">error: …</span>
+  </div>
+
+  <div style="margin-top:10px">
+    <b>Targets data</b>
+    <div class="small">
+      Auto-load: pokusí se načíst <code>./targets_fixed_world.json</code> (stejná složka). [1](blob:https://m365.cloud.microsoft/6362a5da-c0d6-424a-9a22-107486587680)
+      Pokud selže, použije import nebo demo.
+    </div>
+    <input type="file" id="fileIn" accept=".json" onchange="importTargets(this.files[0])"/>
+    <button class="btn" onclick="exportTargets()">Download targets.json</button>
+  </div>
+
+  <div style="margin-top:10px">
+    <b>Test connection telemetry</b>
+    <div class="small">
+      Měření RTT (ms) přes <code>fetch</code> s timeoutem. Některé enterprise prostředí může blokovat vybrané domény – log se objeví v debug okně.
+    </div>
+    <textarea id="telemetryUrls">https://www.cloudflare.com/favicon.ico
+https://www.microsoft.com/favicon.ico
+https://www.wikipedia.org/static/favicon/wikipedia.ico
+https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png</textarea>
+    <div style="margin-top:6px">
+      <button class="btn" onclick="telemetryOnce()">Telemetry once</button>
+      <button class="btn" onclick="toggleTelemetry()" id="btnTel">Telemetry run</button>
+    </div>
+  </div>
+
+  <canvas id="spark" width="740" height="120"></canvas>
+</div>
+
+<div id="debug">
+<b>Debug</b>
+<pre id="log" style="margin:6px 0 0"></pre>
+
+<div id="debugToolbar">
+  <div class="small" id="dbgStats">log lines: 0</div>
+  <div>
+    <button class="btn" onclick="downloadDebug()">Download debug.log</button>
+    <button class="btn" onclick="clearDebug()">Clear</button>
+  </div>
+</div>
+</div>
+
+<script>
+/* ===================== DEBUG ===================== */
+const debugLines = [];
+function logln(msg){
+  const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  debugLines.push(line);
+  const el=document.getElementById('log');
+  el.textContent += line + "\n";
+  el.scrollTop = 1e9;
+  document.getElementById("dbgStats").textContent = `log lines: ${debugLines.length}`;
+}
+function clearDebug(){
+  debugLines.length = 0;
+  document.getElementById('log').textContent = "";
+  document.getElementById("dbgStats").textContent = "log lines: 0";
+}
+function downloadDebug(){
+  const blob = new Blob([debugLines.join("\n") + "\n"], {type:"text/plain"});
+  const a=document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `debug_${new Date().toISOString().replace(/[:.]/g,'-')}.log`;
+  a.click();
+}
+function showOverlay(on){ document.getElementById('overlay').style.display = on ? 'flex' : 'none'; }
+function setKV(id,txt){ document.getElementById(id).textContent = txt; }
+
+/* ===================== LIB LOADER (local first, then CDN) ===================== */
+function loadCSS(href){
+  return new Promise((res,rej)=>{
+    const l=document.createElement('link');
+    l.rel='stylesheet'; l.href=href;
+    l.onload=()=>res(href);
+    l.onerror=()=>rej(new Error("css failed "+href));
+    document.head.appendChild(l);
+  });
+}
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src=src;
+    s.onload=()=>res(src);
+    s.onerror=()=>rej(new Error("js failed "+src));
+    document.head.appendChild(s);
+  });
+}
+async function loadLeafletStack(){
+  const leafletCSS = ["./leaflet.css","./lib/leaflet.css","https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"];
+  const leafletJS  = ["./leaflet.js","./lib/leaflet.js","https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"];
+  const heatJS     = ["./leaflet-heat.js","./lib/leaflet-heat.js","https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"];
+
+  for(const u of leafletCSS){
+    try{ await loadCSS(u); logln("✅ leaflet.css: "+u); break; } catch(e){ logln("⚠️ "+e.message); }
+  }
+  for(const u of leafletJS){
+    try{ await loadScript(u); logln("✅ leaflet.js: "+u); break; } catch(e){ logln("⚠️ "+e.message); }
+  }
+  for(const u of heatJS){
+    try{ await loadScript(u); logln("✅ leaflet-heat.js: "+u); break; } catch(e){ logln("⚠️ "+e.message); }
+  }
+
+  if(typeof L === "undefined") throw new Error("Leaflet global L is undefined (Leaflet did not load).");
+  if(typeof L.heatLayer !== "function") throw new Error("leaflet-heat did not load (L.heatLayer missing).");
+}
+
+/* ===================== TARGETS DATA ===================== */
+const DEMO_TARGETS = [
+  {id:"PRG",name:"Prague",country:"CZ",lat:50.0755,lon:14.4378},
+  {id:"VIE",name:"Vienna",country:"AT",lat:48.2082,lon:16.3738},
+  {id:"BER",name:"Berlin",country:"DE",lat:52.5200,lon:13.4050},
+  {id:"WAW",name:"Warsaw",country:"PL",lat:52.2297,lon:21.0122},
+  {id:"PAR",name:"Paris",country:"FR",lat:48.8566,lon:2.3522},
+  {id:"LON",name:"London",country:"GB",lat:51.5074,lon:-0.1278},
+];
+
+let TARGETS = [];
+let TARGETS_SOURCE = "none";
+
+function sanitizeTargets(arr){
+  const out=[];
+  for(const n of arr){
+    const lat = Number(n.lat);
+    const lon = Number(n.lon);
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if(lat<-90 || lat>90 || lon<-180 || lon>180) continue;
+    out.push({
+      id: String(n.id ?? ""),
+      name: String(n.name ?? ""),
+      country: String(n.country ?? ""),
+      lat, lon
+    });
+  }
+  return out;
+}
+
+async function autoLoadTargetsJson(){
+  // Loads targets_fixed_world.json from same folder (HTTP required).
+  const candidates = ["./targets_fixed_world.json", "targets_fixed_world.json"];
+  for(const u of candidates){
+    try{
+      const t0 = performance.now();
+      const r = await fetch(u, {cache:"no-store"});
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
+      const arr = await r.json();
+      const s = sanitizeTargets(arr);
+      if(!s.length) throw new Error("0 valid targets after sanitize");
+      TARGETS = s;
+      TARGETS_SOURCE = `file:${u}`;
+      setKV("src", "source: "+TARGETS_SOURCE);
+      setKV("cnt","targets: "+TARGETS.length);
+      logln(`✅ Auto-loaded targets from ${u}: ${TARGETS.length} (dt=${Math.round(performance.now()-t0)}ms)`);
+      return true;
+    }catch(e){
+      logln(`⚠️ Auto-load failed for ${u}: ${e}`);
+    }
+  }
+  return false;
+}
+
+async function importTargets(file){
+  if(!file) return;
+  try{
+    const txt = await file.text();
+    const arr = JSON.parse(txt);
+    const s = sanitizeTargets(arr);
+    if(!s.length) throw new Error("import dataset has 0 valid points");
+    TARGETS = s;
+    TARGETS_SOURCE = "imported";
+    setKV("src","source: imported");
+    setKV("cnt","targets: "+TARGETS.length);
+    logln("✅ Imported targets: "+TARGETS.length);
+    rebuildHeat();
+    resetEstimatorState(true);
+  }catch(e){
+    logln("❌ Import failed: "+e);
+    alert("Import failed: "+e);
+  }
+}
+
+function exportTargets(){
+  const blob = new Blob([JSON.stringify(TARGETS,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="targets_export.json";
+  a.click();
+}
+
+/* ===================== MAP + HEAT ===================== */
+let map=null, heatLayer=null;
+let trueMarker=null, estMarker=null, errCircle=null, errLine=null;
+
+function rebuildHeat(){
+  if(!map || !TARGETS.length) return;
+  if(heatLayer) map.removeLayer(heatLayer);
+  const pts = TARGETS.map(n=>[n.lat,n.lon,1]);
+  heatLayer = L.heatLayer(pts,{radius:35, blur:25, minOpacity:0.25}).addTo(map);
+  logln("🔥 Heat rebuilt: "+pts.length+" points");
+}
+
+function createTrueCrossMarker(latlng){
+  const icon = L.divIcon({
+    className: "",
+    html: "<div class='true-cross' title='TRUE position'></div>",
+    iconSize: [18,18],
+    iconAnchor: [9,9]
+  });
+  return L.marker(latlng, {icon});
+}
+
+/* ===================== ESTIMATOR (iterative KDE peak search) ===================== */
+let truePos = null;         // [lat,lon]
+let estimatePos = null;     // [lat,lon]
+let errors = [];            // {ts, err_m}
+let iterations = 0;
+let running = false;
+let bw_km = 1500.0;
+let timer = null;
+
+function haversineM(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=x=>x*Math.PI/180;
+  const p1=toRad(lat1), p2=toRad(lat2);
+  const dlat=p2-p1, dlon=toRad(lon2-lon1);
+  const a=Math.sin(dlat/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dlon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function wrapLon(lon){ return ((lon+180)%360)-180; }
+function clamp(x,a,b){ return Math.max(a, Math.min(b,x)); }
+
+function kdeScore(latC, lonC, pts, bwKm){
+  const bwM = bwKm*1000;
+  const inv2 = 1/(2*bwM*bwM);
+  let s=0;
+  for(const p of pts){
+    const d = haversineM(latC, lonC, p.lat, p.lon);
+    s += Math.exp(-(d*d)*inv2);
+  }
+  return s;
+}
+
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function pickSample(arr, n, rng){
+  const out = arr.slice();
+  for(let i=out.length-1;i>0;i--){
+    const j = Math.floor(rng()*(i+1));
+    [out[i],out[j]]=[out[j],out[i]];
+  }
+  return out.slice(0,n);
+}
+
+function estimatePeakKDE(){
+  const N = TARGETS.length;
+  if(!N) throw new Error("no targets");
+  const sampleSize = Math.min(600, N);
+  const candidateSize = Math.min(350, sampleSize);
+
+  const rng = mulberry32(1337 + iterations);
+
+  const pts = pickSample(TARGETS, sampleSize, rng);
+  const candidates = pickSample(pts, candidateSize, rng);
+
+  let best = null;
+  let bestScore = -1;
+  let evals = 0;
+
+  for(const c of candidates){
+    const sc = kdeScore(c.lat, c.lon, pts, bw_km);
+    evals++;
+    if(sc > bestScore){ bestScore=sc; best=[c.lat,c.lon]; }
+  }
+
+  // local refinement
+  if(best){
+    let lat0=best[0], lon0=best[1];
+    let stepDeg = clamp(bw_km/400, 0.2, 5.0);
+    for(let k=0;k<2;k++){
+      const probes=[];
+      for(const dy of [-stepDeg,0,stepDeg]){
+        for(const dx of [-stepDeg,0,stepDeg]){
+          probes.push([lat0+dy, wrapLon(lon0+dx)]);
+        }
+      }
+      for(const pr of probes){
+        const la=pr[0], lo=pr[1];
+        if(la<-85 || la>85) continue;
+        const sc = kdeScore(la, lo, pts, bw_km);
+        evals++;
+        if(sc > bestScore){ bestScore=sc; best=[la,lo]; }
+      }
+      lat0=best[0]; lon0=best[1];
+      stepDeg *= 0.55;
+    }
+  }
+
+  return {best, bestScore, evals, sampleSize, candidateSize, N};
+}
+
+function updateMapOverlays(hardClear){
+  if(!map) return;
+  if(hardClear){
+    if(trueMarker){ map.removeLayer(trueMarker); trueMarker=null; }
+    if(estMarker){ map.removeLayer(estMarker); estMarker=null; }
+    if(errCircle){ map.removeLayer(errCircle); errCircle=null; }
+    if(errLine){ map.removeLayer(errLine); errLine=null; }
+  }
+
+  if(truePos){
+    if(!trueMarker) trueMarker = createTrueCrossMarker(truePos).addTo(map);
+    else trueMarker.setLatLng(truePos);
+  }
+  if(estimatePos){
+    if(!estMarker) estMarker = L.circleMarker(estimatePos,{radius:7,color:"#b85bff",weight:2,fillOpacity:0.3}).addTo(map);
+    else estMarker.setLatLng(estimatePos);
+  }
+  if(truePos && estimatePos){
+    const err = haversineM(truePos[0],truePos[1], estimatePos[0],estimatePos[1]);
+
+    if(!errCircle) errCircle = L.circle(truePos,{radius:err,color:"#ff3333",weight:2,fill:false}).addTo(map);
+    else errCircle.setLatLng(truePos).setRadius(err);
+
+    if(!errLine) errLine = L.polyline([truePos,estimatePos],{color:"#ff3333",weight:1,opacity:0.8,dashArray:"4 6"}).addTo(map);
+    else errLine.setLatLngs([truePos,estimatePos]);
+  }
+}
+
+function updateError(){
+  if(!truePos || !estimatePos) return;
+  const err = haversineM(truePos[0],truePos[1], estimatePos[0],estimatePos[1]);
+  errors.push({ts:Date.now(), err});
+  setKV("err","error: "+Math.round(err)+" m");
+  logln(`🧮 compare true vs est => error_m=${err.toFixed(1)}`);
+  logln(`   true=(${truePos[0].toFixed(5)},${truePos[1].toFixed(5)})  est=(${estimatePos[0].toFixed(5)},${estimatePos[1].toFixed(5)})`);
+}
+
+function resetEstimatorState(keepTrue){
+  iterations = 0;
+  bw_km = 1500.0;
+  estimatePos = null;
+  errors = [];
+  setKV("bw","bw_km: "+bw_km.toFixed(1));
+  setKV("it","iter: "+iterations);
+  setKV("err","error: …");
+  if(!keepTrue) truePos=null;
+  updateMapOverlays(true);
+  drawSpark();
+}
+
+function stepIter(){
+  try{
+    const t0 = performance.now();
+    const r = estimatePeakKDE();
+    const dt = Math.round(performance.now()-t0);
+
+    const bwBefore = bw_km;
+    iterations++;
+    estimatePos = r.best;
+    bw_km = Math.max(40.0, bw_km*0.90);
+
+    setKV("bw","bw_km: "+bw_km.toFixed(1));
+    setKV("it","iter: "+iterations);
+
+    logln(`📌 iter=${iterations} dt=${dt}ms bw_km=${bwBefore.toFixed(1)} -> ${bw_km.toFixed(1)} | N=${r.N} sample=${r.sampleSize} cand=${r.candidateSize} eval=${r.evals} score=${r.bestScore.toExponential(3)}`);
+    if(estimatePos) logln(`   estimate=(${estimatePos[0].toFixed(5)},${estimatePos[1].toFixed(5)})`);
+
+    updateMapOverlays();
+    updateError();
+    drawSpark();
+  }catch(e){
+    logln("❌ step failed: "+e);
+    alert("Step failed: "+e);
+  }
+}
+
+function toggleRun(){
+  running = !running;
+  document.getElementById("btnRun").textContent = running ? "Stop" : "Run";
+  if(running){
+    timer = setInterval(stepIter, 650);
+  }else{
+    clearInterval(timer);
+    timer = null;
+  }
+}
+
+function resetAll(){
+  running=false;
+  clearInterval(timer); timer=null;
+  document.getElementById("btnRun").textContent = "Run";
+  resetEstimatorState(false);
+  logln("↩ reset all");
+}
+
+/* ===================== SPARKLINE ===================== */
+function drawSpark(){
+  const c=document.getElementById("spark");
+  const g=c.getContext("2d");
+  g.clearRect(0,0,c.width,c.height);
+  g.fillStyle="#0a0a0a"; g.fillRect(0,0,c.width,c.height);
+
+  if(errors.length<2){
+    g.fillStyle="#777";
+    g.fillText("error history: (klikni na mapu, pak Step/Run)", 10, 18);
+    return;
+  }
+
+  const ys = errors.map(e=>e.err);
+  const ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const pad=10, w=c.width-2*pad, h=c.height-2*pad;
+  const X=i=>pad + (i/(errors.length-1))*w;
+  const Y=v=>{
+    const t=(v-ymin)/(Math.max(1e-9,ymax-ymin));
+    return pad + (1-t)*h;
+  };
+
+  g.strokeStyle="#222"; g.beginPath();
+  g.moveTo(pad,pad); g.lineTo(pad,pad+h); g.lineTo(pad+w,pad+h); g.stroke();
+
+  g.strokeStyle="#ff6666"; g.lineWidth=2; g.beginPath();
+  g.moveTo(X(0),Y(ys[0]));
+  for(let i=1;i<ys.length;i++) g.lineTo(X(i),Y(ys[i]));
+  g.stroke();
+
+  g.fillStyle="#ddd";
+  g.fillText(`min ${Math.round(ymin)} m | max ${Math.round(ymax)} m | last ${Math.round(ys[ys.length-1])} m`, 10, 18);
+}
+
+/* ===================== TELEMETRY (test connections) ===================== */
+let telRunning = false;
+let telTimer = null;
+const telStats = new Map(); // url -> {count, ok, fail, last, avg, min, max}
+
+function parseTelemetryUrls(){
+  const raw = document.getElementById("telemetryUrls").value;
+  return raw.split("\n").map(x=>x.trim()).filter(Boolean);
+}
+
+async function fetchWithTimeout(url, ms){
+  const ctrl = new AbortController();
+  const t = setTimeout(()=>ctrl.abort(), ms);
+  const t0 = performance.now();
+  try{
+    // mode:no-cors -> often opaque, but timing still useful
+    await fetch(url, {method:"GET", mode:"no-cors", cache:"no-store", signal: ctrl.signal});
+    return {ok:true, dt: performance.now()-t0};
+  }catch(e){
+    return {ok:false, dt: performance.now()-t0, err:String(e)};
+  }finally{
+    clearTimeout(t);
+  }
+}
+
+function updateTelStats(url, res){
+  const s = telStats.get(url) || {count:0, ok:0, fail:0, last:null, avg:null, min:null, max:null};
+  s.count++;
+  s.last = res.dt;
+  if(res.ok){
+    s.ok++;
+    s.min = (s.min==null) ? res.dt : Math.min(s.min, res.dt);
+    s.max = (s.max==null) ? res.dt : Math.max(s.max, res.dt);
+    // running avg over ok only
+    const okCount = s.ok;
+    s.avg = (okCount===1) ? res.dt : (s.avg + (res.dt - s.avg)/okCount);
+  }else{
+    s.fail++;
+  }
+  telStats.set(url, s);
+}
+
+async function telemetryOnce(){
+  const urls = parseTelemetryUrls();
+  if(!urls.length){
+    logln("⚠️ telemetry: no URLs");
+    return;
+  }
+  logln(`📡 telemetry_once: urls=${urls.length} timeout=2500ms`);
+  for(const u of urls){
+    const r = await fetchWithTimeout(u, 2500);
+    updateTelStats(u, r);
+    if(r.ok){
+      const s = telStats.get(u);
+      logln(`   ✅ ${u}  rtt_ms=${r.dt.toFixed(1)}  avg=${(s.avg??0).toFixed(1)}  min=${(s.min??0).toFixed(1)}  max=${(s.max??0).toFixed(1)}  ok=${s.ok} fail=${s.fail}`);
+    }else{
+      const s = telStats.get(u);
+      logln(`   ❌ ${u}  dt_ms=${r.dt.toFixed(1)}  err=${r.err}  ok=${s.ok} fail=${s.fail}`);
+    }
+  }
+  logln("📡 telemetry_once: done");
+}
+
+function toggleTelemetry(){
+  telRunning = !telRunning;
+  document.getElementById("btnTel").textContent = telRunning ? "Telemetry stop" : "Telemetry run";
+  if(telRunning){
+    telTimer = setInterval(telemetryOnce, 8000);
+    telemetryOnce();
+  }else{
+    clearInterval(telTimer); telTimer=null;
+  }
+}
+
+/* ===================== INIT ===================== */
+async function main(){
+  setKV("bw","bw_km: "+bw_km.toFixed(1));
+  setKV("it","iter: "+iterations);
+  setKV("err","error: …");
+
+  // 1) Load targets automatically from same folder
+  let loaded = await autoLoadTargetsJson();
+  if(!loaded){
+    TARGETS = DEMO_TARGETS.slice();
+    TARGETS_SOURCE = "demo";
+    setKV("src","source: demo (auto-load failed; importujte JSON)");
+    setKV("cnt","targets: "+TARGETS.length);
+    logln("⚠️ Using DEMO_TARGETS: "+TARGETS.length);
+  }
+
+  // 2) Load map libs
+  try{
+    await loadLeafletStack();
+  }catch(e){
+    logln("❌ "+e);
+    showOverlay(true);
+    return;
+  }
+
+  // 3) Map init
+  map = L.map("map").setView([20,0], 2);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {maxZoom:19})
+    .addTo(map);
+
+  rebuildHeat();
+
+  map.on("click", (e)=>{
+    truePos = [e.latlng.lat, e.latlng.lng];
+    logln(`📍 TRUE set: (${truePos[0].toFixed(5)},${truePos[1].toFixed(5)})`);
+    resetEstimatorState(true);
+    updateMapOverlays();
+  });
+
+  drawSpark();
+  logln("✅ App ready. Klikni na mapu (TRUE), pak Step/Run.");
+}
+
+main().catch(e=>{
+  logln("FATAL: "+e);
+  showOverlay(true);
+});
+</script>
+</body>
+</html>
