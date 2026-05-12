@@ -1,4 +1,4 @@
-# Tree P2P Chat v2.2.7 — Jak kód sestavuje spojení (technologie, handshake, varianty)
+# Tree P2P Chat v2.2.7 — Jak kód sestavuje spojení (technologie, handshake, varianty) 
 
 > Tato dokumentace popisuje aktuální chování klientské aplikace (v2.2.7) při sestavování P2P spojení, včetně použitých technologií, signálování, voleb role Hub/Spoke a mechanismů obnovy sítě.
 
