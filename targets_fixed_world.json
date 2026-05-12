@@ -1,0 +1,3474 @@
+[
+  {
+    "id": "UNI-59",
+    "name": "Akademie der bildenden Künste Wien",
+    "country": "DE",
+    "lat": 47.5752,
+    "lon": 13.8165
+  },
+  {
+    "id": "UNI-60",
+    "name": "Universität für Bodenkultur Wien",
+    "country": "DE",
+    "lat": 47.7536,
+    "lon": 13.987
+  },
+  {
+    "id": "UNI-63",
+    "name": "Universität für Musik und darstellende Kunst Graz",
+    "country": "DE",
+    "lat": 48.2285,
+    "lon": 13.7943
+  },
+  {
+    "id": "UNI-64",
+    "name": "Universität für Musik und darstellende Kunst Wien",
+    "country": "DE",
+    "lat": 47.9565,
+    "lon": 12.8823
+  },
+  {
+    "id": "UNI-65",
+    "name": "Medizinische Universität Wien",
+    "country": "DE",
+    "lat": 48.0421,
+    "lon": 13.0985
+  },
+  {
+    "id": "UNI-66",
+    "name": "Technische Universität Graz",
+    "country": "DE",
+    "lat": 48.2192,
+    "lon": 13.7997
+  },
+  {
+    "id": "UNI-70",
+    "name": "Johannes Kepler Universität Linz",
+    "country": "DE",
+    "lat": 48.2607,
+    "lon": 14.1386
+  },
+  {
+    "id": "UNI-72",
+    "name": "Begum Rokeya University, Rangpur",
+    "country": "CN",
+    "lat": 23.1154,
+    "lon": 89.681
+  },
+  {
+    "id": "UNI-73",
+    "name": "Bangabandhu Sheikh Mujibur Rahman Agricultural University",
+    "country": "CN",
+    "lat": 23.6706,
+    "lon": 89.3673
+  },
+  {
+    "id": "UNI-74",
+    "name": "Bangladesh University of Engineering and Technology",
+    "country": "CN",
+    "lat": 24.8671,
+    "lon": 89.4149
+  },
+  {
+    "id": "UNI-75",
+    "name": "Bangladesh University of Professionals",
+    "country": "CN",
+    "lat": 23.3822,
+    "lon": 89.7329
+  },
+  {
+    "id": "UNI-76",
+    "name": "Bangladesh University of Textiles",
+    "country": "CN",
+    "lat": 24.3785,
+    "lon": 89.7251
+  },
+  {
+    "id": "UNI-77",
+    "name": "Comilla University",
+    "country": "CN",
+    "lat": 23.1984,
+    "lon": 90.2611
+  },
+  {
+    "id": "UNI-78",
+    "name": "University of Dhaka",
+    "country": "CN",
+    "lat": 23.6512,
+    "lon": 89.9694
+  },
+  {
+    "id": "UNI-79",
+    "name": "Dhaka University of Engineering and Technology",
+    "country": "CN",
+    "lat": 23.2621,
+    "lon": 90.0331
+  },
+  {
+    "id": "UNI-80",
+    "name": "Eastern University",
+    "country": "CN",
+    "lat": 24.3243,
+    "lon": 90.1131
+  },
+  {
+    "id": "UNI-81",
+    "name": "East West University",
+    "country": "CN",
+    "lat": 23.9261,
+    "lon": 89.2862
+  },
+  {
+    "id": "UNI-82",
+    "name": "Green University of Bangladesh",
+    "country": "CN",
+    "lat": 24.4506,
+    "lon": 89.8166
+  },
+  {
+    "id": "UNI-83",
+    "name": "Hajee Mohammad Danesh Science and Technology University",
+    "country": "CN",
+    "lat": 23.8146,
+    "lon": 90.4848
+  },
+  {
+    "id": "UNI-84",
+    "name": "Islamic University Kushtia",
+    "country": "CN",
+    "lat": 23.7661,
+    "lon": 89.717
+  },
+  {
+    "id": "UNI-85",
+    "name": "Islamic University of Technology",
+    "country": "CN",
+    "lat": 24.1719,
+    "lon": 89.1366
+  },
+  {
+    "id": "UNI-86",
+    "name": "Jatiya Kabi Kazi Nazrul Islam University",
+    "country": "CN",
+    "lat": 24.5114,
+    "lon": 90.8259
+  },
+  {
+    "id": "UNI-87",
+    "name": "Jagannath University",
+    "country": "CN",
+    "lat": 24.0973,
+    "lon": 90.5572
+  },
+  {
+    "id": "UNI-88",
+    "name": "Khulna University",
+    "country": "CN",
+    "lat": 23.7777,
+    "lon": 89.3207
+  },
+  {
+    "id": "UNI-89",
+    "name": "Khulna University of Engineering And Technology",
+    "country": "CN",
+    "lat": 23.7023,
+    "lon": 90.7821
+  },
+  {
+    "id": "UNI-90",
+    "name": "Mawlana Bhashani Science And Technology University",
+    "country": "CN",
+    "lat": 23.1654,
+    "lon": 89.6311
+  },
+  {
+    "id": "UNI-91",
+    "name": "Patuakhali Science and Technology University",
+    "country": "CN",
+    "lat": 23.8288,
+    "lon": 89.1036
+  },
+  {
+    "id": "UNI-92",
+    "name": "University of Rajshahi",
+    "country": "CN",
+    "lat": 23.9039,
+    "lon": 89.1229
+  },
+  {
+    "id": "UNI-93",
+    "name": "Rajshahi University of Engineering and Technology",
+    "country": "CN",
+    "lat": 24.7111,
+    "lon": 90.0647
+  },
+  {
+    "id": "UNI-94",
+    "name": "Sylhet Agricultural University",
+    "country": "CN",
+    "lat": 24.1501,
+    "lon": 90.0197
+  },
+  {
+    "id": "UNI-95",
+    "name": "United International University",
+    "country": "CN",
+    "lat": 23.8154,
+    "lon": 90.6181
+  },
+  {
+    "id": "UNI-101",
+    "name": "Faculté Universitaire des Sciences Agronomiques de Gembloux",
+    "country": "FR",
+    "lat": 50.6414,
+    "lon": 3.7279
+  },
+  {
+    "id": "UNI-104",
+    "name": "Universiteit Gent",
+    "country": "FR",
+    "lat": 50.7422,
+    "lon": 4.5124
+  },
+  {
+    "id": "UNI-105",
+    "name": "Vrije Universiteit Brussel",
+    "country": "FR",
+    "lat": 50.8474,
+    "lon": 3.9574
+  },
+  {
+    "id": "UNI-106",
+    "name": "University of Liège",
+    "country": "FR",
+    "lat": 50.7172,
+    "lon": 4.0297
+  },
+  {
+    "id": "UNI-107",
+    "name": "Louvain School of Management",
+    "country": "FR",
+    "lat": 50.2749,
+    "lon": 3.6007
+  },
+  {
+    "id": "UNI-273",
+    "name": "Beijing University of Chemical Technology",
+    "country": "CN",
+    "lat": 35.6189,
+    "lon": 104.0995
+  },
+  {
+    "id": "UNI-274",
+    "name": "China Agricultural University",
+    "country": "CN",
+    "lat": 35.7414,
+    "lon": 105.9831
+  },
+  {
+    "id": "UNI-275",
+    "name": "Capital Normal University",
+    "country": "CN",
+    "lat": 34.3312,
+    "lon": 105.0874
+  },
+  {
+    "id": "UNI-276",
+    "name": "China Pharmaceutical University Nanjing",
+    "country": "CN",
+    "lat": 35.7527,
+    "lon": 104.3875
+  },
+  {
+    "id": "UNI-277",
+    "name": "Chongqing Normal University",
+    "country": "CN",
+    "lat": 34.2351,
+    "lon": 105.987
+  },
+  {
+    "id": "UNI-278",
+    "name": "Chongqing University",
+    "country": "CN",
+    "lat": 34.4817,
+    "lon": 104.0305
+  },
+  {
+    "id": "UNI-279",
+    "name": "Chongqing University of Post and Telecommunications",
+    "country": "CN",
+    "lat": 35.0112,
+    "lon": 105.868
+  },
+  {
+    "id": "UNI-280",
+    "name": "Chongqing University of Technology",
+    "country": "CN",
+    "lat": 35.8369,
+    "lon": 104.1618
+  },
+  {
+    "id": "UNI-281",
+    "name": "Communication University of China",
+    "country": "CN",
+    "lat": 34.5431,
+    "lon": 105.9532
+  },
+  {
+    "id": "UNI-282",
+    "name": "East China Jiao Tong University",
+    "country": "CN",
+    "lat": 35.396,
+    "lon": 104.8778
+  },
+  {
+    "id": "UNI-283",
+    "name": "Guangzhou University",
+    "country": "CN",
+    "lat": 35.5602,
+    "lon": 104.4527
+  },
+  {
+    "id": "UNI-284",
+    "name": "Hebei University",
+    "country": "CN",
+    "lat": 35.6742,
+    "lon": 104.0579
+  },
+  {
+    "id": "UNI-285",
+    "name": "Hebei University of Science and Technology",
+    "country": "CN",
+    "lat": 35.0008,
+    "lon": 104.0178
+  },
+  {
+    "id": "UNI-286",
+    "name": "Huazhong University of Science and Technology",
+    "country": "CN",
+    "lat": 35.0827,
+    "lon": 105.1552
+  },
+  {
+    "id": "UNI-287",
+    "name": "Jinan University",
+    "country": "CN",
+    "lat": 34.7282,
+    "lon": 105.0028
+  },
+  {
+    "id": "UNI-288",
+    "name": "Kunmimg University of Science and Technology",
+    "country": "CN",
+    "lat": 34.209,
+    "lon": 104.385
+  },
+  {
+    "id": "UNI-289",
+    "name": "Ningxia University",
+    "country": "CN",
+    "lat": 35.8855,
+    "lon": 104.9088
+  },
+  {
+    "id": "UNI-290",
+    "name": "Peking University",
+    "country": "CN",
+    "lat": 35.0255,
+    "lon": 104.1857
+  },
+  {
+    "id": "UNI-291",
+    "name": "South China Agricultural University",
+    "country": "CN",
+    "lat": 35.0673,
+    "lon": 105.6761
+  },
+  {
+    "id": "UNI-292",
+    "name": "Shandong University of Art and Design",
+    "country": "CN",
+    "lat": 35.032,
+    "lon": 105.978
+  },
+  {
+    "id": "UNI-293",
+    "name": "Shandong Medical University",
+    "country": "CN",
+    "lat": 35.213,
+    "lon": 104.7808
+  },
+  {
+    "id": "UNI-294",
+    "name": "Southeast University",
+    "country": "CN",
+    "lat": 34.407,
+    "lon": 104.441
+  },
+  {
+    "id": "UNI-295",
+    "name": "Chongqing Normal University Foreign Trade and Business College",
+    "country": "CN",
+    "lat": 35.9418,
+    "lon": 105.2798
+  },
+  {
+    "id": "UNI-296",
+    "name": "Tianjin University",
+    "country": "CN",
+    "lat": 35.6,
+    "lon": 104.3936
+  },
+  {
+    "id": "UNI-297",
+    "name": "3rd Military Medical University",
+    "country": "CN",
+    "lat": 34.5227,
+    "lon": 104.6675
+  },
+  {
+    "id": "UNI-298",
+    "name": "Taiyuan University of Technology",
+    "country": "CN",
+    "lat": 35.7576,
+    "lon": 104.8793
+  },
+  {
+    "id": "UNI-299",
+    "name": "University of Science and Technology Beijing",
+    "country": "CN",
+    "lat": 34.2311,
+    "lon": 105.5343
+  },
+  {
+    "id": "UNI-300",
+    "name": "University of Science and Technology of China",
+    "country": "CN",
+    "lat": 35.3144,
+    "lon": 104.8293
+  },
+  {
+    "id": "UNI-301",
+    "name": "Wuhan University of Technology",
+    "country": "CN",
+    "lat": 34.3623,
+    "lon": 105.2782
+  },
+  {
+    "id": "UNI-302",
+    "name": "Xi'an University of Technology",
+    "country": "CN",
+    "lat": 34.1217,
+    "lon": 104.4966
+  },
+  {
+    "id": "UNI-303",
+    "name": "Yunnan Normal University",
+    "country": "CN",
+    "lat": 35.2252,
+    "lon": 104.3452
+  },
+  {
+    "id": "UNI-304",
+    "name": "Yangzhou University",
+    "country": "CN",
+    "lat": 35.7876,
+    "lon": 104.0963
+  },
+  {
+    "id": "UNI-305",
+    "name": "Zhejiang Forestry University",
+    "country": "CN",
+    "lat": 34.134,
+    "lon": 104.1306
+  },
+  {
+    "id": "UNI-306",
+    "name": "Zhejiang Gongshang University",
+    "country": "CN",
+    "lat": 34.5386,
+    "lon": 105.2387
+  },
+  {
+    "id": "UNI-307",
+    "name": "Zhejiang Normal University",
+    "country": "CN",
+    "lat": 35.3323,
+    "lon": 105.7671
+  },
+  {
+    "id": "UNI-308",
+    "name": "Zhanjiang Ocean University",
+    "country": "CN",
+    "lat": 35.0725,
+    "lon": 105.403
+  },
+  {
+    "id": "UNI-309",
+    "name": "Zhejiang Sci-Tech University",
+    "country": "CN",
+    "lat": 35.5907,
+    "lon": 104.3212
+  },
+  {
+    "id": "UNI-353",
+    "name": "Charles University Prague",
+    "country": "CZ",
+    "lat": 49.1328,
+    "lon": 16.1117
+  },
+  {
+    "id": "UNI-354",
+    "name": "Czech Technical University of Prague",
+    "country": "CZ",
+    "lat": 49.1208,
+    "lon": 15.9857
+  },
+  {
+    "id": "UNI-355",
+    "name": "Czech University of Agriculture Prague",
+    "country": "CZ",
+    "lat": 50.0012,
+    "lon": 15.3417
+  },
+  {
+    "id": "UNI-356",
+    "name": "University of South Bohemia",
+    "country": "CZ",
+    "lat": 50.165,
+    "lon": 14.6848
+  },
+  {
+    "id": "UNI-357",
+    "name": "Mendel University of Agriculture and Forestry",
+    "country": "CZ",
+    "lat": 50.4027,
+    "lon": 14.938
+  },
+  {
+    "id": "UNI-358",
+    "name": "Masaryk University",
+    "country": "CZ",
+    "lat": 49.4904,
+    "lon": 16.4747
+  },
+  {
+    "id": "UNI-359",
+    "name": "University of Ostrava",
+    "country": "CZ",
+    "lat": 50.6994,
+    "lon": 15.4839
+  },
+  {
+    "id": "UNI-360",
+    "name": "Silesian University",
+    "country": "CZ",
+    "lat": 49.3313,
+    "lon": 16.0138
+  },
+  {
+    "id": "UNI-361",
+    "name": "University of Jan Evangelista Purkyne",
+    "country": "CZ",
+    "lat": 49.3385,
+    "lon": 16.1044
+  },
+  {
+    "id": "UNI-362",
+    "name": "University of Pardubice",
+    "country": "CZ",
+    "lat": 50.363,
+    "lon": 15.5303
+  },
+  {
+    "id": "UNI-363",
+    "name": "Palacký University Olomouc",
+    "country": "CZ",
+    "lat": 50.0168,
+    "lon": 15.0459
+  },
+  {
+    "id": "UNI-364",
+    "name": "Tomas Bata University in Zlin",
+    "country": "CZ",
+    "lat": 49.2904,
+    "lon": 16.0421
+  },
+  {
+    "id": "UNI-365",
+    "name": "University of Veterinary and Pharmaceutical Science",
+    "country": "CZ",
+    "lat": 49.0776,
+    "lon": 14.8417
+  },
+  {
+    "id": "UNI-366",
+    "name": "University of Economics Prague",
+    "country": "CZ",
+    "lat": 49.2829,
+    "lon": 16.3214
+  },
+  {
+    "id": "UNI-367",
+    "name": "Brno University of Technology",
+    "country": "CZ",
+    "lat": 50.4251,
+    "lon": 15.7143
+  },
+  {
+    "id": "UNI-368",
+    "name": "University of West Bohemia",
+    "country": "CZ",
+    "lat": 50.1307,
+    "lon": 14.715
+  },
+  {
+    "id": "UNI-371",
+    "name": "Aarhus University",
+    "country": "DE",
+    "lat": 55.0142,
+    "lon": 10.1949
+  },
+  {
+    "id": "UNI-432",
+    "name": "National Institute of Applied Sciences of Toulouse",
+    "country": "FR",
+    "lat": 46.8661,
+    "lon": 1.9085
+  },
+  {
+    "id": "UNI-433",
+    "name": "AgroSup Dijon",
+    "country": "FR",
+    "lat": 46.3033,
+    "lon": 2.2002
+  },
+  {
+    "id": "UNI-434",
+    "name": "American University of Paris",
+    "country": "FR",
+    "lat": 45.9031,
+    "lon": 2.6645
+  },
+  {
+    "id": "UNI-435",
+    "name": "IMT Atlantique",
+    "country": "FR",
+    "lat": 45.1338,
+    "lon": 1.287
+  },
+  {
+    "id": "UNI-436",
+    "name": "Ecole Nationale Supérieure des Mines de St-Etienne",
+    "country": "FR",
+    "lat": 45.1638,
+    "lon": 2.7377
+  },
+  {
+    "id": "UNI-437",
+    "name": "Ecole Nationale de l'Aviation Civile",
+    "country": "FR",
+    "lat": 45.0498,
+    "lon": 2.3535
+  },
+  {
+    "id": "UNI-438",
+    "name": "ENIC Telecom Lille 1",
+    "country": "FR",
+    "lat": 45.6837,
+    "lon": 2.1683
+  },
+  {
+    "id": "UNI-439",
+    "name": "Ecole Nationale d'Ingénieurs de Saint-Etienne",
+    "country": "FR",
+    "lat": 46.3349,
+    "lon": 2.0231
+  },
+  {
+    "id": "UNI-440",
+    "name": "Ecole Nationale d'Ingénieurs de Tarbes",
+    "country": "FR",
+    "lat": 46.6718,
+    "lon": 1.9677
+  },
+  {
+    "id": "UNI-441",
+    "name": "Ecole Nationale des Ponts et Chausees",
+    "country": "FR",
+    "lat": 46.0014,
+    "lon": 1.3869
+  },
+  {
+    "id": "UNI-442",
+    "name": "Ecole Nationale Supérieur de Mécaniques et des Microtechniques",
+    "country": "FR",
+    "lat": 46.3889,
+    "lon": 1.4068
+  },
+  {
+    "id": "UNI-443",
+    "name": "Ecole Nationale Supérieure des Arts et Industries Textiles",
+    "country": "FR",
+    "lat": 45.4242,
+    "lon": 1.3981
+  },
+  {
+    "id": "UNI-444",
+    "name": "Ecole Nationale Supérieure Agronomique de Toulouse",
+    "country": "FR",
+    "lat": 46.556,
+    "lon": 1.8888
+  },
+  {
+    "id": "UNI-445",
+    "name": "Ecole Nationale Supérieure de Chimie de Montpellier",
+    "country": "FR",
+    "lat": 46.9595,
+    "lon": 1.0733
+  },
+  {
+    "id": "UNI-446",
+    "name": "Ecole Nationale Supérieure en Electrotechnique, Electronique, Informatique et Hydraulique de Toulouse",
+    "country": "FR",
+    "lat": 46.3286,
+    "lon": 1.964
+  },
+  {
+    "id": "UNI-447",
+    "name": "Ecole Normale Supérieure de Paris",
+    "country": "FR",
+    "lat": 45.4173,
+    "lon": 2.4562
+  },
+  {
+    "id": "UNI-448",
+    "name": "Ecole Nationale Supérieur d'Ingénieurs de Constructions Aéronautique",
+    "country": "FR",
+    "lat": 46.648,
+    "lon": 2.2539
+  },
+  {
+    "id": "UNI-449",
+    "name": "Ecole Normale Supérieure de Lyon",
+    "country": "FR",
+    "lat": 46.476,
+    "lon": 1.4976
+  },
+  {
+    "id": "UNI-450",
+    "name": "Ecole Nationale Supérieur de Mécanique et d'Aéronautique",
+    "country": "FR",
+    "lat": 45.8422,
+    "lon": 1.1842
+  },
+  {
+    "id": "UNI-451",
+    "name": "Ecole Nationale Supérieure des Mines d'Alès",
+    "country": "FR",
+    "lat": 46.1757,
+    "lon": 1.5192
+  },
+  {
+    "id": "UNI-452",
+    "name": "Ecole Nationale Supérieure des Telecommunications de Bretagne",
+    "country": "FR",
+    "lat": 46.713,
+    "lon": 1.0851
+  },
+  {
+    "id": "UNI-453",
+    "name": "Ecole Nationale Vétérinaire de Toulouse",
+    "country": "FR",
+    "lat": 45.0303,
+    "lon": 2.6294
+  },
+  {
+    "id": "UNI-454",
+    "name": "Ecole Supérieure de Chimie Organique et Minérale",
+    "country": "FR",
+    "lat": 45.7516,
+    "lon": 2.509
+  },
+  {
+    "id": "UNI-455",
+    "name": "Ecole Supérieure de Commerce de Rouen",
+    "country": "FR",
+    "lat": 45.2134,
+    "lon": 2.3865
+  },
+  {
+    "id": "UNI-456",
+    "name": "Ecole Supérieure de Physique et de Chimie Industrielles",
+    "country": "FR",
+    "lat": 45.7764,
+    "lon": 1.8424
+  },
+  {
+    "id": "UNI-457",
+    "name": "Ecole Supérieure d'Agriculture d'Angers",
+    "country": "FR",
+    "lat": 46.6327,
+    "lon": 2.1681
+  },
+  {
+    "id": "UNI-458",
+    "name": "École des Hautes Études Commerciales (HEC Business School)",
+    "country": "FR",
+    "lat": 45.471,
+    "lon": 2.7751
+  },
+  {
+    "id": "UNI-459",
+    "name": "Institut National des Sciences Appliquées de Rennes",
+    "country": "FR",
+    "lat": 46.0006,
+    "lon": 2.9838
+  },
+  {
+    "id": "UNI-460",
+    "name": "Institut National des Sciences Appliquées de Rouen",
+    "country": "FR",
+    "lat": 46.9748,
+    "lon": 1.842
+  },
+  {
+    "id": "UNI-461",
+    "name": "Institut de Recherche et Coordination Acoustique/Musique",
+    "country": "FR",
+    "lat": 46.787,
+    "lon": 1.7622
+  },
+  {
+    "id": "UNI-462",
+    "name": "Ecole Polytechnique Universitaire de Lille",
+    "country": "FR",
+    "lat": 45.8981,
+    "lon": 2.1478
+  },
+  {
+    "id": "UNI-463",
+    "name": "École Polytechnique",
+    "country": "FR",
+    "lat": 46.8011,
+    "lon": 2.2368
+  },
+  {
+    "id": "UNI-464",
+    "name": "Ecole Nationale Supérieure de l'Aéronautique et de l'Espace",
+    "country": "FR",
+    "lat": 46.1957,
+    "lon": 2.1309
+  },
+  {
+    "id": "UNI-465",
+    "name": "Université Bourgogne - Franche-Comté",
+    "country": "FR",
+    "lat": 45.5175,
+    "lon": 1.8901
+  },
+  {
+    "id": "UNI-466",
+    "name": "Université de Cergy-Pontoise",
+    "country": "FR",
+    "lat": 45.2865,
+    "lon": 2.4092
+  },
+  {
+    "id": "UNI-467",
+    "name": "Université d'Auvergne (Clermont-Ferrand I)",
+    "country": "FR",
+    "lat": 46.8215,
+    "lon": 2.2083
+  },
+  {
+    "id": "UNI-468",
+    "name": "Université Grenoble Alpes",
+    "country": "FR",
+    "lat": 46.1438,
+    "lon": 1.4907
+  },
+  {
+    "id": "UNI-469",
+    "name": "Université Rennes II - Haute-Bretagne",
+    "country": "FR",
+    "lat": 46.8783,
+    "lon": 2.1562
+  },
+  {
+    "id": "UNI-470",
+    "name": "Université de Caen Basse Normandie",
+    "country": "FR",
+    "lat": 45.6199,
+    "lon": 2.364
+  },
+  {
+    "id": "UNI-471",
+    "name": "Université de Nice-Sophia Antipolis",
+    "country": "FR",
+    "lat": 45.9946,
+    "lon": 1.6239
+  },
+  {
+    "id": "UNI-472",
+    "name": "Université de Limoges",
+    "country": "FR",
+    "lat": 45.8269,
+    "lon": 1.6801
+  },
+  {
+    "id": "UNI-473",
+    "name": "Université d'Angers",
+    "country": "FR",
+    "lat": 46.2742,
+    "lon": 1.6495
+  },
+  {
+    "id": "UNI-474",
+    "name": "Université d'Artois",
+    "country": "FR",
+    "lat": 45.1398,
+    "lon": 1.8747
+  },
+  {
+    "id": "UNI-475",
+    "name": "Université d'Avignon",
+    "country": "FR",
+    "lat": 46.229,
+    "lon": 1.341
+  },
+  {
+    "id": "UNI-476",
+    "name": "Université Blaise Pascal (Clermont-Ferrand II)",
+    "country": "FR",
+    "lat": 46.3738,
+    "lon": 2.8601
+  },
+  {
+    "id": "UNI-477",
+    "name": "Université de Bretagne Occidentale",
+    "country": "FR",
+    "lat": 46.5235,
+    "lon": 2.066
+  },
+  {
+    "id": "UNI-478",
+    "name": "Université Catholique de Lyon",
+    "country": "FR",
+    "lat": 46.5904,
+    "lon": 2.3242
+  },
+  {
+    "id": "UNI-479",
+    "name": "Université de Corse Pascal Paoli",
+    "country": "FR",
+    "lat": 46.6537,
+    "lon": 1.4678
+  },
+  {
+    "id": "UNI-480",
+    "name": "Ecole Nationale Supérieure de Chimie de Toulouse",
+    "country": "FR",
+    "lat": 45.7252,
+    "lon": 2.504
+  },
+  {
+    "id": "UNI-481",
+    "name": "Université du Havre",
+    "country": "FR",
+    "lat": 46.959,
+    "lon": 2.7729
+  },
+  {
+    "id": "UNI-482",
+    "name": "Université du Maine",
+    "country": "FR",
+    "lat": 46.75,
+    "lon": 2.1077
+  },
+  {
+    "id": "UNI-483",
+    "name": "Université Charles-de-Gaulle (Lille III)",
+    "country": "FR",
+    "lat": 45.0873,
+    "lon": 2.3003
+  },
+  {
+    "id": "UNI-484",
+    "name": "Université du Littoral Cote d'Opale",
+    "country": "FR",
+    "lat": 45.3665,
+    "lon": 2.1783
+  },
+  {
+    "id": "UNI-485",
+    "name": "Université de Lorraine",
+    "country": "FR",
+    "lat": 46.202,
+    "lon": 2.0412
+  },
+  {
+    "id": "UNI-486",
+    "name": "Université de La Rochelle",
+    "country": "FR",
+    "lat": 45.8672,
+    "lon": 2.6688
+  },
+  {
+    "id": "UNI-487",
+    "name": "Université de Montpellier",
+    "country": "FR",
+    "lat": 46.6315,
+    "lon": 2.4277
+  },
+  {
+    "id": "UNI-488",
+    "name": "Université Paul Valéry (Montpellier III)",
+    "country": "FR",
+    "lat": 45.8043,
+    "lon": 2.8505
+  },
+  {
+    "id": "UNI-489",
+    "name": "Université de Nantes",
+    "country": "FR",
+    "lat": 45.2764,
+    "lon": 2.8392
+  },
+  {
+    "id": "UNI-490",
+    "name": "Université d'Orléans",
+    "country": "FR",
+    "lat": 46.1307,
+    "lon": 1.9446
+  },
+  {
+    "id": "UNI-491",
+    "name": "Université Val-de-Marne (Paris XII)",
+    "country": "FR",
+    "lat": 45.4437,
+    "lon": 1.093
+  },
+  {
+    "id": "UNI-492",
+    "name": "Université Paris Nord (Paris XIII)",
+    "country": "FR",
+    "lat": 46.9085,
+    "lon": 2.5239
+  },
+  {
+    "id": "UNI-493",
+    "name": "Université Panthéon-Sorbonne (Paris I)",
+    "country": "FR",
+    "lat": 46.6762,
+    "lon": 2.6191
+  },
+  {
+    "id": "UNI-494",
+    "name": "Université Vincennes Saint-Denis (Paris VIII)",
+    "country": "FR",
+    "lat": 45.638,
+    "lon": 2.7667
+  },
+  {
+    "id": "UNI-495",
+    "name": "Université de Pau et des Pays de l'Adour",
+    "country": "FR",
+    "lat": 46.5903,
+    "lon": 1.5377
+  },
+  {
+    "id": "UNI-496",
+    "name": "Université de Perpignan",
+    "country": "FR",
+    "lat": 45.1144,
+    "lon": 2.5433
+  },
+  {
+    "id": "UNI-497",
+    "name": "Université de Poitiers",
+    "country": "FR",
+    "lat": 45.8462,
+    "lon": 2.3622
+  },
+  {
+    "id": "UNI-498",
+    "name": "Université de Rouen - Haute Normandie",
+    "country": "FR",
+    "lat": 46.1295,
+    "lon": 1.1689
+  },
+  {
+    "id": "UNI-499",
+    "name": "Université Jean Monnet",
+    "country": "FR",
+    "lat": 45.76,
+    "lon": 1.4328
+  },
+  {
+    "id": "UNI-500",
+    "name": "Université du Sud, Toulon et Var",
+    "country": "FR",
+    "lat": 46.482,
+    "lon": 2.9342
+  },
+  {
+    "id": "UNI-501",
+    "name": "Université des Sciences Sociales (Toulouse I)",
+    "country": "FR",
+    "lat": 45.8415,
+    "lon": 2.4938
+  },
+  {
+    "id": "UNI-502",
+    "name": "Université de Toulouse-le-Mirail (Toulouse III)",
+    "country": "FR",
+    "lat": 45.712,
+    "lon": 2.0489
+  },
+  {
+    "id": "UNI-503",
+    "name": "Université de Toulouse",
+    "country": "FR",
+    "lat": 45.0848,
+    "lon": 2.0301
+  },
+  {
+    "id": "UNI-504",
+    "name": "Université François Rabelais de Tours",
+    "country": "FR",
+    "lat": 46.6176,
+    "lon": 1.2145
+  },
+  {
+    "id": "UNI-505",
+    "name": "Université de Valenciennes et du Hainaut-Cambrésis",
+    "country": "FR",
+    "lat": 46.1832,
+    "lon": 1.0294
+  },
+  {
+    "id": "UNI-506",
+    "name": "Université de Picardie Jules-Verne",
+    "country": "FR",
+    "lat": 46.1893,
+    "lon": 1.7205
+  },
+  {
+    "id": "UNI-507",
+    "name": "Université Paris Sud (Paris XI)",
+    "country": "FR",
+    "lat": 46.6378,
+    "lon": 2.0609
+  },
+  {
+    "id": "UNI-508",
+    "name": "Université d'Aix-Marseille",
+    "country": "FR",
+    "lat": 45.6658,
+    "lon": 2.7187
+  },
+  {
+    "id": "UNI-509",
+    "name": "Université de Technologie de Belfort Montbéliard",
+    "country": "FR",
+    "lat": 46.4313,
+    "lon": 2.0434
+  },
+  {
+    "id": "UNI-510",
+    "name": "Université de Technologie de Compiègne",
+    "country": "FR",
+    "lat": 45.0012,
+    "lon": 1.2401
+  },
+  {
+    "id": "UNI-511",
+    "name": "Université de Technologie de Troyes",
+    "country": "FR",
+    "lat": 45.7421,
+    "lon": 1.4542
+  },
+  {
+    "id": "UNI-512",
+    "name": "Institut polytechnique de Grenoble",
+    "country": "FR",
+    "lat": 46.8079,
+    "lon": 2.7427
+  },
+  {
+    "id": "UNI-513",
+    "name": "Université Louis Pasteur (Strasbourg I)",
+    "country": "FR",
+    "lat": 45.8695,
+    "lon": 1.963
+  },
+  {
+    "id": "UNI-514",
+    "name": "Université Robert Schuman (Strasbourg III)",
+    "country": "FR",
+    "lat": 46.0141,
+    "lon": 2.8003
+  },
+  {
+    "id": "UNI-515",
+    "name": "Université de Strasbourg",
+    "country": "FR",
+    "lat": 46.9452,
+    "lon": 1.0211
+  },
+  {
+    "id": "UNI-516",
+    "name": "Université Clermont Auvergne",
+    "country": "FR",
+    "lat": 46.0583,
+    "lon": 1.7985
+  },
+  {
+    "id": "UNI-517",
+    "name": "Collège de France",
+    "country": "FR",
+    "lat": 45.8345,
+    "lon": 2.993
+  },
+  {
+    "id": "UNI-518",
+    "name": "University of Burgundy",
+    "country": "FR",
+    "lat": 46.0394,
+    "lon": 1.3271
+  },
+  {
+    "id": "UNI-519",
+    "name": "Université Paris-Saclay",
+    "country": "FR",
+    "lat": 46.9394,
+    "lon": 2.9307
+  },
+  {
+    "id": "UNI-520",
+    "name": "Université de Rennes 2",
+    "country": "FR",
+    "lat": 45.9071,
+    "lon": 2.08
+  },
+  {
+    "id": "UNI-521",
+    "name": "Université de Franche Comté",
+    "country": "FR",
+    "lat": 46.2677,
+    "lon": 1.5023
+  },
+  {
+    "id": "UNI-522",
+    "name": "Université Diderot Paris 7",
+    "country": "FR",
+    "lat": 46.5601,
+    "lon": 2.1888
+  },
+  {
+    "id": "UNI-523",
+    "name": "Université de Nimes",
+    "country": "FR",
+    "lat": 46.4027,
+    "lon": 2.8893
+  },
+  {
+    "id": "UNI-524",
+    "name": "Université Champollion",
+    "country": "FR",
+    "lat": 45.7875,
+    "lon": 2.9548
+  },
+  {
+    "id": "UNI-525",
+    "name": "Université Paris est Créteil Val de Marne Paris XII",
+    "country": "FR",
+    "lat": 46.3691,
+    "lon": 2.8662
+  },
+  {
+    "id": "UNI-532",
+    "name": "Deutsche Sporthochschule Köln",
+    "country": "DE",
+    "lat": 51.7436,
+    "lon": 8.4383
+  },
+  {
+    "id": "UNI-533",
+    "name": "Fachhochschule Biberach, Hochschule für Bauwesen und Wirtschaft",
+    "country": "DE",
+    "lat": 50.0349,
+    "lon": 9.9004
+  },
+  {
+    "id": "UNI-534",
+    "name": "Fachhochschule Brandenburg",
+    "country": "DE",
+    "lat": 50.4876,
+    "lon": 8.9015
+  },
+  {
+    "id": "UNI-535",
+    "name": "Fachhochschule Dortmund",
+    "country": "DE",
+    "lat": 50.6508,
+    "lon": 8.3861
+  },
+  {
+    "id": "UNI-536",
+    "name": "Hochschule Düsseldorf",
+    "country": "DE",
+    "lat": 50.9032,
+    "lon": 8.0194
+  },
+  {
+    "id": "UNI-537",
+    "name": "Fachhochschule Erfurt",
+    "country": "DE",
+    "lat": 50.4021,
+    "lon": 9.2125
+  },
+  {
+    "id": "UNI-538",
+    "name": "Fachhochschule Flensburg",
+    "country": "DE",
+    "lat": 51.5708,
+    "lon": 9.3374
+  },
+  {
+    "id": "UNI-539",
+    "name": "Fachhochschule Frankfurt am Main",
+    "country": "DE",
+    "lat": 50.9704,
+    "lon": 8.0946
+  },
+  {
+    "id": "UNI-540",
+    "name": "Fachhochschule Gießen-Friedberg",
+    "country": "DE",
+    "lat": 51.9942,
+    "lon": 9.5124
+  },
+  {
+    "id": "UNI-541",
+    "name": "Fachhochschule Hildesheim/Holzminden/Göttingen, Hochschule für angewandte Wissenschaft und Kunst",
+    "country": "DE",
+    "lat": 50.9796,
+    "lon": 9.6392
+  },
+  {
+    "id": "UNI-542",
+    "name": "Fachhochschule Kiel",
+    "country": "DE",
+    "lat": 51.6776,
+    "lon": 9.1634
+  },
+  {
+    "id": "UNI-543",
+    "name": "Fachhochschule Koblenz",
+    "country": "DE",
+    "lat": 50.5201,
+    "lon": 9.5392
+  },
+  {
+    "id": "UNI-544",
+    "name": "Technische Hochschule Köln",
+    "country": "DE",
+    "lat": 51.55,
+    "lon": 9.8326
+  },
+  {
+    "id": "UNI-545",
+    "name": "Fachhochschule Lübeck",
+    "country": "DE",
+    "lat": 51.3641,
+    "lon": 9.2488
+  },
+  {
+    "id": "UNI-546",
+    "name": "Fachhochschule Münster",
+    "country": "DE",
+    "lat": 51.1313,
+    "lon": 8.5883
+  },
+  {
+    "id": "UNI-547",
+    "name": "Fachhochschule Neubrandenburg",
+    "country": "DE",
+    "lat": 51.0619,
+    "lon": 9.9717
+  },
+  {
+    "id": "UNI-548",
+    "name": "Hochschule Neu-Ulm, Hochschule Neu-Ulm University of applied sciences",
+    "country": "DE",
+    "lat": 51.3813,
+    "lon": 9.4265
+  },
+  {
+    "id": "UNI-549",
+    "name": "Fachhochschule Potsdam",
+    "country": "DE",
+    "lat": 50.0794,
+    "lon": 9.4204
+  },
+  {
+    "id": "UNI-550",
+    "name": "Fachhochschule Stralsund",
+    "country": "DE",
+    "lat": 51.4132,
+    "lon": 8.3269
+  },
+  {
+    "id": "UNI-551",
+    "name": "Fachhochschule Stuttgart, Hochschule für Technik",
+    "country": "DE",
+    "lat": 51.25,
+    "lon": 9.6688
+  },
+  {
+    "id": "UNI-552",
+    "name": "Hochschule für Technik und Wirtschaft Berlin",
+    "country": "DE",
+    "lat": 50.7151,
+    "lon": 9.5091
+  },
+  {
+    "id": "UNI-553",
+    "name": "Hochschule Ulm, Hochschule für Angewandte Wissenschaft",
+    "country": "DE",
+    "lat": 50.3854,
+    "lon": 9.5005
+  },
+  {
+    "id": "UNI-554",
+    "name": "Fachhochschule Wedel",
+    "country": "DE",
+    "lat": 51.1058,
+    "lon": 8.5678
+  },
+  {
+    "id": "UNI-555",
+    "name": "Fachhochschule Wiesbaden",
+    "country": "DE",
+    "lat": 50.78,
+    "lon": 8.2244
+  },
+  {
+    "id": "UNI-556",
+    "name": "Ostfalia Hochschule für angewandte Wissenschaften",
+    "country": "DE",
+    "lat": 51.6942,
+    "lon": 8.2991
+  },
+  {
+    "id": "UNI-557",
+    "name": "Freie Universität Berlin",
+    "country": "DE",
+    "lat": 50.9962,
+    "lon": 9.5315
+  },
+  {
+    "id": "UNI-558",
+    "name": "Hochschule Bremen",
+    "country": "DE",
+    "lat": 50.2669,
+    "lon": 9.4533
+  },
+  {
+    "id": "UNI-559",
+    "name": "Hochschule Bremerhaven",
+    "country": "DE",
+    "lat": 50.0012,
+    "lon": 8.0708
+  },
+  {
+    "id": "UNI-560",
+    "name": "Hochschule Esslingen",
+    "country": "DE",
+    "lat": 50.8246,
+    "lon": 8.0945
+  },
+  {
+    "id": "UNI-561",
+    "name": "Hochschule Harz, Hochschule für angewandte Wissenschaften (FH)",
+    "country": "DE",
+    "lat": 51.6868,
+    "lon": 9.7266
+  },
+  {
+    "id": "UNI-562",
+    "name": "Hochschule Magdeburg-Stendal (FH)",
+    "country": "DE",
+    "lat": 51.0228,
+    "lon": 9.0169
+  },
+  {
+    "id": "UNI-563",
+    "name": "Hochschule Wismar, Fachhochschule für Technik, Wirtschaft und Gestaltung",
+    "country": "DE",
+    "lat": 50.1747,
+    "lon": 8.1099
+  },
+  {
+    "id": "UNI-564",
+    "name": "Hochschule Mittweida, University of Applied Sciences",
+    "country": "DE",
+    "lat": 50.4646,
+    "lon": 8.8828
+  },
+  {
+    "id": "UNI-565",
+    "name": "Hochschule für Technik und Wirtschaft des Saarlandes",
+    "country": "DE",
+    "lat": 50.5882,
+    "lon": 9.8617
+  },
+  {
+    "id": "UNI-566",
+    "name": "Humboldt Universität Berlin",
+    "country": "DE",
+    "lat": 51.1426,
+    "lon": 9.7832
+  },
+  {
+    "id": "UNI-567",
+    "name": "Katholische Universität Eichstätt",
+    "country": "DE",
+    "lat": 50.7609,
+    "lon": 8.4772
+  },
+  {
+    "id": "UNI-568",
+    "name": "Medizinische Hochschule Hannover",
+    "country": "DE",
+    "lat": 51.2508,
+    "lon": 8.0811
+  },
+  {
+    "id": "UNI-569",
+    "name": "Pädagogische Hochschule Erfurt/Mühlhausen",
+    "country": "DE",
+    "lat": 51.4316,
+    "lon": 8.0587
+  },
+  {
+    "id": "UNI-570",
+    "name": "Pädagogische Hochschule Freiburg",
+    "country": "DE",
+    "lat": 50.5567,
+    "lon": 9.2639
+  },
+  {
+    "id": "UNI-571",
+    "name": "Pädagogische Hochschule Karlsruhe",
+    "country": "DE",
+    "lat": 51.6609,
+    "lon": 9.06
+  },
+  {
+    "id": "UNI-572",
+    "name": "Pädagogische Hochschule Ludwigsburg",
+    "country": "DE",
+    "lat": 50.5952,
+    "lon": 9.674
+  },
+  {
+    "id": "UNI-573",
+    "name": "Ruhr-Universität Bochum",
+    "country": "DE",
+    "lat": 51.0905,
+    "lon": 9.6941
+  },
+  {
+    "id": "UNI-574",
+    "name": "Rheinisch Westfälische Technische Hochschule Aachen",
+    "country": "DE",
+    "lat": 51.2215,
+    "lon": 9.0833
+  },
+  {
+    "id": "UNI-575",
+    "name": "Technische Fachhochschule Wildau",
+    "country": "DE",
+    "lat": 51.9062,
+    "lon": 9.2858
+  },
+  {
+    "id": "UNI-576",
+    "name": "Technische Universität Carolo-Wilhelmina zu Braunschweig",
+    "country": "DE",
+    "lat": 50.7222,
+    "lon": 9.4149
+  },
+  {
+    "id": "UNI-577",
+    "name": "Technische Universität Chemnitz",
+    "country": "DE",
+    "lat": 51.2502,
+    "lon": 8.7524
+  },
+  {
+    "id": "UNI-578",
+    "name": "Technische Universität Clausthal",
+    "country": "DE",
+    "lat": 51.7459,
+    "lon": 9.2203
+  },
+  {
+    "id": "UNI-579",
+    "name": "Technische Universität Bergakademie Freiberg",
+    "country": "DE",
+    "lat": 50.8518,
+    "lon": 8.3682
+  },
+  {
+    "id": "UNI-580",
+    "name": "Technische Universität Hamburg",
+    "country": "DE",
+    "lat": 51.0594,
+    "lon": 8.4013
+  },
+  {
+    "id": "UNI-581",
+    "name": "Otto-Friedrich Universität Bamberg",
+    "country": "DE",
+    "lat": 51.4766,
+    "lon": 9.0601
+  },
+  {
+    "id": "UNI-582",
+    "name": "Universität Bielefeld",
+    "country": "DE",
+    "lat": 50.7818,
+    "lon": 9.9215
+  },
+  {
+    "id": "UNI-583",
+    "name": "Rheinische Friedrich-Wilhelms Universität Bonn",
+    "country": "DE",
+    "lat": 51.1372,
+    "lon": 9.3791
+  },
+  {
+    "id": "UNI-584",
+    "name": "Universität Bremen",
+    "country": "DE",
+    "lat": 51.042,
+    "lon": 8.9428
+  },
+  {
+    "id": "UNI-585",
+    "name": "Technische Universität Dortmund",
+    "country": "DE",
+    "lat": 51.2608,
+    "lon": 9.0924
+  },
+  {
+    "id": "UNI-586",
+    "name": "Universität Erfurt",
+    "country": "DE",
+    "lat": 50.8884,
+    "lon": 9.4657
+  },
+  {
+    "id": "UNI-587",
+    "name": "Friedrich-Alexander Universität Erlangen-Nürnberg",
+    "country": "DE",
+    "lat": 50.7571,
+    "lon": 8.5998
+  },
+  {
+    "id": "UNI-588",
+    "name": "Universität Flensburg",
+    "country": "DE",
+    "lat": 51.8324,
+    "lon": 8.4347
+  },
+  {
+    "id": "UNI-589",
+    "name": "Albert-Ludwigs-Universität Freiburg",
+    "country": "DE",
+    "lat": 50.0597,
+    "lon": 9.0533
+  },
+  {
+    "id": "UNI-590",
+    "name": "Justus Liebig Universität Gießen",
+    "country": "DE",
+    "lat": 50.4736,
+    "lon": 9.3232
+  },
+  {
+    "id": "UNI-591",
+    "name": "Ernst-Moritz-Arndt Universität Greifswald",
+    "country": "DE",
+    "lat": 51.1453,
+    "lon": 9.1472
+  },
+  {
+    "id": "UNI-592",
+    "name": "Martin-Luther Universität Halle-Wittenberg",
+    "country": "DE",
+    "lat": 51.3466,
+    "lon": 8.7438
+  },
+  {
+    "id": "UNI-593",
+    "name": "Universität Hamburg",
+    "country": "DE",
+    "lat": 50.301,
+    "lon": 8.2811
+  },
+  {
+    "id": "UNI-594",
+    "name": "Ruprecht-Karls-Universität Heidelberg",
+    "country": "DE",
+    "lat": 51.0495,
+    "lon": 8.3395
+  },
+  {
+    "id": "UNI-595",
+    "name": "Universität Hohenheim",
+    "country": "DE",
+    "lat": 51.9523,
+    "lon": 8.5819
+  },
+  {
+    "id": "UNI-596",
+    "name": "Friedrich-Schiller Universität Jena",
+    "country": "DE",
+    "lat": 50.0666,
+    "lon": 9.3431
+  },
+  {
+    "id": "UNI-597",
+    "name": "Karlsruher Institut für Technologie",
+    "country": "DE",
+    "lat": 51.4439,
+    "lon": 8.4457
+  },
+  {
+    "id": "UNI-598",
+    "name": "Universität Kassel",
+    "country": "DE",
+    "lat": 51.973,
+    "lon": 8.2716
+  },
+  {
+    "id": "UNI-599",
+    "name": "Universität Koblenz-Landau",
+    "country": "DE",
+    "lat": 50.7116,
+    "lon": 8.6578
+  },
+  {
+    "id": "UNI-600",
+    "name": "Universität Köln",
+    "country": "DE",
+    "lat": 50.1228,
+    "lon": 8.4262
+  },
+  {
+    "id": "UNI-601",
+    "name": "Universität Konstanz",
+    "country": "DE",
+    "lat": 51.7419,
+    "lon": 9.9375
+  },
+  {
+    "id": "UNI-602",
+    "name": "Universität Leipzig",
+    "country": "DE",
+    "lat": 50.816,
+    "lon": 9.2216
+  },
+  {
+    "id": "UNI-603",
+    "name": "Universität Lüneburg",
+    "country": "DE",
+    "lat": 50.3636,
+    "lon": 9.6268
+  },
+  {
+    "id": "UNI-604",
+    "name": "Johannes-Gutenberg Universität Mainz",
+    "country": "DE",
+    "lat": 51.1168,
+    "lon": 8.464
+  },
+  {
+    "id": "UNI-605",
+    "name": "Phillips-Universität Marburg",
+    "country": "DE",
+    "lat": 51.0374,
+    "lon": 8.3094
+  },
+  {
+    "id": "UNI-606",
+    "name": "Westfälische Wilhelms-Universität Münster",
+    "country": "DE",
+    "lat": 50.6865,
+    "lon": 8.5497
+  },
+  {
+    "id": "UNI-607",
+    "name": "Carl von Ossietzky Universität Oldenburg",
+    "country": "DE",
+    "lat": 51.0399,
+    "lon": 9.7854
+  },
+  {
+    "id": "UNI-608",
+    "name": "Universität Paderborn",
+    "country": "DE",
+    "lat": 51.9306,
+    "lon": 8.41
+  },
+  {
+    "id": "UNI-609",
+    "name": "Universität Regensburg",
+    "country": "DE",
+    "lat": 51.7222,
+    "lon": 9.8088
+  },
+  {
+    "id": "UNI-610",
+    "name": "Universität Rostock",
+    "country": "DE",
+    "lat": 50.9808,
+    "lon": 8.2016
+  },
+  {
+    "id": "UNI-611",
+    "name": "Universität des Saarlandes",
+    "country": "DE",
+    "lat": 51.9184,
+    "lon": 9.3427
+  },
+  {
+    "id": "UNI-612",
+    "name": "Universität Siegen",
+    "country": "DE",
+    "lat": 51.4025,
+    "lon": 9.9848
+  },
+  {
+    "id": "UNI-613",
+    "name": "Universität Stuttgart",
+    "country": "DE",
+    "lat": 51.3766,
+    "lon": 8.7571
+  },
+  {
+    "id": "UNI-614",
+    "name": "Eberhard-Karls-Universität Tübingen",
+    "country": "DE",
+    "lat": 51.5569,
+    "lon": 8.0473
+  },
+  {
+    "id": "UNI-615",
+    "name": "Universität Ulm",
+    "country": "DE",
+    "lat": 51.8243,
+    "lon": 8.4717
+  },
+  {
+    "id": "UNI-616",
+    "name": "Bauhaus Universität Weimar",
+    "country": "DE",
+    "lat": 51.2588,
+    "lon": 8.9086
+  },
+  {
+    "id": "UNI-617",
+    "name": "Private Universität Witten/Herdecke",
+    "country": "DE",
+    "lat": 50.8478,
+    "lon": 8.3418
+  },
+  {
+    "id": "UNI-618",
+    "name": "Bayerische Julius-Maximilians-Universität Würzburg",
+    "country": "DE",
+    "lat": 51.5828,
+    "lon": 8.484
+  },
+  {
+    "id": "UNI-619",
+    "name": "Duale Hochschule Baden-Württemberg",
+    "country": "DE",
+    "lat": 50.3303,
+    "lon": 9.8466
+  },
+  {
+    "id": "UNI-620",
+    "name": "Duale Hochschule Baden-Württemberg Heidenheim",
+    "country": "DE",
+    "lat": 50.3284,
+    "lon": 9.5108
+  },
+  {
+    "id": "UNI-621",
+    "name": "Duale Hochschule Baden-Württemberg Lörrach",
+    "country": "DE",
+    "lat": 50.7326,
+    "lon": 8.5764
+  },
+  {
+    "id": "UNI-622",
+    "name": "Duale Hochschule Baden-Württemberg Mosbach",
+    "country": "DE",
+    "lat": 50.4958,
+    "lon": 8.5223
+  },
+  {
+    "id": "UNI-623",
+    "name": "Duale Hochschule Baden-Württemberg Ravensburg",
+    "country": "DE",
+    "lat": 51.0783,
+    "lon": 9.7505
+  },
+  {
+    "id": "UNI-624",
+    "name": "Duale Hochschule Baden-Württemberg Stuttgart",
+    "country": "DE",
+    "lat": 51.8842,
+    "lon": 8.6902
+  },
+  {
+    "id": "UNI-625",
+    "name": "Duale Hochschule Baden-Württemberg Heilbronn",
+    "country": "DE",
+    "lat": 50.9433,
+    "lon": 8.6927
+  },
+  {
+    "id": "UNI-626",
+    "name": "Duale Hochschule Baden-Wuerttemberg Mannheim",
+    "country": "DE",
+    "lat": 50.2187,
+    "lon": 8.0847
+  },
+  {
+    "id": "UNI-627",
+    "name": "Technische Hochschule Mittelhessen",
+    "country": "DE",
+    "lat": 51.506,
+    "lon": 8.9797
+  },
+  {
+    "id": "UNI-628",
+    "name": "Leuphana Universität Lüneburg",
+    "country": "DE",
+    "lat": 51.6343,
+    "lon": 9.8357
+  },
+  {
+    "id": "UNI-629",
+    "name": "Hochschule für Musik Detmold",
+    "country": "DE",
+    "lat": 51.8126,
+    "lon": 9.901
+  },
+  {
+    "id": "UNI-630",
+    "name": "Europa-Universität Viadrina",
+    "country": "DE",
+    "lat": 50.6532,
+    "lon": 9.8888
+  },
+  {
+    "id": "UNI-631",
+    "name": "Hochschule RheinMain",
+    "country": "DE",
+    "lat": 51.9867,
+    "lon": 9.0724
+  },
+  {
+    "id": "UNI-632",
+    "name": "Technische Hochschule Ulm",
+    "country": "DE",
+    "lat": 50.6135,
+    "lon": 9.0353
+  },
+  {
+    "id": "UNI-633",
+    "name": "Europäische Betriebswirtschafts-Akademie",
+    "country": "DE",
+    "lat": 50.903,
+    "lon": 8.3545
+  },
+  {
+    "id": "UNI-634",
+    "name": "Hochschule für Bankwirtschaft (HfB), Private Fachhochschule der Bankakademie",
+    "country": "DE",
+    "lat": 50.7423,
+    "lon": 9.2383
+  },
+  {
+    "id": "UNI-635",
+    "name": "Merz Akademie, Hochschule für Gestaltung Stuttgart",
+    "country": "DE",
+    "lat": 50.0853,
+    "lon": 8.9655
+  },
+  {
+    "id": "UNI-636",
+    "name": "Gustav-Siewerth-Akademie",
+    "country": "DE",
+    "lat": 51.1581,
+    "lon": 9.379
+  },
+  {
+    "id": "UNI-637",
+    "name": "Staatliche Studienakademie Bautzen",
+    "country": "DE",
+    "lat": 51.9978,
+    "lon": 9.6007
+  },
+  {
+    "id": "UNI-638",
+    "name": "Kunstakademie Düsseldorf.",
+    "country": "DE",
+    "lat": 50.1846,
+    "lon": 8.7528
+  },
+  {
+    "id": "UNI-639",
+    "name": "Nordakademie, Staatlich anerkannte private Fachhochschule mit dualen Studiengängen",
+    "country": "DE",
+    "lat": 50.4637,
+    "lon": 8.3266
+  },
+  {
+    "id": "UNI-640",
+    "name": "Popakademie Baden-Württemberg",
+    "country": "DE",
+    "lat": 51.3979,
+    "lon": 8.6576
+  },
+  {
+    "id": "UNI-668",
+    "name": "The Hong Kong Academy for Performing Arts",
+    "country": "CN",
+    "lat": 21.6488,
+    "lon": 114.6519
+  },
+  {
+    "id": "UNI-669",
+    "name": "Hong Kong Baptist University",
+    "country": "CN",
+    "lat": 23.0306,
+    "lon": 114.6622
+  },
+  {
+    "id": "UNI-670",
+    "name": "The University of Hong Kong",
+    "country": "CN",
+    "lat": 22.2212,
+    "lon": 113.5128
+  },
+  {
+    "id": "UNI-671",
+    "name": "Hong Kong Metropolitan University",
+    "country": "CN",
+    "lat": 22.1132,
+    "lon": 113.3652
+  },
+  {
+    "id": "UNI-672",
+    "name": "The Hong Kong Polytechnic University",
+    "country": "CN",
+    "lat": 23.2263,
+    "lon": 115.0072
+  },
+  {
+    "id": "UNI-673",
+    "name": "The Hong Kong University of Science and Technology",
+    "country": "CN",
+    "lat": 22.0332,
+    "lon": 113.7906
+  },
+  {
+    "id": "UNI-674",
+    "name": "The Education University of Hong Kong",
+    "country": "CN",
+    "lat": 22.2673,
+    "lon": 114.5074
+  },
+  {
+    "id": "UNI-683",
+    "name": "Assam Agricultural University",
+    "country": "CN",
+    "lat": 19.8081,
+    "lon": 76.6096
+  },
+  {
+    "id": "UNI-684",
+    "name": "Aligarh Muslim University",
+    "country": "CN",
+    "lat": 20.839,
+    "lon": 76.1766
+  },
+  {
+    "id": "UNI-685",
+    "name": "Anna University",
+    "country": "CN",
+    "lat": 19.0801,
+    "lon": 77.3185
+  },
+  {
+    "id": "UNI-686",
+    "name": "Banaras Hindu University",
+    "country": "CN",
+    "lat": 19.3658,
+    "lon": 77.3621
+  },
+  {
+    "id": "UNI-687",
+    "name": "Central Institute of Fisheries Education",
+    "country": "CN",
+    "lat": 19.7311,
+    "lon": 76.1425
+  },
+  {
+    "id": "UNI-688",
+    "name": "Cochin University of Science and Technology",
+    "country": "CN",
+    "lat": 20.605,
+    "lon": 76.9717
+  },
+  {
+    "id": "UNI-689",
+    "name": "Indira Gandhi Institute of Development and Research",
+    "country": "CN",
+    "lat": 20.8468,
+    "lon": 77.9696
+  },
+  {
+    "id": "UNI-690",
+    "name": "Indira Gandhi National Open University",
+    "country": "CN",
+    "lat": 20.9393,
+    "lon": 76.9038
+  },
+  {
+    "id": "UNI-691",
+    "name": "Indian Institute of Information Technology and Management - Kerala",
+    "country": "CN",
+    "lat": 20.3195,
+    "lon": 77.4338
+  },
+  {
+    "id": "UNI-692",
+    "name": "Indraprastha Institute of Information Technology, Delhi",
+    "country": "CN",
+    "lat": 20.649,
+    "lon": 77.2658
+  },
+  {
+    "id": "UNI-693",
+    "name": "Indian Institute of Technology, Bombay",
+    "country": "CN",
+    "lat": 19.7205,
+    "lon": 77.9334
+  },
+  {
+    "id": "UNI-694",
+    "name": "Indian Institute of Technology, Delhi",
+    "country": "CN",
+    "lat": 20.6626,
+    "lon": 76.9905
+  },
+  {
+    "id": "UNI-695",
+    "name": "Indian Institute of Technology, Guwahati",
+    "country": "CN",
+    "lat": 20.6222,
+    "lon": 77.2032
+  },
+  {
+    "id": "UNI-696",
+    "name": "Indian Institute of Technology, Roorkee",
+    "country": "CN",
+    "lat": 19.0861,
+    "lon": 77.6014
+  },
+  {
+    "id": "UNI-697",
+    "name": "Indian Institute of Technology, Patna",
+    "country": "CN",
+    "lat": 19.206,
+    "lon": 77.3097
+  },
+  {
+    "id": "UNI-698",
+    "name": "Indian Institute of Technology, Indore",
+    "country": "CN",
+    "lat": 20.2517,
+    "lon": 77.715
+  },
+  {
+    "id": "UNI-699",
+    "name": "Indian Institute of Technology, Jodhpur",
+    "country": "CN",
+    "lat": 19.0061,
+    "lon": 76.0574
+  },
+  {
+    "id": "UNI-700",
+    "name": "Jamia Hamdard University",
+    "country": "CN",
+    "lat": 20.2252,
+    "lon": 76.8275
+  },
+  {
+    "id": "UNI-701",
+    "name": "Jawaharlal Nehru Technological University Hyderabad",
+    "country": "CN",
+    "lat": 19.345,
+    "lon": 77.0566
+  },
+  {
+    "id": "UNI-702",
+    "name": "Jawaharlal Nehru University",
+    "country": "CN",
+    "lat": 20.1385,
+    "lon": 77.7382
+  },
+  {
+    "id": "UNI-703",
+    "name": "University of Kerala",
+    "country": "CN",
+    "lat": 20.5311,
+    "lon": 77.4348
+  },
+  {
+    "id": "UNI-704",
+    "name": "Krishna University",
+    "country": "CN",
+    "lat": 19.8354,
+    "lon": 77.097
+  },
+  {
+    "id": "UNI-705",
+    "name": "Kerala University of Fisheries and Ocean Sciences",
+    "country": "CN",
+    "lat": 20.3699,
+    "lon": 77.4412
+  },
+  {
+    "id": "UNI-706",
+    "name": "Kuvempu University",
+    "country": "CN",
+    "lat": 20.3619,
+    "lon": 77.7838
+  },
+  {
+    "id": "UNI-707",
+    "name": "Motilal Nehru National Institute Of Technology",
+    "country": "CN",
+    "lat": 19.3857,
+    "lon": 76.862
+  },
+  {
+    "id": "UNI-708",
+    "name": "North Eastern Hill University",
+    "country": "CN",
+    "lat": 20.1577,
+    "lon": 76.4093
+  },
+  {
+    "id": "UNI-709",
+    "name": "National Institute of Technology Calicut",
+    "country": "CN",
+    "lat": 20.7547,
+    "lon": 77.4578
+  },
+  {
+    "id": "UNI-710",
+    "name": "National Institute of Technology Hamirpur",
+    "country": "CN",
+    "lat": 19.2262,
+    "lon": 76.8552
+  },
+  {
+    "id": "UNI-711",
+    "name": "National Institute of Technology Jamshedpur",
+    "country": "CN",
+    "lat": 20.1027,
+    "lon": 77.6529
+  },
+  {
+    "id": "UNI-712",
+    "name": "National Institute of Technology Puducherry",
+    "country": "CN",
+    "lat": 20.5692,
+    "lon": 76.6355
+  },
+  {
+    "id": "UNI-713",
+    "name": "National Institute of Technology Raipur",
+    "country": "CN",
+    "lat": 19.6379,
+    "lon": 77.1789
+  },
+  {
+    "id": "UNI-714",
+    "name": "National Institute of Technology Surathkal",
+    "country": "CN",
+    "lat": 19.8405,
+    "lon": 77.132
+  },
+  {
+    "id": "UNI-715",
+    "name": "National Institute of Technology Trichy",
+    "country": "CN",
+    "lat": 20.6063,
+    "lon": 76.0703
+  },
+  {
+    "id": "UNI-716",
+    "name": "Netaji Subhas University of Technology",
+    "country": "CN",
+    "lat": 19.3378,
+    "lon": 76.7572
+  },
+  {
+    "id": "UNI-717",
+    "name": "Osmania University",
+    "country": "CN",
+    "lat": 20.7509,
+    "lon": 76.6388
+  },
+  {
+    "id": "UNI-718",
+    "name": "Panjab University",
+    "country": "CN",
+    "lat": 19.1124,
+    "lon": 77.9588
+  },
+  {
+    "id": "UNI-719",
+    "name": "South Asian University",
+    "country": "CN",
+    "lat": 19.5149,
+    "lon": 77.1425
+  },
+  {
+    "id": "UNI-720",
+    "name": "Sree Sankaracharya University of Sanskrit",
+    "country": "CN",
+    "lat": 19.968,
+    "lon": 76.9254
+  },
+  {
+    "id": "UNI-721",
+    "name": "Sardar Vallabhbhai National Institute of Technology",
+    "country": "CN",
+    "lat": 20.5492,
+    "lon": 77.6538
+  },
+  {
+    "id": "UNI-722",
+    "name": "Tata Institute of Social Sciences",
+    "country": "CN",
+    "lat": 19.5959,
+    "lon": 77.8945
+  },
+  {
+    "id": "UNI-723",
+    "name": "Malaviya National Institute of Technology Jaipur",
+    "country": "CN",
+    "lat": 19.3978,
+    "lon": 77.6132
+  },
+  {
+    "id": "UNI-724",
+    "name": "Tumkur University",
+    "country": "CN",
+    "lat": 20.8751,
+    "lon": 77.2036
+  },
+  {
+    "id": "UNI-725",
+    "name": "University of Mysore",
+    "country": "CN",
+    "lat": 19.6515,
+    "lon": 76.5198
+  },
+  {
+    "id": "UNI-726",
+    "name": "University of Madras",
+    "country": "CN",
+    "lat": 19.8568,
+    "lon": 76.4694
+  },
+  {
+    "id": "UNI-727",
+    "name": "IIT Bhubaneswar",
+    "country": "CN",
+    "lat": 19.2753,
+    "lon": 76.0835
+  },
+  {
+    "id": "UNI-728",
+    "name": "Loyola-ICAM College of Engineering and Technology",
+    "country": "CN",
+    "lat": 20.1649,
+    "lon": 77.415
+  },
+  {
+    "id": "UNI-729",
+    "name": "Indian Institute Of Technology–Ropar (IIT–Ropar)",
+    "country": "CN",
+    "lat": 19.7424,
+    "lon": 77.0275
+  },
+  {
+    "id": "UNI-1075",
+    "name": "Kyrgyz Russian Slavic University",
+    "country": "CN",
+    "lat": 40.8805,
+    "lon": 75.2968
+  },
+  {
+    "id": "UNI-1076",
+    "name": "Kyrgyz State Technical University",
+    "country": "CN",
+    "lat": 40.9988,
+    "lon": 75.0787
+  },
+  {
+    "id": "UNI-1077",
+    "name": "Kyrgyz National University",
+    "country": "CN",
+    "lat": 40.7843,
+    "lon": 74.534
+  },
+  {
+    "id": "UNI-1081",
+    "name": "Internationle Akademie für Philosophie",
+    "country": "FR",
+    "lat": 47.0891,
+    "lon": 9.4288
+  },
+  {
+    "id": "UNI-1093",
+    "name": "International University Institute of Luxembourg",
+    "country": "DE",
+    "lat": 50.0035,
+    "lon": 6.7504
+  },
+  {
+    "id": "UNI-1159",
+    "name": "University of the Humanities",
+    "country": "CN",
+    "lat": 46.1548,
+    "lon": 104.8662
+  },
+  {
+    "id": "UNI-1160",
+    "name": "Mongolian State University of Education",
+    "country": "CN",
+    "lat": 45.1076,
+    "lon": 105.4857
+  },
+  {
+    "id": "UNI-1161",
+    "name": "Mongolian National University",
+    "country": "CN",
+    "lat": 45.012,
+    "lon": 104.6022
+  },
+  {
+    "id": "UNI-1166",
+    "name": "Kathmandu University",
+    "country": "CN",
+    "lat": 28.794,
+    "lon": 84.6468
+  },
+  {
+    "id": "UNI-1167",
+    "name": "Erasmus University Rotterdam",
+    "country": "DE",
+    "lat": 52.8172,
+    "lon": 6.2727
+  },
+  {
+    "id": "UNI-1168",
+    "name": "Institute of Social Studies",
+    "country": "DE",
+    "lat": 52.9346,
+    "lon": 6.678
+  },
+  {
+    "id": "UNI-1169",
+    "name": "International Institute for Geo - Information Science and Earth Observation",
+    "country": "DE",
+    "lat": 51.7764,
+    "lon": 6.1367
+  },
+  {
+    "id": "UNI-1170",
+    "name": "Universiteit Leiden",
+    "country": "DE",
+    "lat": 53.2509,
+    "lon": 6.1561
+  },
+  {
+    "id": "UNI-1171",
+    "name": "Open University of the Netherlands",
+    "country": "DE",
+    "lat": 52.7167,
+    "lon": 6.508
+  },
+  {
+    "id": "UNI-1176",
+    "name": "Tilburg University",
+    "country": "DE",
+    "lat": 51.5674,
+    "lon": 6.743
+  },
+  {
+    "id": "UNI-1179",
+    "name": "University of Twente",
+    "country": "DE",
+    "lat": 51.7013,
+    "lon": 6.6419
+  },
+  {
+    "id": "UNI-1406",
+    "name": "Armed Forces Academy of General Milan Rastislav Štefánik",
+    "country": "CZ",
+    "lat": 48.9818,
+    "lon": 18.6387
+  },
+  {
+    "id": "UNI-1412",
+    "name": "Technical University in Kosice",
+    "country": "CZ",
+    "lat": 49.0093,
+    "lon": 18.6538
+  },
+  {
+    "id": "UNI-1415",
+    "name": "Slovak University of Agriculture in Nitra",
+    "country": "CZ",
+    "lat": 49.0606,
+    "lon": 18.7502
+  },
+  {
+    "id": "UNI-1416",
+    "name": "Comenius University in Bratislava",
+    "country": "CZ",
+    "lat": 49.3729,
+    "lon": 18.508
+  },
+  {
+    "id": "UNI-1486",
+    "name": "EPFL - EPF Lausanne",
+    "country": "FR",
+    "lat": 47.1784,
+    "lon": 8.1505
+  },
+  {
+    "id": "UNI-1487",
+    "name": "ETHZ - ETH Zurich",
+    "country": "FR",
+    "lat": 46.8033,
+    "lon": 8.4387
+  },
+  {
+    "id": "UNI-1488",
+    "name": "University of Basel",
+    "country": "DE",
+    "lat": 47.5933,
+    "lon": 8.651
+  },
+  {
+    "id": "UNI-1489",
+    "name": "University of Fribourg",
+    "country": "DE",
+    "lat": 47.4632,
+    "lon": 7.0588
+  },
+  {
+    "id": "UNI-1490",
+    "name": "University of Geneva",
+    "country": "FR",
+    "lat": 46.0276,
+    "lon": 7.75
+  },
+  {
+    "id": "UNI-1491",
+    "name": "Universität Zürich",
+    "country": "FR",
+    "lat": 46.3087,
+    "lon": 7.7798
+  },
+  {
+    "id": "UNI-1492",
+    "name": "Universität Bern",
+    "country": "DE",
+    "lat": 47.4651,
+    "lon": 8.3096
+  },
+  {
+    "id": "UNI-1493",
+    "name": "Université de Lausanne",
+    "country": "FR",
+    "lat": 46.6313,
+    "lon": 7.9334
+  },
+  {
+    "id": "UNI-1494",
+    "name": "Université de Neuchâtel",
+    "country": "FR",
+    "lat": 46.128,
+    "lon": 7.8381
+  },
+  {
+    "id": "UNI-1495",
+    "name": "Hochschule Luzern",
+    "country": "FR",
+    "lat": 46.2522,
+    "lon": 8.4094
+  },
+  {
+    "id": "UNI-1496",
+    "name": "PHBern - University of Teacher Education Bern",
+    "country": "DE",
+    "lat": 47.8554,
+    "lon": 8.3519
+  },
+  {
+    "id": "UNI-1497",
+    "name": "ZHAW - Zürcher Hochschule für Angewandte Wissenschaften",
+    "country": "FR",
+    "lat": 47.0126,
+    "lon": 8.0429
+  },
+  {
+    "id": "UNI-1741",
+    "name": "Tusculum College",
+    "country": "US",
+    "lat": 37.6696,
+    "lon": -96.3324
+  },
+  {
+    "id": "UNI-1742",
+    "name": "DigiPen Institute of Technology",
+    "country": "US",
+    "lat": 37.0575,
+    "lon": -96.7819
+  },
+  {
+    "id": "UNI-1743",
+    "name": "The University of Texas at Rio Grande Valley",
+    "country": "US",
+    "lat": 38.3028,
+    "lon": -96.8681
+  },
+  {
+    "id": "UNI-1744",
+    "name": "The Scripps Research Institute",
+    "country": "US",
+    "lat": 38.8307,
+    "lon": -96.8242
+  },
+  {
+    "id": "UNI-1745",
+    "name": "Wilmington University",
+    "country": "US",
+    "lat": 37.1218,
+    "lon": -96.9257
+  },
+  {
+    "id": "UNI-1746",
+    "name": "Purdue University Northwest",
+    "country": "US",
+    "lat": 38.6121,
+    "lon": -96.9019
+  },
+  {
+    "id": "UNI-1747",
+    "name": "California Baptist University",
+    "country": "US",
+    "lat": 37.0202,
+    "lon": -97.0042
+  },
+  {
+    "id": "UNI-1748",
+    "name": "University of Mississippi Medical Center",
+    "country": "US",
+    "lat": 38.5171,
+    "lon": -97.8029
+  },
+  {
+    "id": "UNI-1749",
+    "name": "St. Johns River State College",
+    "country": "US",
+    "lat": 38.586,
+    "lon": -96.9798
+  },
+  {
+    "id": "UNI-1750",
+    "name": "Contra Costa Community College District",
+    "country": "US",
+    "lat": 37.2353,
+    "lon": -96.3006
+  },
+  {
+    "id": "UNI-1751",
+    "name": "Utica College",
+    "country": "US",
+    "lat": 37.0187,
+    "lon": -96.8975
+  },
+  {
+    "id": "UNI-1752",
+    "name": "University of North Georgia",
+    "country": "US",
+    "lat": 38.2817,
+    "lon": -96.9617
+  },
+  {
+    "id": "UNI-1753",
+    "name": "Southwest Research Institute",
+    "country": "US",
+    "lat": 38.3147,
+    "lon": -96.2262
+  },
+  {
+    "id": "UNI-1754",
+    "name": "Defense Language Institute Foreign Language Center",
+    "country": "US",
+    "lat": 38.9474,
+    "lon": -97.5915
+  },
+  {
+    "id": "UNI-1755",
+    "name": "Columbus State University",
+    "country": "US",
+    "lat": 38.3679,
+    "lon": -97.5934
+  },
+  {
+    "id": "UNI-1756",
+    "name": "Adelphi University",
+    "country": "US",
+    "lat": 38.9499,
+    "lon": -96.9893
+  },
+  {
+    "id": "UNI-1757",
+    "name": "Air Force Institute of Technology",
+    "country": "US",
+    "lat": 37.306,
+    "lon": -97.1846
+  },
+  {
+    "id": "UNI-1758",
+    "name": "Alfred University",
+    "country": "US",
+    "lat": 38.3736,
+    "lon": -96.5072
+  },
+  {
+    "id": "UNI-1759",
+    "name": "Andrews University",
+    "country": "US",
+    "lat": 38.1974,
+    "lon": -96.8325
+  },
+  {
+    "id": "UNI-1760",
+    "name": "Armstrong State College",
+    "country": "US",
+    "lat": 38.0677,
+    "lon": -97.7306
+  },
+  {
+    "id": "UNI-1761",
+    "name": "Auburn University",
+    "country": "US",
+    "lat": 38.0989,
+    "lon": -96.7005
+  },
+  {
+    "id": "UNI-1762",
+    "name": "Aurora University",
+    "country": "US",
+    "lat": 38.6268,
+    "lon": -96.797
+  },
+  {
+    "id": "UNI-1763",
+    "name": "Bates College",
+    "country": "US",
+    "lat": 37.4692,
+    "lon": -96.1669
+  },
+  {
+    "id": "UNI-1764",
+    "name": "Baylor College of Medicine",
+    "country": "US",
+    "lat": 37.2044,
+    "lon": -97.6608
+  },
+  {
+    "id": "UNI-1765",
+    "name": "Baylor University",
+    "country": "US",
+    "lat": 37.1611,
+    "lon": -96.1238
+  },
+  {
+    "id": "UNI-1766",
+    "name": "Bemidji State University",
+    "country": "US",
+    "lat": 38.4004,
+    "lon": -96.7114
+  },
+  {
+    "id": "UNI-1767",
+    "name": "Bethel University",
+    "country": "US",
+    "lat": 38.3572,
+    "lon": -97.2854
+  },
+  {
+    "id": "UNI-1768",
+    "name": "Biola University",
+    "country": "US",
+    "lat": 38.1071,
+    "lon": -96.8559
+  },
+  {
+    "id": "UNI-1769",
+    "name": "Bloomsburg University of Pennsylvania",
+    "country": "US",
+    "lat": 37.3557,
+    "lon": -97.226
+  },
+  {
+    "id": "UNI-1770",
+    "name": "Boston University",
+    "country": "US",
+    "lat": 38.6663,
+    "lon": -97.0265
+  },
+  {
+    "id": "UNI-1771",
+    "name": "Bowdoin College",
+    "country": "US",
+    "lat": 38.0885,
+    "lon": -96.5425
+  },
+  {
+    "id": "UNI-1772",
+    "name": "Bowling Green State University",
+    "country": "US",
+    "lat": 38.9697,
+    "lon": -96.7249
+  },
+  {
+    "id": "UNI-1773",
+    "name": "Brigham Young University",
+    "country": "US",
+    "lat": 37.541,
+    "lon": -97.184
+  },
+  {
+    "id": "UNI-1774",
+    "name": "Brown University",
+    "country": "US",
+    "lat": 38.0053,
+    "lon": -96.3947
+  },
+  {
+    "id": "UNI-1775",
+    "name": "Bryant University",
+    "country": "US",
+    "lat": 38.475,
+    "lon": -97.5489
+  },
+  {
+    "id": "UNI-1776",
+    "name": "California Lutheran University",
+    "country": "US",
+    "lat": 37.0465,
+    "lon": -96.7144
+  },
+  {
+    "id": "UNI-1777",
+    "name": "California State University, Chico",
+    "country": "US",
+    "lat": 37.5852,
+    "lon": -97.9368
+  },
+  {
+    "id": "UNI-1778",
+    "name": "California State University, Long Beach",
+    "country": "US",
+    "lat": 37.0082,
+    "lon": -97.3551
+  },
+  {
+    "id": "UNI-1779",
+    "name": "California State University, Los Angeles",
+    "country": "US",
+    "lat": 37.2821,
+    "lon": -97.1327
+  },
+  {
+    "id": "UNI-1780",
+    "name": "California State University, Northridge",
+    "country": "US",
+    "lat": 38.4729,
+    "lon": -97.1579
+  },
+  {
+    "id": "UNI-1781",
+    "name": "California State University, Sacramento",
+    "country": "US",
+    "lat": 37.5591,
+    "lon": -97.3682
+  },
+  {
+    "id": "UNI-1782",
+    "name": "California State University, San Marcos",
+    "country": "US",
+    "lat": 38.7247,
+    "lon": -96.4304
+  },
+  {
+    "id": "UNI-1783",
+    "name": "Cameron University",
+    "country": "US",
+    "lat": 37.1638,
+    "lon": -97.3254
+  },
+  {
+    "id": "UNI-1784",
+    "name": "Canisius College",
+    "country": "US",
+    "lat": 37.7592,
+    "lon": -96.6497
+  },
+  {
+    "id": "UNI-1785",
+    "name": "Carnegie Mellon University",
+    "country": "US",
+    "lat": 38.833,
+    "lon": -97.8541
+  },
+  {
+    "id": "UNI-1786",
+    "name": "Carroll University",
+    "country": "US",
+    "lat": 37.7511,
+    "lon": -97.9216
+  },
+  {
+    "id": "UNI-1787",
+    "name": "Catholic University of America",
+    "country": "US",
+    "lat": 38.317,
+    "lon": -96.4864
+  },
+  {
+    "id": "UNI-1788",
+    "name": "Central Washington University",
+    "country": "US",
+    "lat": 37.1172,
+    "lon": -96.5805
+  },
+  {
+    "id": "UNI-1789",
+    "name": "City University of New York",
+    "country": "US",
+    "lat": 37.6282,
+    "lon": -96.6006
+  },
+  {
+    "id": "UNI-1790",
+    "name": "Clarion University of Pennsylvania",
+    "country": "US",
+    "lat": 37.3155,
+    "lon": -96.1539
+  },
+  {
+    "id": "UNI-1791",
+    "name": "Clemson University",
+    "country": "US",
+    "lat": 37.7544,
+    "lon": -96.2523
+  },
+  {
+    "id": "UNI-1792",
+    "name": "Coastal Carolina University",
+    "country": "US",
+    "lat": 37.6696,
+    "lon": -97.229
+  },
+  {
+    "id": "UNI-1793",
+    "name": "Coe College",
+    "country": "US",
+    "lat": 38.6911,
+    "lon": -97.3355
+  },
+  {
+    "id": "UNI-1794",
+    "name": "Colby College",
+    "country": "US",
+    "lat": 38.1349,
+    "lon": -97.3177
+  },
+  {
+    "id": "UNI-1795",
+    "name": "College of New Rochelle",
+    "country": "US",
+    "lat": 38.9756,
+    "lon": -96.127
+  },
+  {
+    "id": "UNI-1796",
+    "name": "College of St. Scholastica",
+    "country": "US",
+    "lat": 37.5842,
+    "lon": -96.1408
+  },
+  {
+    "id": "UNI-1797",
+    "name": "Colorado Christian University",
+    "country": "US",
+    "lat": 38.3832,
+    "lon": -96.0969
+  },
+  {
+    "id": "UNI-1798",
+    "name": "Colorado College",
+    "country": "US",
+    "lat": 37.6198,
+    "lon": -96.5783
+  },
+  {
+    "id": "UNI-1799",
+    "name": "Colorado State University",
+    "country": "US",
+    "lat": 37.5606,
+    "lon": -96.334
+  },
+  {
+    "id": "UNI-1800",
+    "name": "Cornell University",
+    "country": "US",
+    "lat": 38.483,
+    "lon": -97.9658
+  },
+  {
+    "id": "UNI-1801",
+    "name": "Daemen College",
+    "country": "US",
+    "lat": 37.7449,
+    "lon": -97.0946
+  },
+  {
+    "id": "UNI-1802",
+    "name": "Dartmouth College",
+    "country": "US",
+    "lat": 37.1074,
+    "lon": -97.4326
+  },
+  {
+    "id": "UNI-1803",
+    "name": "Davenport University",
+    "country": "US",
+    "lat": 38.0415,
+    "lon": -96.824
+  },
+  {
+    "id": "UNI-1804",
+    "name": "Delta State University",
+    "country": "US",
+    "lat": 38.8574,
+    "lon": -97.6864
+  },
+  {
+    "id": "UNI-1805",
+    "name": "DePauw University",
+    "country": "US",
+    "lat": 38.9666,
+    "lon": -97.112
+  },
+  {
+    "id": "UNI-1806",
+    "name": "Dickinson College",
+    "country": "US",
+    "lat": 38.1088,
+    "lon": -96.7668
+  },
+  {
+    "id": "UNI-1807",
+    "name": "Drake University",
+    "country": "US",
+    "lat": 37.9353,
+    "lon": -97.7867
+  },
+  {
+    "id": "UNI-1808",
+    "name": "Drexel University",
+    "country": "US",
+    "lat": 38.7748,
+    "lon": -97.8399
+  },
+  {
+    "id": "UNI-1809",
+    "name": "Duquesne University",
+    "country": "US",
+    "lat": 38.8491,
+    "lon": -97.745
+  },
+  {
+    "id": "UNI-1810",
+    "name": "East Central University",
+    "country": "US",
+    "lat": 37.8533,
+    "lon": -96.6281
+  },
+  {
+    "id": "UNI-1811",
+    "name": "Eastern Illinois University",
+    "country": "US",
+    "lat": 38.2048,
+    "lon": -96.302
+  },
+  {
+    "id": "UNI-1812",
+    "name": "Eastern Oregon State College",
+    "country": "US",
+    "lat": 38.5063,
+    "lon": -97.0103
+  },
+  {
+    "id": "UNI-1813",
+    "name": "East Stroudsburg State University of Pennsylvania",
+    "country": "US",
+    "lat": 37.5295,
+    "lon": -97.2914
+  },
+  {
+    "id": "UNI-1814",
+    "name": "East Tennessee State University",
+    "country": "US",
+    "lat": 37.3988,
+    "lon": -97.1431
+  },
+  {
+    "id": "UNI-1815",
+    "name": "Edinboro University of Pennsylvania",
+    "country": "US",
+    "lat": 38.2294,
+    "lon": -96.414
+  },
+  {
+    "id": "UNI-1816",
+    "name": "Elizabethtown College",
+    "country": "US",
+    "lat": 37.1468,
+    "lon": -96.2076
+  },
+  {
+    "id": "UNI-1817",
+    "name": "Elon College",
+    "country": "US",
+    "lat": 38.4414,
+    "lon": -96.1379
+  },
+  {
+    "id": "UNI-1818",
+    "name": "Embry-Riddle Aeronautical University",
+    "country": "US",
+    "lat": 38.4883,
+    "lon": -97.2569
+  },
+  {
+    "id": "UNI-1819",
+    "name": "Emporia State University",
+    "country": "US",
+    "lat": 38.2789,
+    "lon": -96.3541
+  },
+  {
+    "id": "UNI-1820",
+    "name": "Evergreen State College",
+    "country": "US",
+    "lat": 38.8386,
+    "lon": -97.4635
+  },
+  {
+    "id": "UNI-1821",
+    "name": "Fayetteville State University",
+    "country": "US",
+    "lat": 37.5672,
+    "lon": -97.4112
+  },
+  {
+    "id": "UNI-1822",
+    "name": "Ferris State University",
+    "country": "US",
+    "lat": 37.9602,
+    "lon": -97.8382
+  },
+  {
+    "id": "UNI-1823",
+    "name": "Florida Atlantic University",
+    "country": "US",
+    "lat": 38.7239,
+    "lon": -97.1206
+  },
+  {
+    "id": "UNI-1824",
+    "name": "Florida State University",
+    "country": "US",
+    "lat": 38.6666,
+    "lon": -96.3078
+  },
+  {
+    "id": "UNI-1825",
+    "name": "Fordham University",
+    "country": "US",
+    "lat": 38.9109,
+    "lon": -96.7125
+  },
+  {
+    "id": "UNI-1826",
+    "name": "Fort Hays State University",
+    "country": "US",
+    "lat": 37.9222,
+    "lon": -97.6741
+  },
+  {
+    "id": "UNI-1827",
+    "name": "Fort Lewis College",
+    "country": "US",
+    "lat": 38.6523,
+    "lon": -96.1577
+  },
+  {
+    "id": "UNI-1828",
+    "name": "Frostburg State University",
+    "country": "US",
+    "lat": 37.8349,
+    "lon": -97.1395
+  },
+  {
+    "id": "UNI-1829",
+    "name": "Geneva College",
+    "country": "US",
+    "lat": 37.0376,
+    "lon": -97.9002
+  },
+  {
+    "id": "UNI-1830",
+    "name": "George Mason University",
+    "country": "US",
+    "lat": 38.7745,
+    "lon": -96.0624
+  },
+  {
+    "id": "UNI-1831",
+    "name": "Georgia Southwestern State University",
+    "country": "US",
+    "lat": 37.5468,
+    "lon": -96.8339
+  },
+  {
+    "id": "UNI-1832",
+    "name": "Gettysburg College",
+    "country": "US",
+    "lat": 38.5951,
+    "lon": -97.3245
+  },
+  {
+    "id": "UNI-1833",
+    "name": "Governors State University",
+    "country": "US",
+    "lat": 38.4973,
+    "lon": -97.7156
+  },
+  {
+    "id": "UNI-1834",
+    "name": "Grinnell College",
+    "country": "US",
+    "lat": 37.8094,
+    "lon": -96.2631
+  },
+  {
+    "id": "UNI-1835",
+    "name": "Gustavus Adolphus College",
+    "country": "US",
+    "lat": 37.9087,
+    "lon": -97.863
+  },
+  {
+    "id": "UNI-1836",
+    "name": "Hamilton College",
+    "country": "US",
+    "lat": 37.7708,
+    "lon": -96.3241
+  },
+  {
+    "id": "UNI-1837",
+    "name": "Hampden-Sydney College",
+    "country": "US",
+    "lat": 37.0207,
+    "lon": -96.0598
+  },
+  {
+    "id": "UNI-1838",
+    "name": "Hampshire College",
+    "country": "US",
+    "lat": 37.9959,
+    "lon": -97.4091
+  },
+  {
+    "id": "UNI-1839",
+    "name": "Huntington University",
+    "country": "US",
+    "lat": 37.0217,
+    "lon": -97.1225
+  },
+  {
+    "id": "UNI-1840",
+    "name": "Illinois Institute of Technology",
+    "country": "US",
+    "lat": 38.0115,
+    "lon": -97.9711
+  },
+  {
+    "id": "UNI-1841",
+    "name": "Illinois State University",
+    "country": "US",
+    "lat": 37.7902,
+    "lon": -97.2142
+  },
+  {
+    "id": "UNI-1842",
+    "name": "Indiana University",
+    "country": "US",
+    "lat": 37.5917,
+    "lon": -97.7687
+  },
+  {
+    "id": "UNI-1843",
+    "name": "Indiana University - Bloomington",
+    "country": "US",
+    "lat": 37.736,
+    "lon": -97.6295
+  },
+  {
+    "id": "UNI-1844",
+    "name": "Indiana University at South Bend",
+    "country": "US",
+    "lat": 37.341,
+    "lon": -96.6137
+  },
+  {
+    "id": "UNI-1845",
+    "name": "Indiana University of Pennsylvania",
+    "country": "US",
+    "lat": 37.4621,
+    "lon": -96.2284
+  },
+  {
+    "id": "UNI-1846",
+    "name": "Indiana University/Purdue University at Columbus",
+    "country": "US",
+    "lat": 37.064,
+    "lon": -97.5842
+  },
+  {
+    "id": "UNI-1847",
+    "name": "Indiana University/Purdue University at Indianapolis",
+    "country": "US",
+    "lat": 38.2307,
+    "lon": -96.3081
+  },
+  {
+    "id": "UNI-1848",
+    "name": "Indiana University Southeast",
+    "country": "US",
+    "lat": 37.3021,
+    "lon": -96.1809
+  },
+  {
+    "id": "NIC-CZ",
+    "name": "NIC Czech Republic",
+    "country": "CZ",
+    "lat": 49.75,
+    "lon": 15.5
+  },
+  {
+    "id": "NIC-DE",
+    "name": "NIC Germany",
+    "country": "DE",
+    "lat": 51.0,
+    "lon": 9.0
+  },
+  {
+    "id": "NIC-AT",
+    "name": "NIC Austria",
+    "country": "DE",
+    "lat": 47.33333333,
+    "lon": 13.33333333
+  },
+  {
+    "id": "NIC-FR",
+    "name": "NIC France",
+    "country": "FR",
+    "lat": 46.0,
+    "lon": 2.0
+  },
+  {
+    "id": "NIC-CH",
+    "name": "NIC Switzerland",
+    "country": "FR",
+    "lat": 47.0,
+    "lon": 8.0
+  },
+  {
+    "id": "NIC-AD",
+    "name": "NIC Andorra",
+    "country": "FR",
+    "lat": 42.5,
+    "lon": 1.5
+  },
+  {
+    "id": "NIC-BE",
+    "name": "NIC Belgium",
+    "country": "FR",
+    "lat": 50.83333333,
+    "lon": 4.0
+  },
+  {
+    "id": "NIC-BT",
+    "name": "NIC Bhutan",
+    "country": "CN",
+    "lat": 27.5,
+    "lon": 90.5
+  },
+  {
+    "id": "NIC-MN",
+    "name": "NIC Mongolia",
+    "country": "CN",
+    "lat": 46.0,
+    "lon": 105.0
+  }
+]
