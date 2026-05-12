@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.3 (Deep Proxy Bypass & Max Debug)</title>
+    <title>E2E Tree P2P Chat v4.4 (Mobile & CGNAT Fix)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -132,7 +132,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.3 (Deep Proxy Bypass)</span>
+            <span class="version-badge">v4.4 (Mobile & CGNAT Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -183,7 +183,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.3: Přidána podpora pro TURNS (TLS) a detailní ICE debug logování pro prostup korporátními firewally.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.4: Prodloužen čas na sběr TURN kandidátů pro mobily (LTE/5G NAT) a zmírněn watchdog.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -218,18 +218,17 @@
     const WORKER_URL = "https://api.63e.cz";
     const MAX_HISTORY = 250;
     
-    // V4.3: Optimalizovaná konfigurace pro DPI a strict firewalls
+    // V4.4: Rozšířená podpora pro CGNAT a firewally
     const WEBRTC_CONFIG = {
         iceServers: [
-            { urls: 'stun:stun.cloudflare.com:3478' }, // Potvrzeno, že funguje
-            { urls: 'stun:stun1.l.google.com:3478' },  // Přidán Google na port 3478
+            { urls: 'stun:stun.cloudflare.com:3478' },
+            { urls: 'stun:stun1.l.google.com:3478' },
             { urls: 'stun:stun.l.google.com:19302' },
-            // Změna z turn na turns (TLS over TCP 443) pro obejití DPI
             { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
             { urls: 'turn:openrelay.metered.ca:80?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
         ],
-        iceCandidatePoolSize: 2 // Urychlí zisk kandidátů
+        iceCandidatePoolSize: 2
     };
     
     function getStableNodeId() {
@@ -1444,15 +1443,16 @@
 
         pc.onicecandidate = (e) => {
             if (e.candidate) {
-                // V4.3: Detailní log ICE kandidáta zrychlí ladění proxy problémů
                 logDebug(`[ICE] Kandidát pro data: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Port: ${e.candidate.port}`, 'webrtc');
                 clearTimeout(candidateTimer);
-                candidateTimer = setTimeout(finish, 800); 
+                // V4.4: Delší čas na zpracování kandidátů z těžkých TURN serverů
+                candidateTimer = setTimeout(finish, 1500); 
             } else {
                 finish(); 
             }
         };
-        setTimeout(finish, 4500); 
+        // V4.4: Celkový ICE limit zvýšen z 4.5s na 10s (CGNAT / Mobile fix)
+        setTimeout(finish, 10000); 
     }
 
     async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) {
@@ -1590,9 +1590,10 @@
         for (const [peerId, pc] of Object.entries(allConnections)) {
             if (!pc) continue;
 
+            // V4.4: Zmírněn watchdog z 10s na 25s pro mobilní API výměnu
             if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
                 if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
-                if (Date.now() - pc.checkingStartTime > 10000) {
+                if (Date.now() - pc.checkingStartTime > 25000) {
                     logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error');
                     if (peerId === 'hub') {
                         blacklistedHubTimeout = Date.now() + 30000;
@@ -1973,7 +1974,8 @@
         
         joinInterval = setInterval(async () => {
             pokusy++;
-            if (pokusy > 6) { 
+            // V4.4: Čekáme na spojení déle (až 30 vteřin), mobilní API polling je pomalejší
+            if (pokusy > 15) { 
                 clearInterval(joinInterval);
                 logDebug(`Spojení vypršelo (nedostupné ICE kandidáty). Ignoruji Hub pro 30 vteřin.`, "error");
                 blacklistedHubId = knownHubId; 
