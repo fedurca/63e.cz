@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.7 (Ultimate HTTP Relay & Ghost Fix)</title>
+    <title>E2E Tree P2P Chat v4.8 (Anti-Spam & Flow Control)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -133,7 +133,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.7 (Ultimate Fallback & Ghost Fix)</span>
+            <span class="version-badge">v4.8 (Anti-Spam Flow Control)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -177,7 +177,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.7: Plně vyřešen Ghost Hub efekt a spolehlivě zaveden Master Promotion přes HTTP watchdog.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.8: Zaveden Anti-Spam systém pro HTTP Relay zabraňující přehlcení API a následnému "zamrzání" mastera.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -268,6 +268,10 @@
     let isIceRestarting = false; 
     let pendingAutoMsg = null; 
     let globalKnownHubId = null;
+
+    // --- ANTI-SPAM LOGIKA ---
+    let lastSyncRequestTime = 0;
+    let activeSyncOperations = new Set();
 
     // --- HTTP RELAY FALLBACK ---
     let isHttpRelayMode = false; 
@@ -429,7 +433,7 @@
             urlMsg = parts[1]; 
         } else if (!urlMsg && rawQuery.includes('?msg=')) { 
             const parts = rawQuery.split('?msg='); 
-            urlNick = new URLSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
+            urlNick = newSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
             urlMsg = parts[1]; 
         }
         
@@ -1092,13 +1096,26 @@
             } 
         }
         else if (msg.type === 'request-history') {
+            // V4.8 ANTI-SPAM LOCK
+            if (activeSyncOperations.has(msg.sender)) {
+                logDebug(`[SYNC] Ignoruji duplicitní žádost od ${msg.sender}.`, 'info');
+                return;
+            }
+            
             logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync');
+            
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
+                activeSyncOperations.add(msg.sender);
+                
                 const batchSize = 10; 
                 let i = 0; 
                 let chunkIndex = 1;
+                
                 const sendBatch = async () => { 
-                    if (i >= chatHistory.length) return; 
+                    if (i >= chatHistory.length) {
+                        activeSyncOperations.delete(msg.sender); // Odemknuto
+                        return; 
+                    }
                     const batch = chatHistory.slice(i, i + batchSize); 
                     const safeBatch = batch.map(m => { 
                         if (m.file && m.file.dataUrl) return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } }; 
@@ -1327,7 +1344,6 @@
         event.target.value = ''; 
     }
 
-    // --- V4.7 OPRAVA CLEANUP ---
     function cleanupConnection(targetId, switchToHttp = false) {
         if(channels[targetId]) { 
             channels[targetId].onclose = null; 
@@ -1492,7 +1508,11 @@
                 
                 if (!isDnsHost) {
                     setTimeout(() => { 
-                        routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                        // V4.8 Anti-Spam Sync Call
+                        if (Date.now() - lastSyncRequestTime > 30000) {
+                            lastSyncRequestTime = Date.now();
+                            routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                        }
                     }, 3000);
                 }
             }, 1000); 
@@ -1759,6 +1779,7 @@
         knownHttpClients.clear(); 
         httpOutbox = {}; 
         drawnEdges = []; 
+        activeSyncOperations.clear(); // V4.8
         drawTopology();
         
         await initCrypto(); 
@@ -1991,7 +2012,11 @@
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
             
             setTimeout(() => { 
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                // V4.8 Anti-Spam (Request History Debounce)
+                if (Date.now() - lastSyncRequestTime > 30000) {
+                    lastSyncRequestTime = Date.now();
+                    routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                }
             }, 3000); 
         }, 1000);
         
@@ -2031,10 +2056,10 @@
                 }); 
             }
 
-            // V4.7 GHOST HUB WATCHDOG
             if (Date.now() - lastHttpPong > 25000) {
                 logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error');
                 clearInterval(httpRelayInterval);
+                httpOutbox = {}; // V4.8 PURGE OUTBOX! Zabrání přenesení starých blokujících zpráv
                 blacklistedHubId = globalKnownHubId || 'hub';
                 blacklistedHubTimeout = Date.now() + 60000;
                 isHttpRelayMode = false;
