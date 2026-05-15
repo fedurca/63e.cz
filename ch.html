@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.9.2 (Robust Sync, Autologin & Video Fix)</title>
+    <title>E2E Tree P2P Chat v4.9.3 (Cloud Logging)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -133,7 +133,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.9.2 (Robust Sync, Autologin & Video Fix)</span>
+            <span class="version-badge">v4.9.3 (Cloud Logging)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -177,7 +177,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.9.2: Opraven stav videohovorů, přidána ochrana proti spamu a robustní ACK synchronizace.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.9.3: Centralizované cloud logování a kompletní opravy chyb.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -571,12 +571,40 @@
         return JSON.parse(pako.inflate(pole, { to: 'string' })); 
     }
     
+    // --- OPRAVENÁ A ROZŠÍŘENÁ FUNKCE PRO LOGOVÁNÍ DO CLOUDU ---
     function logDebug(msg, type = 'info') { 
+        // 1. Lokální výpis na obrazovku v panelu debugování
         const logWindow = document.getElementById('debug-log'); 
-        const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
-        logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`; 
-        logWindow.scrollTop = logWindow.scrollHeight; 
+        if (logWindow) {
+            const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
+            logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`; 
+            logWindow.scrollTop = logWindow.scrollHeight; 
+        }
+
+        // 2. Odeslání logu na Cloudflare Worker endpoint (/log)
+        try {
+            let currentRole = "Spoke";
+            if (typeof isDnsHost !== 'undefined' && isDnsHost) currentRole = "Master";
+            else if (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) currentRole = "HTTP Relay";
+
+            fetch(`${WORKER_URL}/log`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id: typeof myId !== 'undefined' ? myId : 'N/A',
+                    name: typeof myName !== 'undefined' && myName ? myName : 'Unknown',
+                    role: currentRole,
+                    type: type,
+                    message: msg,
+                    time: new Date().toISOString()
+                }),
+                keepalive: true 
+            }).catch(e => {
+                // Ignorujeme chyby sítě při odesílání logu, aby se aplikace nezasekla
+            });
+        } catch(e) { }
     }
+    // -----------------------------------------------------------
     
     function updateDebugStats(stat, value) { 
         document.getElementById(`dbg-${stat}`).innerText = value; 
