@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.9.3 (Cloud Logging)</title>
+    <title>E2E Tree P2P Chat v4.9.4 (Batched Logging)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -133,7 +133,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.9.3 (Cloud Logging)</span>
+            <span class="version-badge">v4.9.4 (Batched Logging)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -177,7 +177,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.9.3: Centralizované cloud logování a kompletní opravy chyb.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.9.4: Agresivní dávkování logů pro snížení zátěže Cloudflare limitů.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -269,14 +269,14 @@
     let pendingAutoMsg = null; 
     let globalKnownHubId = null;
 
-    // --- VIDEO CALL STATE (OPRAVENO) ---
+    // --- VIDEO CALL STATE ---
     let activeCall = { pc: null, peerId: null, localStream: null, screenStream: null, isAudioMuted: false, isVideoMuted: false, isScreenSharing: false };
     let incomingCallData = null;
 
     // --- ROBUST SYNC LOGIKA ---
     let lastSyncRequestTime = 0;
     let activeSyncOperations = new Set();
-    let syncState = {}; // Sleduje stav odesílaných dávek pro ACK
+    let syncState = {}; 
 
     // --- HTTP RELAY FALLBACK ---
     let isHttpRelayMode = false; 
@@ -405,7 +405,6 @@
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
-        // --- OBNOVENÝ URL PARSER A AUTOLOGIN ---
         const urlParams = new URLSearchParams(window.location.search); 
         let urlNick = urlParams.get('n') || urlParams.get('nick'); 
         let urlMsg = urlParams.get('m') || urlParams.get('msg'); 
@@ -435,7 +434,6 @@
             const savedName = localStorage.getItem('chat_nickname'); 
             if (savedName) document.getElementById('username').value = savedName; 
         }
-        // ----------------------------------------
 
         const canvas = document.getElementById('topo-canvas'); 
         const tooltip = document.getElementById('topo-tooltip');
@@ -571,7 +569,31 @@
         return JSON.parse(pako.inflate(pole, { to: 'string' })); 
     }
     
-    // --- OPRAVENÁ A ROZŠÍŘENÁ FUNKCE PRO LOGOVÁNÍ DO CLOUDU ---
+    // --- OPRAVENÁ A ROZŠÍŘENÁ FUNKCE PRO LOGOVÁNÍ DO CLOUDU (DÁVKOVÁNÍ) ---
+    let logBuffer = [];
+
+    function flushLogs() {
+        if (logBuffer.length === 0) return;
+        const logsToSend = [...logBuffer];
+        logBuffer = [];
+        
+        fetch(`${WORKER_URL}/log`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ logs: logsToSend }),
+            keepalive: true
+        }).catch(e => { /* Ignorujeme errory sítě, aby se klient nezasekl */ });
+    }
+
+    // Automaticky vyprázdnit frontu každých 5 sekund
+    setInterval(flushLogs, 5000);
+
+    window.addEventListener('beforeunload', () => {
+        if (logBuffer.length > 0) {
+            navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+        }
+    });
+
     function logDebug(msg, type = 'info') { 
         // 1. Lokální výpis na obrazovku v panelu debugování
         const logWindow = document.getElementById('debug-log'); 
@@ -581,27 +603,34 @@
             logWindow.scrollTop = logWindow.scrollHeight; 
         }
 
-        // 2. Odeslání logu na Cloudflare Worker endpoint (/log)
+        // 2. Přidání do fronty pro Cloudflare Worker
         try {
             let currentRole = "Spoke";
             if (typeof isDnsHost !== 'undefined' && isDnsHost) currentRole = "Master";
             else if (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) currentRole = "HTTP Relay";
 
-            fetch(`${WORKER_URL}/log`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    id: typeof myId !== 'undefined' ? myId : 'N/A',
-                    name: typeof myName !== 'undefined' && myName ? myName : 'Unknown',
-                    role: currentRole,
-                    type: type,
-                    message: msg,
-                    time: new Date().toISOString()
-                }),
-                keepalive: true 
-            }).catch(e => {
-                // Ignorujeme chyby sítě při odesílání logu, aby se aplikace nezasekla
+            const logData = {
+                id: typeof myId !== 'undefined' ? myId : 'N/A',
+                name: typeof myName !== 'undefined' && myName ? myName : 'Unknown',
+                role: currentRole,
+                type: type,
+                message: msg,
+                time: new Date().toISOString()
+            };
+
+            // Vytvoříme unifikovaný prefix pro backend konzoli
+            const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
+
+            logBuffer.push({
+                message: [prefix, logData],
+                type: type,
+                time: Date.now()
             });
+
+            // Při nastřádání větší dávky odešleme ihned
+            if (logBuffer.length >= 20) {
+                flushLogs();
+            }
         } catch(e) { }
     }
     // -----------------------------------------------------------
@@ -628,7 +657,6 @@
         document.getElementById('status-dot').className = `status-dot ${statusClass}`; 
         document.getElementById('ui-role').innerText = roleName;
 
-        // --- OBNOVENÉ ODESLÁNÍ ZPRÁVY Z URL ---
         if (pendingAutoMsg) { 
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info'); 
             const msgToSend = pendingAutoMsg; 
@@ -639,7 +667,6 @@
                 window.history.replaceState({}, document.title, window.location.pathname); 
             }, 2000); 
         }
-        // --------------------------------------
     }
 
     async function initCrypto() { 
@@ -758,10 +785,9 @@
                 mergedMap.set(m.id, m); 
                 addedCount++; 
             } else {
-                // ROBUST SYNC: Nechceme přepsat soubor s daty verzí bez dat
                 let existing = mergedMap.get(m.id);
                 if (existing.file && existing.file.dataUrl && m.file && !m.file.dataUrl) {
-                    // Ponecháme původní, co má payload
+                    // Ponecháme původní s daty
                 } else if (!existing.file && m.file) {
                     mergedMap.set(m.id, m);
                     addedCount++;
@@ -788,7 +814,6 @@
         
         if (fileObj) { 
             if (!fileObj.dataUrl) { 
-                // TLAČÍTKO PRO ON-DEMAND SYNC
                 let btnHtml = msgId ? `<button onclick="requestFile('${msgId}')" style="margin-top:5px; padding: 4px 8px; border-radius: 4px; border:none; background: var(--primary); color:white; cursor:pointer; font-size:0.75rem; font-weight:bold;">⬇️ Stáhnout soubor ze sítě</button>` : '';
                 contentHtml += `<div class="file-attachment" style="opacity: 0.9;">
                     <div style="display:flex; align-items:center;">
@@ -816,13 +841,11 @@
         if(scroll) chat.scrollTop = chat.scrollHeight; 
     }
 
-    // Vyžádání souboru ze sítě
     function requestFile(fileId) {
         logDebug(`[FILE] Žádám síť o poskytnutí souboru ${fileId}...`, 'file');
         routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-file', sender: myId, fileId: fileId });
     }
 
-    // --- VIDEO CALL ---
     async function sendVideoSignal(targetId, action, data) { 
         if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
             logDebug(`[VIDEO] Nelze spojit video přes HTTP Relay.`, 'error'); 
@@ -1053,7 +1076,6 @@
         } 
     }
 
-    // --- ROBUST HISTORY SYNC S ACK ---
     function sendSyncBatch(target) {
         if(!syncState[target]) return;
         const state = syncState[target];
@@ -1067,7 +1089,6 @@
         }
         
         const batch = chatHistory.slice(state.index, state.index + batchSize);
-        // Soubory v historii posíláme BEZ DAT (Stahují se on-demand)
         const safeBatch = batch.map(m => {
             if (m.file && m.file.dataUrl) return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } };
             return m;
@@ -1076,7 +1097,6 @@
         encryptE2E(JSON.stringify(safeBatch), target).then(encrypted => {
             routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-batch', sender: myId, target: target, payload: encrypted, batchIndex: state.index });
             
-            // Timeout s Retry mechanikou
             state.timeout = setTimeout(() => {
                 state.retries = (state.retries || 0) + 1;
                 logDebug(`[SYNC] Timeout pro ACK od ${target} (Pokus ${state.retries}), opakuji...`, 'error');
@@ -1091,7 +1111,6 @@
         });
     }
 
-    // --- ROBUST FILE CHUNKER ---
     async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
         const chunkSize = 16384;
         const totalChunks = Math.ceil(base64Data.length / chunkSize);
@@ -1099,12 +1118,11 @@
             const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
             const encryptedChunk = await encryptE2E(JSON.stringify({ fileId: fileId, chunkIndex: i, totalChunks: totalChunks, meta: fileMeta, data: chunkData }), targetId);
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, target: targetId, payload: encryptedChunk });
-            await new Promise(r => setTimeout(r, 50)); // Flow control buffer
+            await new Promise(r => setTimeout(r, 50)); 
         }
         logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success');
     }
 
-    // --- CORE ROUTING ---
     function routeMessage(msgObj, sourceChannel = null) {
         if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal') { 
             if (seenMessages.has(msgObj.id)) return; 
@@ -1252,7 +1270,6 @@
                         const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý'; 
                         const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl }; 
                         
-                        // Zkontroluj, jestli už zpráva existuje v historii (z History Syncu bez dat)
                         const msgInHistory = chatHistory.find(m => m.id === fileId);
                         if (msgInHistory) {
                             msgInHistory.file = fileObj;
@@ -2031,7 +2048,7 @@
                     await writeSignal(`relay-down-${clientId}`, httpOutbox[clientId]); 
                 }
             });
-        }, 3000);
+        }, 2000);
     }
 
     async function joinViaDns() {
@@ -2044,6 +2061,7 @@
         let pokusy = 0; 
         globalKnownHubId = null; 
         
+        // Změna na 3000 ms pro šetření limitu requestů klienta
         joinInterval = setInterval(async () => {
             pokusy++;
             if (pokusy > 6) { 
@@ -2086,7 +2104,7 @@
                     }
                 }
             }
-        }, 2000);
+        }, 3000);
     }
 
     function startHttpRelayMode() {
