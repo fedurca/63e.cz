@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>E2E Tree P2P Chat v4.8 (Anti-Spam & Flow Control)</title>
+    <title>E2E Tree P2P Chat v4.9.2 (Robust Sync, Autologin & Video Fix)</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -47,7 +47,7 @@
         .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; } 
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
-        .file-attachment { display: flex; align-items: center; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; margin-top: 5px; text-decoration: none; color: #333;} 
+        .file-attachment { display: flex; flex-direction: column; align-items: flex-start; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; margin-top: 5px; text-decoration: none; color: #333;} 
         .file-attachment:hover { background: rgba(0,0,0,0.1); }
         .file-icon { font-size: 1.5rem; margin-right: 10px; } 
         .file-name { font-size: 0.85rem; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;} 
@@ -133,7 +133,7 @@
             <span id="status-dot" class="status-dot"></span><span id="status-timer">00:00</span>
             <h1 style="display:inline; margin-left: 8px;">Tree P2P</h1>
             <span class="secure-badge">🔒 E2E</span>
-            <span class="version-badge">v4.8 (Anti-Spam Flow Control)</span>
+            <span class="version-badge">v4.9.2 (Robust Sync, Autologin & Video Fix)</span>
             <button class="btn-danger" onclick="broadcastClearHistory()" id="btn-clear-history" style="display:none;">🗑️ Smazat</button>
         </div>
         <div style="font-size: 0.9rem;">Role: <span id="ui-role">Zjišťuji...</span> | 👥: <span id="ui-user-count">1</span></div>
@@ -177,7 +177,7 @@
     <div id="setup-screen">
         <div class="setup-box">
             <h2>Vstup do sítě</h2>
-            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.8: Zaveden Anti-Spam systém pro HTTP Relay zabraňující přehlcení API a následnému "zamrzání" mastera.</p>
+            <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">V4.9.2: Opraven stav videohovorů, přidána ochrana proti spamu a robustní ACK synchronizace.</p>
             <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
             <button id="join-btn" onclick="initSystem()">Připojit do sítě</button>
         </div>
@@ -269,9 +269,14 @@
     let pendingAutoMsg = null; 
     let globalKnownHubId = null;
 
-    // --- ANTI-SPAM LOGIKA ---
+    // --- VIDEO CALL STATE (OPRAVENO) ---
+    let activeCall = { pc: null, peerId: null, localStream: null, screenStream: null, isAudioMuted: false, isVideoMuted: false, isScreenSharing: false };
+    let incomingCallData = null;
+
+    // --- ROBUST SYNC LOGIKA ---
     let lastSyncRequestTime = 0;
     let activeSyncOperations = new Set();
+    let syncState = {}; // Sleduje stav odesílaných dávek pro ACK
 
     // --- HTTP RELAY FALLBACK ---
     let isHttpRelayMode = false; 
@@ -324,20 +329,9 @@
             { id: 'DE', url: 'https://www.denic.de/favicon.ico' }, 
             { id: 'AT', url: 'https://www.nic.at/favicon.ico' }, 
             { id: 'PL', url: 'https://www.dns.pl/favicon.ico' }, 
-            { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' }, 
-            { id: 'FR', url: 'https://www.afnic.fr/favicon.ico' }, 
-            { id: 'IT', url: 'https://www.nic.it/favicon.ico' }, 
-            { id: 'ES', url: 'https://www.dominios.es/favicon.ico' }, 
-            { id: 'CH', url: 'https://www.nic.ch/favicon.ico' }, 
-            { id: 'NL', url: 'https://www.sidn.nl/favicon.ico' }, 
-            { id: 'US', url: 'https://www.about.us/favicon.ico' }, 
-            { id: 'CA', url: 'https://www.cira.ca/favicon.ico' } 
+            { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' }
         ]; 
-        const continents = { 
-            'CZ': 'Evropa', 'SK': 'Evropa', 'DE': 'Evropa', 'AT': 'Evropa', 'PL': 'Evropa', 
-            'UK': 'Evropa', 'FR': 'Evropa', 'IT': 'Evropa', 'ES': 'Evropa', 'CH': 'Evropa', 
-            'NL': 'Evropa', 'US': 'Severní Amerika', 'CA': 'Severní Amerika' 
-        }; 
+        const continents = { 'CZ': 'Evropa', 'SK': 'Evropa', 'DE': 'Evropa', 'AT': 'Evropa', 'PL': 'Evropa', 'UK': 'Evropa' }; 
         const ping = async (url) => { 
             const start = performance.now(); 
             try { 
@@ -379,18 +373,7 @@
         const dpr = window.devicePixelRatio || 1; 
         const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); 
         
-        if (myTelemetry.os === 'macOS') { 
-            const w = screen.width; 
-            if (w === 1512 || w === 1800 || w === 1352 || w === 1470) myTelemetry.diag = '~14.2" (MBP 14)'; 
-            else if (w === 1728 || w === 2056) myTelemetry.diag = '~16.2" (MBP 16)'; 
-            else if (w === 1440 || w === 1680) myTelemetry.diag = '~13.3" (MacBook)'; 
-            else if (w >= 2560) myTelemetry.diag = 'Externí / iMac'; 
-            else { 
-                const physDiag = Math.sqrt(Math.pow(screen.width * dpr, 2) + Math.pow(screen.height * dpr, 2)); 
-                myTelemetry.diag = `~${(physDiag / 230).toFixed(1)}"`; 
-            } 
-            myTelemetry.dpi = Math.round(dpr * 115) + " (Retina)"; 
-        } else if (isMobile) { 
+        if (isMobile) { 
             myTelemetry.dpi = Math.round(dpr * 150); 
             myTelemetry.diag = '~6" (Mobil)'; 
         } else { 
@@ -422,6 +405,7 @@
     document.getElementById('dbg-id').innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
+        // --- OBNOVENÝ URL PARSER A AUTOLOGIN ---
         const urlParams = new URLSearchParams(window.location.search); 
         let urlNick = urlParams.get('n') || urlParams.get('nick'); 
         let urlMsg = urlParams.get('m') || urlParams.get('msg'); 
@@ -433,7 +417,7 @@
             urlMsg = parts[1]; 
         } else if (!urlMsg && rawQuery.includes('?msg=')) { 
             const parts = rawQuery.split('?msg='); 
-            urlNick = newSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
+            urlNick = new URLSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
             urlMsg = parts[1]; 
         }
         
@@ -451,7 +435,8 @@
             const savedName = localStorage.getItem('chat_nickname'); 
             if (savedName) document.getElementById('username').value = savedName; 
         }
-        
+        // ----------------------------------------
+
         const canvas = document.getElementById('topo-canvas'); 
         const tooltip = document.getElementById('topo-tooltip');
         
@@ -614,7 +599,8 @@
         
         document.getElementById('status-dot').className = `status-dot ${statusClass}`; 
         document.getElementById('ui-role').innerText = roleName;
-        
+
+        // --- OBNOVENÉ ODESLÁNÍ ZPRÁVY Z URL ---
         if (pendingAutoMsg) { 
             logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info'); 
             const msgToSend = pendingAutoMsg; 
@@ -625,6 +611,7 @@
                 window.history.replaceState({}, document.title, window.location.pathname); 
             }, 2000); 
         }
+        // --------------------------------------
     }
 
     async function initCrypto() { 
@@ -690,7 +677,7 @@
         const chat = document.getElementById('chat-area'); 
         chat.innerHTML = ''; 
         chatHistory.forEach(msg => { 
-            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file); 
+            renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file, false, msg.id); 
         }); 
         const div = document.createElement('div'); 
         div.className = "history-divider"; 
@@ -742,7 +729,16 @@
             if(!mergedMap.has(m.id)) { 
                 mergedMap.set(m.id, m); 
                 addedCount++; 
-            } 
+            } else {
+                // ROBUST SYNC: Nechceme přepsat soubor s daty verzí bez dat
+                let existing = mergedMap.get(m.id);
+                if (existing.file && existing.file.dataUrl && m.file && !m.file.dataUrl) {
+                    // Ponecháme původní, co má payload
+                } else if (!existing.file && m.file) {
+                    mergedMap.set(m.id, m);
+                    addedCount++;
+                }
+            }
         }); 
         
         if (addedCount > 0) { 
@@ -754,7 +750,7 @@
         } 
     }
 
-    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false) { 
+    function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false, msgId = null) { 
         const chat = document.getElementById('chat-area'); 
         const div = document.createElement('div'); 
         div.className = `msg msg-${type}`; 
@@ -764,13 +760,20 @@
         
         if (fileObj) { 
             if (!fileObj.dataUrl) { 
-                contentHtml += `<div class="file-attachment" style="opacity: 0.6;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)} (Nedostupné)</div></div></div>`; 
+                // TLAČÍTKO PRO ON-DEMAND SYNC
+                let btnHtml = msgId ? `<button onclick="requestFile('${msgId}')" style="margin-top:5px; padding: 4px 8px; border-radius: 4px; border:none; background: var(--primary); color:white; cursor:pointer; font-size:0.75rem; font-weight:bold;">⬇️ Stáhnout soubor ze sítě</button>` : '';
+                contentHtml += `<div class="file-attachment" style="opacity: 0.9;">
+                    <div style="display:flex; align-items:center;">
+                        <div class="file-icon">📁</div>
+                        <div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div>
+                    </div>${btnHtml}
+                </div>`; 
             } else { 
                 const isImage = fileObj.dataUrl.startsWith('data:image/'); 
                 if (isImage) { 
                     contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`; 
                 } else { 
-                    contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`; 
+                    contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment" style="flex-direction:row; align-items:center;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`; 
                 } 
             } 
         } 
@@ -783,6 +786,12 @@
         
         chat.appendChild(div); 
         if(scroll) chat.scrollTop = chat.scrollHeight; 
+    }
+
+    // Vyžádání souboru ze sítě
+    function requestFile(fileId) {
+        logDebug(`[FILE] Žádám síť o poskytnutí souboru ${fileId}...`, 'file');
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-file', sender: myId, fileId: fileId });
     }
 
     // --- VIDEO CALL ---
@@ -1016,9 +1025,60 @@
         } 
     }
 
+    // --- ROBUST HISTORY SYNC S ACK ---
+    function sendSyncBatch(target) {
+        if(!syncState[target]) return;
+        const state = syncState[target];
+        const batchSize = 20;
+        
+        if (state.index >= chatHistory.length) {
+            logDebug(`[SYNC] Kompletní synchronizace pro ${target} dokončena.`, 'success');
+            delete syncState[target];
+            activeSyncOperations.delete(target);
+            return;
+        }
+        
+        const batch = chatHistory.slice(state.index, state.index + batchSize);
+        // Soubory v historii posíláme BEZ DAT (Stahují se on-demand)
+        const safeBatch = batch.map(m => {
+            if (m.file && m.file.dataUrl) return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } };
+            return m;
+        });
+        
+        encryptE2E(JSON.stringify(safeBatch), target).then(encrypted => {
+            routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-batch', sender: myId, target: target, payload: encrypted, batchIndex: state.index });
+            
+            // Timeout s Retry mechanikou
+            state.timeout = setTimeout(() => {
+                state.retries = (state.retries || 0) + 1;
+                logDebug(`[SYNC] Timeout pro ACK od ${target} (Pokus ${state.retries}), opakuji...`, 'error');
+                if(state.retries > 3) {
+                    logDebug(`[SYNC] Zrušena synchronizace pro ${target} po 3 pokusech.`, 'error');
+                    delete syncState[target];
+                    activeSyncOperations.delete(target);
+                } else {
+                    sendSyncBatch(target);
+                }
+            }, 3000);
+        });
+    }
+
+    // --- ROBUST FILE CHUNKER ---
+    async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
+        const chunkSize = 16384;
+        const totalChunks = Math.ceil(base64Data.length / chunkSize);
+        for (let i = 0; i < totalChunks; i++) {
+            const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
+            const encryptedChunk = await encryptE2E(JSON.stringify({ fileId: fileId, chunkIndex: i, totalChunks: totalChunks, meta: fileMeta, data: chunkData }), targetId);
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, target: targetId, payload: encryptedChunk });
+            await new Promise(r => setTimeout(r, 50)); // Flow control buffer
+        }
+        logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success');
+    }
+
     // --- CORE ROUTING ---
     function routeMessage(msgObj, sourceChannel = null) {
-        if (msgObj.type !== 'sync-history' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal') { 
+        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal') { 
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id); 
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1076,7 +1136,7 @@
                 if (isNewNode) { 
                     const safeName = escapeHTML(msg.name); 
                     const teleStr = formatTelemetry(msg.tele); 
-                    renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true); 
+                    renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true, null); 
                     logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce'); 
                 }
                 
@@ -1096,7 +1156,6 @@
             } 
         }
         else if (msg.type === 'request-history') {
-            // V4.8 ANTI-SPAM LOCK
             if (activeSyncOperations.has(msg.sender)) {
                 logDebug(`[SYNC] Ignoruji duplicitní žádost od ${msg.sender}.`, 'info');
                 return;
@@ -1106,42 +1165,39 @@
             
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
                 activeSyncOperations.add(msg.sender);
-                
-                const batchSize = 10; 
-                let i = 0; 
-                let chunkIndex = 1;
-                
-                const sendBatch = async () => { 
-                    if (i >= chatHistory.length) {
-                        activeSyncOperations.delete(msg.sender); // Odemknuto
-                        return; 
-                    }
-                    const batch = chatHistory.slice(i, i + batchSize); 
-                    const safeBatch = batch.map(m => { 
-                        if (m.file && m.file.dataUrl) return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } }; 
-                        return m; 
-                    }); 
-                    try { 
-                        const encrypted = await encryptE2E(JSON.stringify(safeBatch), msg.sender); 
-                        routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-history', sender: myId, target: msg.sender, payload: encrypted }); 
-                        chunkIndex++; 
-                    } catch(e) {} 
-                    i += batchSize; 
-                    setTimeout(sendBatch, 500); 
-                }; 
-                sendBatch();
+                syncState[msg.sender] = { index: 0, retries: 0 };
+                sendSyncBatch(msg.sender);
             }
         }
-        else if (msg.type === 'sync-history') { 
+        else if (msg.type === 'sync-batch') { 
             if (msg.target !== myId) return; 
             const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender); 
             if (plaintextHistory) { 
                 try { 
                     mergeIncomingHistory(JSON.parse(plaintextHistory)); 
-                    logDebug(`[SYNC] Přijata historie od ${knownNodes[msg.sender]?.name || msg.sender}.`, 'sync'); 
+                    logDebug(`[SYNC] Přijata dávka historie od ${knownNodes[msg.sender]?.name || msg.sender}. Odesílám ACK.`, 'sync'); 
+                    routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-ack', sender: myId, target: msg.sender, batchIndex: msg.batchIndex });
                 } catch(e) {} 
             } 
-        } 
+        }
+        else if (msg.type === 'sync-ack') {
+             if (msg.target !== myId) return;
+             if (syncState[msg.sender] && syncState[msg.sender].index === msg.batchIndex) {
+                  clearTimeout(syncState[msg.sender].timeout);
+                  syncState[msg.sender].index += 20;
+                  syncState[msg.sender].retries = 0;
+                  sendSyncBatch(msg.sender);
+             }
+        }
+        else if (msg.type === 'request-file') {
+             const requestedMsg = chatHistory.find(m => m.id === msg.fileId);
+             if (requestedMsg && requestedMsg.file && requestedMsg.file.dataUrl) {
+                 logDebug(`[FILE] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal soubor, začínám odesílat bloky.`, 'file');
+                 const base64Data = requestedMsg.file.dataUrl.split(',')[1];
+                 const fileMeta = { name: requestedMsg.file.name, size: requestedMsg.file.size, type: requestedMsg.file.dataUrl.split(';')[0].split(':')[1] || 'application/octet-stream' };
+                 sendFileChunks(msg.fileId, base64Data, fileMeta, msg.sender);
+             }
+        }
         else if (msg.type === 'clear-history') { 
             logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error'); 
             clearLocalHistory(); 
@@ -1154,25 +1210,35 @@
                 const fileId = chunkData.fileId;
                 
                 if (!fileBuffers[fileId]) { 
-                    fileBuffers[fileId] = { chunks: [], received: 0, total: chunkData.totalChunks, meta: chunkData.meta }; 
-                    logDebug(`[FILE IN] Stahuji: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file'); 
+                    fileBuffers[fileId] = { chunks: [], receivedSet: new Set(), total: chunkData.totalChunks, meta: chunkData.meta }; 
+                    logDebug(`[FILE IN] Stahuji bloky: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file'); 
                 }
                 
-                fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data; 
-                fileBuffers[fileId].received++;
-                
-                if (fileBuffers[fileId].received === fileBuffers[fileId].total) {
-                    logDebug(`[FILE IN] Soubor stažen!`, 'success'); 
-                    const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fileBuffers[fileId].chunks.join('')}`; 
-                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý'; 
-                    const timeNow = Date.now(); 
-                    const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl }; 
-                    const msgObjForStorage = { id: fileId, author: authorName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
+                if (!fileBuffers[fileId].receivedSet.has(chunkData.chunkIndex)) {
+                    fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data; 
+                    fileBuffers[fileId].receivedSet.add(chunkData.chunkIndex);
                     
-                    if(saveMessage(msgObjForStorage)) {
-                        renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj); 
+                    if (fileBuffers[fileId].receivedSet.size === fileBuffers[fileId].total) {
+                        logDebug(`[FILE IN] Soubor kompletně stažen!`, 'success'); 
+                        const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fileBuffers[fileId].chunks.join('')}`; 
+                        const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý'; 
+                        const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl }; 
+                        
+                        // Zkontroluj, jestli už zpráva existuje v historii (z History Syncu bez dat)
+                        const msgInHistory = chatHistory.find(m => m.id === fileId);
+                        if (msgInHistory) {
+                            msgInHistory.file = fileObj;
+                            localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+                            reRenderAllHistory();
+                        } else {
+                            const timeNow = Date.now();
+                            const msgObjForStorage = { id: fileId, author: authorName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
+                            if(saveMessage(msgObjForStorage)) {
+                                renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj, false, fileId); 
+                            }
+                        }
+                        delete fileBuffers[fileId];
                     }
-                    delete fileBuffers[fileId];
                 }
             }
         }
@@ -1189,7 +1255,7 @@
                     }
                     
                     if(saveMessage({ id: msg.id, author: authorName, text: secretData.text, time: secretData.time })) {
-                        renderMessage(authorName, secretData.text, 'other', secretData.time);
+                        renderMessage(authorName, secretData.text, 'other', secretData.time, true, null, false, msg.id);
                     }
                 }
             }
@@ -1297,7 +1363,7 @@
         const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads }; 
         
         saveMessage({ id: msgId, author: myName, text: text, time: timeNow }); 
-        renderMessage('Ty', text, 'self', timeNow); 
+        renderMessage('Ty', text, 'self', timeNow, true, null, false, msgId); 
         routeMessage(msgObj); 
         document.getElementById('chat-input').value = ''; 
     }
@@ -1319,25 +1385,17 @@
             const base64Data = result.split(',')[1]; 
             const fileId = "FILE_" + generateMsgId(); 
             const timeNow = Date.now(); 
-            const chunkSize = 16384; 
-            const totalChunks = Math.ceil(base64Data.length / chunkSize); 
             const fileMeta = { name: file.name, size: file.size, type: file.type }; 
             const fileObj = { name: file.name, size: file.size, dataUrl: result }; 
             
             saveMessage({ id: fileId, author: myName, text: "Odeslán soubor.", time: timeNow, file: fileObj }); 
-            renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj); 
+            renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj, false, fileId); 
             
-            for (let i = 0; i < totalChunks; i++) { 
-                const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize); 
-                for (const peerId of Object.keys(knownNodes)) { 
-                    if (peerId !== myId) { 
-                        const encryptedChunk = await encryptE2E(JSON.stringify({ fileId: fileId, chunkIndex: i, totalChunks: totalChunks, meta: fileMeta, data: chunkData }), peerId); 
-                        routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, target: peerId, payload: encryptedChunk }); 
-                    } 
+            for (const peerId of Object.keys(knownNodes)) { 
+                if (peerId !== myId) { 
+                    sendFileChunks(fileId, base64Data, fileMeta, peerId);
                 } 
-                await new Promise(r => setTimeout(r, 50)); 
             } 
-            logDebug(`[FILE] Odesílání dokončeno.`, 'success'); 
         }; 
         
         reader.readAsDataURL(file); 
@@ -1508,7 +1566,6 @@
                 
                 if (!isDnsHost) {
                     setTimeout(() => { 
-                        // V4.8 Anti-Spam Sync Call
                         if (Date.now() - lastSyncRequestTime > 30000) {
                             lastSyncRequestTime = Date.now();
                             routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
@@ -1779,7 +1836,8 @@
         knownHttpClients.clear(); 
         httpOutbox = {}; 
         drawnEdges = []; 
-        activeSyncOperations.clear(); // V4.8
+        activeSyncOperations.clear();
+        syncState = {};
         drawTopology();
         
         await initCrypto(); 
@@ -2012,13 +2070,12 @@
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
             
             setTimeout(() => { 
-                // V4.8 Anti-Spam (Request History Debounce)
                 if (Date.now() - lastSyncRequestTime > 30000) {
                     lastSyncRequestTime = Date.now();
                     routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
                 }
             }, 3000); 
-        }, 1000);
+        }, 1000); 
         
         if (httpRelayInterval) clearInterval(httpRelayInterval); 
         
@@ -2059,7 +2116,7 @@
             if (Date.now() - lastHttpPong > 25000) {
                 logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error');
                 clearInterval(httpRelayInterval);
-                httpOutbox = {}; // V4.8 PURGE OUTBOX! Zabrání přenesení starých blokujících zpráv
+                httpOutbox = {};
                 blacklistedHubId = globalKnownHubId || 'hub';
                 blacklistedHubTimeout = Date.now() + 60000;
                 isHttpRelayMode = false;
