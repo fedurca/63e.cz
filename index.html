@@ -29,7 +29,8 @@
         /* === HERNÍ SEKNCE (FULLSCREEN) === */
         #game-wrapper {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-            background: #000; z-index: 1; overflow: hidden;
+            background-color: #000; z-index: 1; overflow: hidden;
+            transition: background-color 0.5s;
         }
         #game-canvas { width: 100%; height: 100%; display: block; image-rendering: crisp-edges; }
         
@@ -44,19 +45,19 @@
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
             display: flex; flex-direction: column; z-index: 100;
-            background: var(--chat-bg); box-shadow: 0 -5px 20px rgba(0,0,0,0.3);
-            transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--chat-bg); box-shadow: 0 -5px 30px rgba(0,0,0,0.5);
+            transform: translateY(100%); transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
         }
         #app.chat-open { transform: translateY(0); }
 
         #chat-toggle-btn {
-            position: fixed; bottom: 15px; right: 15px; z-index: 101;
+            position: fixed; bottom: 20px; right: 20px; z-index: 101;
             background: var(--primary); color: white; border: 2px solid #fff;
             padding: 12px 24px; border-radius: 25px; font-size: 1rem;
             font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .chat-open ~ #chat-toggle-btn { bottom: calc(50vh + 15px); background: #ff4757; }
+        .chat-open ~ #chat-toggle-btn { bottom: calc(50vh + 20px); background: #ff4757; }
 
         header { background: var(--primary); color: white; padding: 8px 15px; display: flex; justify-content: space-between; align-items: center; z-index: 10; flex-shrink: 0;}
         .status-dot { display: inline-block; width: 10px; height: 10px; background: #ff4757; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
@@ -70,19 +71,19 @@
         .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: row; min-height: 0; }
         
         #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border-right: 1px solid #ddd; }
-        #chat-area { flex: 1; padding: 10px 15px; overflow-y: auto; background: #e5ddd5; display: flex; flex-direction: column; gap: 8px; user-select: text;}
+        #chat-area { flex: 1; padding: 10px 15px; overflow-y: auto; background: #e5ddd5; color: #111; display: flex; flex-direction: column; gap: 8px; user-select: text;}
         .msg { max-width: 85%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
-        .msg-self { align-self: flex-end; background: #dcf8c6; border-bottom-right-radius: 2px; } 
-        .msg-other { align-self: flex-start; background: #fff; border-bottom-left-radius: 2px; }
-        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #555; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; text-align: center; }
-        .history-divider { text-align: center; font-size: 0.75rem; color: #888; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; } 
+        .msg-self { align-self: flex-end; background: #dcf8c6; color: #111; border-bottom-right-radius: 2px; } 
+        .msg-other { align-self: flex-start; background: #fff; color: #111; border-bottom-left-radius: 2px; }
+        .msg-system { align-self: center; background: rgba(0,0,0,0.1); color: #444; font-size: 0.8rem; border-radius: 10px; padding: 5px 10px; text-align: center; }
+        .history-divider { text-align: center; font-size: 0.75rem; color: #666; margin: 10px 0; border-bottom: 1px dashed #ccc; line-height: 0.1em; } 
         .history-divider span { background: #e5ddd5; padding: 0 10px; }
         
         .file-attachment { display: flex; flex-direction: column; align-items: flex-start; background: rgba(0,0,0,0.05); padding: 8px; border-radius: 8px; margin-top: 5px; text-decoration: none; color: #333;} 
         .file-attachment:hover { background: rgba(0,0,0,0.1); }
         .file-icon { font-size: 1.5rem; margin-right: 10px; } 
         .file-name { font-size: 0.85rem; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px;} 
-        .file-size { font-size: 0.7rem; color: #777; }
+        .file-size { font-size: 0.7rem; color: #555; }
         .img-preview { max-width: 100%; max-height: 150px; border-radius: 8px; display: block; margin-top: 5px; border: 1px solid rgba(0,0,0,0.1); cursor: pointer; }
         
         #input-area { display: flex; padding: 8px 10px; background: #f0f0f0; border-top: 1px solid #ddd; align-items: center; padding-bottom: calc(8px + env(safe-area-inset-bottom)); flex-shrink: 0; }
@@ -90,14 +91,12 @@
         #file-input { display: none; } 
         .btn-attach { background: none; border: none; font-size: 1.5rem; cursor: pointer; padding: 0 10px; opacity: 0.6; transition: 0.2s; } 
         .btn-attach:hover { opacity: 1; }
-        #chat-input { flex: 1; padding: 10px 12px; border: none; border-radius: 20px; font-size: 0.95rem; margin-right: 10px; user-select: text; }
+        #chat-input { flex: 1; padding: 10px 12px; border: 1px solid #ccc; background: #fff; color: #111; border-radius: 20px; font-size: 0.95rem; margin-right: 10px; user-select: text; }
         #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 15px; font-weight: bold; cursor: pointer; height: 100%; min-height: 36px;} 
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
         
         #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 450px; flex-shrink: 0; height: 100%; overflow-y: hidden; border-left: 1px solid #333; }
-        @media (max-width: 800px) {
-            #debug-panel { display: none; /* Skryjeme debug na mobilech pro šetření místa */ }
-        }
+        @media (max-width: 800px) { #debug-panel { display: none; } }
 
         .debug-header { background: #333; padding: 6px 10px; font-size: 0.75rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.7rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; } 
@@ -124,7 +123,7 @@
         
         #setup-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px; } 
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 100%; max-width: 400px; text-align: center; } 
-        .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center;} 
+        .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center; color: #111;} 
         .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
         
         #video-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 9999; flex-direction: column; } 
@@ -144,7 +143,6 @@
 </head>
 <body>
 
-<!-- === HRA === -->
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     
@@ -162,17 +160,15 @@
     </div>
 </div>
 
-<!-- === SETUP PŘEKRYV === -->
 <div id="setup-screen">
     <div class="setup-box">
         <h2>Vstup do hry a sítě</h2>
-        <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky po připojení.</p>
+        <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky.</p>
         <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
         <button id="join-btn" onclick="initSystem()">Připojit a hrát</button>
     </div>
 </div>
 
-<!-- === CHAT A SÍŤ (Slide-up) === -->
 <div id="app">
     <header>
         <div>
@@ -238,7 +234,7 @@
 <button id="chat-toggle-btn" onclick="toggleChat()">💬 Chat</button>
 
 <div id="incoming-modal">
-    <h3 style="margin-bottom: 5px;">Příchozí videohovor</h3>
+    <h3 style="margin-bottom: 5px; color: #111;">Příchozí videohovor</h3>
     <p id="incoming-name" style="font-size: 1.2rem; color: var(--primary); font-weight: bold;"></p>
     <div class="modal-btns">
         <button style="background: #2ed573; color: #000;" onclick="acceptCall()">Přijmout</button>
@@ -246,9 +242,6 @@
     </div>
 </div>
 
-<!-- ========================================== -->
-<!-- SÍŤOVÁ LOGIKA (CHAT + SYNCHRONIZACE HRY)   -->
-<!-- ========================================== -->
 <script>
     function toggleChat() {
         const app = document.getElementById('app');
@@ -1184,6 +1177,11 @@
         routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
     };
     
+    window.broadcastMapSync = (mapData) => {
+        if (Object.keys(knownNodes).length === 0) return;
+        routeMessage({ id: generateMsgId(), ttl: 2, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
+    };
+
     window.broadcastPlayerHit = (targetId) => {
         if (Object.keys(knownNodes).length === 0) return;
         routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-hit', sender: myId, target: targetId });
@@ -1195,10 +1193,9 @@
     };
 
     function routeMessage(msgObj, sourceChannel = null) {
-        if (msgObj.type === 'game-sync' && sourceChannel === 'http') return; 
-        if (msgObj.type === 'enemy-sync' && sourceChannel === 'http') return; 
+        if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'game-next') && sourceChannel === 'http') return; 
 
-        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync') { 
+        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next') { 
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id); 
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1216,7 +1213,7 @@
             if (ch.readyState === 'open' && ch !== sourceChannel) { 
                 try { 
                     const str = JSON.stringify(msgObj); 
-                    if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync') {
+                    if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
                         logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error'); 
                     }
                     ch.send(str); 
@@ -1225,12 +1222,12 @@
         });
 
         if (isHttpRelayMode) { 
-            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync') {
+            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next') {
                 addToHttpOutbox('hub', msgObj); 
             }
         } else if (isDnsHost) { 
             knownHttpClients.forEach(clientId => { 
-                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync') { 
+                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next') { 
                     addToHttpOutbox(clientId, msgObj); 
                 } 
             }); 
@@ -1280,6 +1277,11 @@
         else if (msg.type === 'enemy-sync') {
             if (msg.sender !== myId && typeof window.handleEnemySync === 'function') {
                 try { window.handleEnemySync(JSON.parse(msg.payload)); } catch(e){}
+            }
+        }
+        else if (msg.type === 'map-sync') {
+            if (msg.sender !== myId && typeof window.handleMapSync === 'function') {
+                try { window.handleMapSync(JSON.parse(msg.payload)); } catch(e){}
             }
         }
         else if (msg.type === 'game-hit') {
@@ -2268,9 +2270,6 @@
     }
 </script>
 
-<!-- ========================================== -->
-<!-- KABOOM.JS (HRA A MULTIPLAYER SYNC)         -->
-<!-- ========================================== -->
 <script type="module">
     import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
@@ -2546,6 +2545,7 @@
 
     scene("http_blocked", () => {
         setBackground(20, 20, 20);
+        document.getElementById('game-wrapper').style.backgroundColor = `rgb(20, 20, 20)`;
         add([text("REŽIM HTTP RELAY", {size: 32}), pos(width()/2, height()/2 - 40), color(255, 100, 100), anchor("center")]);
         add([text("Hra vyžaduje WebRTC P2P (přímé) spojení.", {size: 16}), pos(width()/2, height()/2 + 10), anchor("center")]);
         add([text("Jsi připojen pouze do textového chatu.", {size: 16}), pos(width()/2, height()/2 + 40), anchor("center")]);
@@ -2555,6 +2555,7 @@
         initAudio();
         const lvl = LVL[lvlIdx];
         setBackground(lvl.bg);
+        document.getElementById('game-wrapper').style.backgroundColor = `rgb(${lvl.bg.join(',')})`; // Oprava Firefox pozadí
         setGravity(lvl.g);
 
         let maxHp = Math.max(3, hp);
@@ -2566,7 +2567,6 @@
         let jumpBuffer = 0;
         
         let remotePlayers = {}; 
-        window.lvlEnemyCounter = 0;
         
         const MAP_W = lvl.m[0].length * 40; 
         const MAP_H = lvl.m.length * 40;
@@ -2603,13 +2603,13 @@
                 "P": () => [sprite("pistol"), area(), anchor("center"), "pistol"],
                 "H": () => [sprite("heart"), area(), anchor("center"), "heal"],
                 
-                "1": () => [sprite("e_nrm"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { eId: "e_"+(window.lvlEnemyCounter++), hp:2, type:"nrm", speed:80, stunTimer:0 }],
-                "3": () => [sprite("e_jmp"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { eId: "e_"+(window.lvlEnemyCounter++), hp:4, type:"jmp", speed:100, jTmr:rand(1,3), stunTimer:0 }],
-                "2": () => [sprite("e_bnc"), color(ec[0],ec[1],ec[2]), scale(1.7), area(), body(), anchor("center"), "enemy", "pusher", { eId: "e_"+(window.lvlEnemyCounter++), hp:5, type:"bnc", speed:120, stunTimer:0 }],
-                "B": () => [sprite("e_fly"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), anchor("center"), "enemy", "danger", { eId: "e_"+(window.lvlEnemyCounter++), hp:3, type:"fly", speed:70, dir:1, baseY:null, stunTimer:0 }],
+                "1": () => [sprite("e_nrm"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:2, type:"nrm", speed:80, stunTimer:0 }],
+                "3": () => [sprite("e_jmp"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:4, type:"jmp", speed:100, jTmr:rand(1,3), stunTimer:0 }],
+                "2": () => [sprite("e_bnc"), color(ec[0],ec[1],ec[2]), scale(1.7), area(), body(), anchor("center"), "enemy", "pusher", { hp:5, type:"bnc", speed:120, stunTimer:0 }],
+                "B": () => [sprite("e_fly"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), anchor("center"), "enemy", "danger", { hp:3, type:"fly", speed:70, dir:1, baseY:null, stunTimer:0 }],
                 "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake", "solid"],
                 "W": () => [sprite("block"), color(lvl.tt[0],lvl.tt[1],lvl.tt[2]), area(), body({isStatic:true}), anchor("center"), "breakable", "solid"],
-                "X": () => [sprite("e_bnc"), color(255,50,50), scale(3.0), area(), body(), anchor("center"), "enemy", "danger", "boss", { eId: "e_"+(window.lvlEnemyCounter++), hp:25, maxHp:25, type:"bnc", speed:150, stunTimer:0 }],
+                "X": () => [sprite("e_bnc"), color(255,50,50), scale(3.0), area(), body(), anchor("center"), "enemy", "danger", "boss", { hp:25, maxHp:25, type:"bnc", speed:150, stunTimer:0 }],
                 
                 "H": () => [rect(120, 20), color(100, 200, 255), area(), body({isStatic:true}), anchor("center"), "ground", "solid", "moving_h", { vx: 120 }],
                 "L": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: 1 }, opacity(0)],
@@ -2619,6 +2619,11 @@
                 "D": () => [rect(40,40), area(), anchor("center"), "bound_v", { dir: -1 }, opacity(0)]
             }
         });
+
+        // Deterministické ID pro správnou síťovou synchronizaci
+        let eIdx = 0; get("enemy").forEach(e => { e.eId = "e_" + (eIdx++); });
+        let hIdx = 0; get("moving_h").forEach(m => { m.mId = "h_" + (hIdx++); });
+        let vIdx = 0; get("moving_v").forEach(m => { m.mId = "v_" + (vIdx++); });
 
         onUpdate("moving_h", (p) => { if(window.chat_isHost()) p.move(p.vx, 0); }); 
         onCollide("moving_h", "bound_h", (p, b) => p.vx = Math.abs(p.vx) * b.dir);
@@ -2888,6 +2893,17 @@
             });
         };
 
+        window.handleMapSync = (mapData) => {
+            if (window.chat_isHost()) return;
+            mapData.forEach(md => {
+                const m = get(md.id.startsWith('h') ? "moving_h" : "moving_v").find(x => x.mId === md.id);
+                if (m) {
+                    m.pos.x = md.x;
+                    m.pos.y = md.y;
+                }
+            });
+        };
+
         window.handlePlayerHit = (targetId) => {
             if (targetId === window.chat_myId) {
                 if(playerDead) return;
@@ -2920,7 +2936,7 @@
         };
 
         let lastSyncTime = 0;
-        let lastEnemySyncTime = 0;
+        let lastMapSyncTime = 0;
         let camTarget = vec2(400,240);
         
         onUpdate(() => {
@@ -2940,13 +2956,19 @@
                 }
             }
 
-            // Enemy sync od Mastera k ostatním
-            if (window.chat_isHost() && time() - lastEnemySyncTime > 0.1) {
-                lastEnemySyncTime = time();
+            // Sync Entit (Master)
+            if (window.chat_isHost() && time() - lastMapSyncTime > 0.1) {
+                lastMapSyncTime = time();
+                
                 const enemiesData = get("enemy").map(e => ({
                     id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: e.flipX || false
                 }));
                 if (typeof window.broadcastEnemySync === 'function') window.broadcastEnemySync(enemiesData);
+
+                const mapData = [];
+                get("moving_h").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y }));
+                get("moving_v").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y }));
+                if (typeof window.broadcastMapSync === 'function' && mapData.length > 0) window.broadcastMapSync(mapData);
             }
             
             if (light && player.pos) light.pos = player.pos;
@@ -3082,6 +3104,7 @@
             spawnDust(w.pos); playSound(300, 'square', 0.1, 0.05); 
         });
 
+        // Trefení nepřátelského hráče po síti
         onCollide("bullet", "remote_player", (b, rp) => {
             destroy(b);
             spawnBlood(rp.pos, 5);
@@ -3146,6 +3169,7 @@
 
     scene("lose", (lvlIdx, sc) => {
         setBackground(30,10,10); 
+        document.getElementById('game-wrapper').style.backgroundColor = `rgb(30,10,10)`;
         add([text(`ZEMŘEL JSI V LEVELU ${lvlIdx+1}!`, {size:32}), pos(width()/2, height()/2 - 40), color(255,100,100), anchor("center")]);
         add([text(`Score: ${sc}`, {size:24}), pos(width()/2, height()/2), anchor("center")]);
         add([text("Klepni, nebo stiskni Mezerník pro restart", {size:16}), pos(width()/2, height()/2 + 50), color(150,150,150), anchor("center")]);
@@ -3162,6 +3186,7 @@
 
     scene("victory", (sc) => {
         setBackground(80,140,255); 
+        document.getElementById('game-wrapper').style.backgroundColor = `rgb(80,140,255)`;
         add([text("🏆 VÍTĚZSTVÍ! 🏆", {size:44}), pos(width()/2, 70), color(255,200,0), anchor("center")]); 
         add([text(`Konečné score: ${sc}`, {size:26}), pos(width()/2, 130), anchor("center")]);
         add([text("Díky za hraní!", {size:16}), pos(width()/2, 180), color(50,50,50), anchor("center")]);
