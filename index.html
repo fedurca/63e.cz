@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v13 - PvP & Loot Update</title>
+    <title>P2P v13 - Sync Fix</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -26,7 +26,7 @@
             user-select: none; -webkit-user-select: none;
         }
 
-        /* === HERNÍ SEKCE (FULLSCREEN) === */
+        /* === HERNÍ SEKCE === */
         #game-wrapper {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: #000; z-index: 1; overflow: hidden;
@@ -41,7 +41,7 @@
         #debug-panel-game button { display: block; width: 100%; margin-bottom: 8px; padding: 6px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 3px; font-size: 11px; }
         #debug-toggle { position: absolute; top: 8px; right: 8px; z-index: 10001; background: rgba(0,0,0,0.7); color: #0f0; border: 1px solid #0f0; width: 34px; height: 34px; font-size: 18px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
 
-        /* === CHAT SEKCE (SLIDE-UP OVERLAY) === */
+        /* === CHAT SEKCE === */
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
             display: flex; flex-direction: column; z-index: 100;
@@ -143,7 +143,6 @@
 </head>
 <body>
 
-<!-- === HRA === -->
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     
@@ -161,7 +160,6 @@
     </div>
 </div>
 
-<!-- === SETUP PŘEKRYV === -->
 <div id="setup-screen">
     <div class="setup-box">
         <h2>Vstup do hry a sítě</h2>
@@ -171,7 +169,6 @@
     </div>
 </div>
 
-<!-- === CHAT A SÍŤ (Slide-up) === -->
 <div id="app">
     <header>
         <div>
@@ -245,9 +242,6 @@
     </div>
 </div>
 
-<!-- ========================================== -->
-<!-- SÍŤOVÁ LOGIKA (CHAT + SYNCHRONIZACE HRY)   -->
-<!-- ========================================== -->
 <script>
     function toggleChat() {
         const app = document.getElementById('app');
@@ -1201,11 +1195,16 @@
         if (Object.keys(knownNodes).length === 0) return;
         routeMessage({ id: generateMsgId(), ttl: 5, type: 'loot-pickup', sender: myId, lId: lId });
     };
+    
+    window.broadcastLootSync = (activeLootIds) => {
+        if (Object.keys(knownNodes).length === 0) return;
+        routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
+    };
 
     function routeMessage(msgObj, sourceChannel = null) {
-        if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup') && sourceChannel === 'http') return; 
+        if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
 
-        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup') { 
+        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id); 
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1232,12 +1231,12 @@
         });
 
         if (isHttpRelayMode) { 
-            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup') {
+            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
                 addToHttpOutbox('hub', msgObj); 
             }
         } else if (isDnsHost) { 
             knownHttpClients.forEach(clientId => { 
-                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup') { 
+                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
                     addToHttpOutbox(clientId, msgObj); 
                 } 
             }); 
@@ -1307,6 +1306,11 @@
         else if (msg.type === 'loot-pickup') {
             if (typeof window.handleLootPickup === 'function') {
                 window.handleLootPickup(msg.lId);
+            }
+        }
+        else if (msg.type === 'loot-sync') {
+            if (msg.sender !== myId && typeof window.handleLootSync === 'function') {
+                try { window.handleLootSync(JSON.parse(msg.payload)); } catch(e){}
             }
         }
         else if (msg.type === 'video-signal') { 
@@ -2277,9 +2281,6 @@
     }
 </script>
 
-<!-- ========================================== -->
-<!-- KABOOM.JS (HRA A MULTIPLAYER SYNC)         -->
-<!-- ========================================== -->
 <script type="module">
     import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
@@ -2474,17 +2475,17 @@
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
     const RAW_LVL = [
-        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], m:["                                                                                            ","                       $$$ P   H                                                            ","             3         1      1                                                            F ","                                                 3                      P             ==","         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==","       ======  11      ======      =========     1        ==         ======  11      ======      ==","            1    ===        1  1   !    ^^   1            ==                  ===        3    ==","             3         P            !   ===                ==            P                    ==","             3         3             !1  1  1        2      ==         1  3    1    2              ==","         1       ======            !             1      ==      ======                        ==","======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], m:["                                                                                            ","                  1        B                2     H  P                                        ","             2          $$$                    1                                          F ","                                             P                    B                     ==","         H       3   3        B   W        $$      P      ==         H       3     P      1   W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","               3   1        1      W   1  3        ^^      ==                  3          1      W    ==","            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====  2         W         1          == ======   ====    ====    2        W   ==","                 ======          ==============================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, m:["                                                                                            ","                               1                             1      2                      ","                   B            $$$      1      H           F                                  ","             P      1         ===            ==   3          ==          2                     ","                   1       1              ==              ==  P                               ","                 1     B    ===   ===   1   ==   1          == ===         1                   ","       ======   ===   ===            1    ===   ====      ==  !                               ","          ^^    2         3     ^^        !        ^^       ==  !        3                     ","======   ====      2   =====  ====        !          1       == !                               ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, m:["                                                                                            ","                                                                                            ","                                         F                                                ","             B                1          $$ ==       2            P                           ","       ===            H            ===   ==== ==            3               B                  ","                 ===      ===               !         ======        ==                          ","           W    3    P            1         !  =====                ==                          ","       ===  W ^^          1   2   =====    !         1          ==                              ","======      ======================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], m:["                                                                                            ","                       $$$ P   +                                                            ","             3         1      1                                                            F ","                                                 3                      P             ==","         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==","       ======  11      ======      =========     1        ==         ======  11      ======      ==","            1    ===        1  1   !    ^^   1            ==                  ===        3    ==","             3         P            !   ===                ==            P                    ==","             3         3             !1  1  1        2      ==         1  3    1    2              ==","         1       ======            !             1      ==      ======                        ==","======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], m:["                                                                                            ","                  1        B                2     +  P                                        ","             2          $$$                    1                                          F ","                                             P                    B                     ==","         +       3   3        B   W        $$      P      ==         +       3     P      1   W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","               3   1        1      W   1  3        ^^      ==                  3          1      W    ==","            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====  2         W         1          == ======   ====    ====    2        W   ==","                 ======          ==============================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, m:["                                                                                            ","                               1                             1      2                      ","                   B            $$$      1      +           F                                  ","             P      1         ===            ==   3          ==          2                     ","                   1       1              ==              ==  P                               ","                 1     B    ===   ===   1   ==   1          == ===         1                   ","       ======   ===   ===            1    ===   ====      ==  !                               ","          ^^    2         3     ^^        !        ^^       ==  !        3                     ","======   ====      2   =====  ====        !          1       == !                               ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, m:["                                                                                            ","                                                                                            ","                                         F                                                ","             B                1          $$ ==       2            P                           ","       ===            +            ===   ==== ==            3               B                  ","                 ===      ===               !         ======        ==                          ","           W    3    P            1         !  =====                ==                          ","       ===  W ^^          1   2   =====    !         1          ==                              ","======      ======================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255], m:["                                                                                            ","                                                                                            ","                                         F                                                ","             3                2          $$ ==                 1                            ","       ===            B            ===   ==== ==            1              P                   ","          W      ===      ===               !    B        ======        ==                        ","          W          P             1         !  =====                ==                          ","          W ^^         3        =====       !         2          ==                              ","======   ====    ====    ====    ====    ====    ====    ==========================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0], m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                               1          ==  1       ==             P                       ","       ===          3      ==========        == ======   ==       3                              ","          W      ======         P        === !            ==                                      ","          W            1       B             !            ==                                      ","          W ^^                               !            ==                                      ","======   ====    2                    1               ==========================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255], m:["                                                                                            ","                                                                                            F ","                                                                                           ==","                                         $$ ==   H      ==                                      ","       ======         B       3          ====   ===     ==               P                   ","          W                1          1       !   ^^      ==        B                             ","          W  ^^            =====      =====  !  ===      ==                                      ","======   ====   ====            2            !            ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255], m:["                                                                                            ","                                                                                            F ","                                                                                           ==","                                         $$ ==   +      ==                                      ","       ======         B       3          ====   ===     ==               P                   ","          W                1          1       !   ^^      ==        B                             ","          W  ^^            =====      =====  !  ===      ==                                      ","======   ====   ====            2            !            ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true, m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                         2               $$ ==   P      ==                                      ","       ======         1                 ====   ===     ==              P                   ","          W      B         1          3      !   ^^      ==                                      ","          W  ^^            =====      =====  !  ===      ==                                      ","======   ====   ====       1               !            ==                                      ","             ======                       =======================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true, m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                 B       3           2      ==  P       ==                                      ","       ======   ===   ===                $$ == ===      ==             P                   ","          W                 1            ==== !         ==                                      ","          W             === ====   3         !  ^^      ==                                      ","======                       1       ====== !  ===     ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], m:["                                                                                            ","                                                                                            ","                                         F            ==                                      ","                 $$     P                ==   H        ==                                      ","       ======   ===    ===        1       ====   ===      ==             B                          ","          W             2      1            !   ^^      ==        ======                        ","          W  ^^         =====  =====        !    ===      ==             P                          ","======   ====    ====            1         !              ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], m:["                                                                                            ","                                                                                            ","                                                                                           F ","                                                                                           ==","         H       1       2        W       $$      P      ==         H       1               W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","                 3          1      W   1          ^^      ==                3          1      W    ==","            ^^             =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====            W         P             == ======   ====    ====            W   ==","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], m:["                                                                                            ","                                                                                            ","                                         F            ==                                      ","                 $$     P                ==   +        ==                                      ","       ======   ===    ===        1       ====   ===      ==             B                          ","          W             2      1            !   ^^      ==        ======                        ","          W  ^^         =====  =====        !    ===      ==             P                          ","======   ====    ====            1         !              ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], m:["                                                                                            ","                                                                                            ","                                                                                           F ","                                                                                           ==","         +       1       2        W       $$      P      ==         +       1               W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","                 3          1      W   1          ^^      ==                3          1      W    ==","            ^^             =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====            W         P             == ======   ====    ====            W   ==","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, m:["                                                                                            ","                                                                                            ","                                         F                                                ","                 B                    $$ ==            3    X    3                             ","       ======   ===        1  1        ==== ==      P      =========================================","          W          W        1   1      !   ===          ==                                      ","          W  ^^      W  ^^   === ===     !    1            ==            P                          ","======   ====      ====                !                ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] }
     ];
 
@@ -2601,7 +2602,7 @@
                 "F": () => [sprite("flag"), area(), anchor("center"), "finish"],
                 "$": () => [sprite("coin"), area(), anchor("center"), "coin", "loot", { lId: `c_${lvlIdx}_${coinIdx++}` }],
                 "P": () => [sprite("pistol"), area(), anchor("center"), "pistol", "loot", { lId: `p_${lvlIdx}_${pistolIdx++}` }],
-                "H": () => [sprite("heart"), area(), anchor("center"), "heal", "loot", { lId: `h_${lvlIdx}_${healIdx++}` }],
+                "+": () => [sprite("heart"), area(), anchor("center"), "heal", "loot", { lId: `h_${lvlIdx}_${healIdx++}` }],
                 
                 "1": () => [sprite("e_nrm"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:2, type:"nrm", speed:80, stunTimer:0 }],
                 "3": () => [sprite("e_jmp"), color(ec[0],ec[1],ec[2]), scale(1.4), area(), body(), anchor("center"), "enemy", "danger", { hp:4, type:"jmp", speed:100, jTmr:rand(1,3), stunTimer:0 }],
@@ -2620,16 +2621,16 @@
             }
         });
 
-        let eIdx = 0; get("enemy").forEach(e => { e.eId = "e_" + (eIdx++); });
-        let hIdx = 0; get("moving_h").forEach(m => { m.mId = "h_" + (hIdx++); });
-        let vIdx = 0; get("moving_v").forEach(m => { m.mId = "v_" + (vIdx++); });
+        let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; });
+        let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; });
+        let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; });
 
         const isHost = typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
 
-        onUpdate("moving_h", (p) => { if(isHost) p.move(p.vx, 0); }); 
+        onUpdate("moving_h", (p) => { p.move(p.vx, 0); }); 
         onCollide("moving_h", "bound_h", (p, b) => p.vx = Math.abs(p.vx) * b.dir);
         
-        onUpdate("moving_v", (p) => { if(isHost) p.move(0, p.vy); }); 
+        onUpdate("moving_v", (p) => { p.move(0, p.vy); }); 
         onCollide("moving_v", "bound_v", (p, b) => p.vy = Math.abs(p.vy) * b.dir);
         
         onCollideUpdate("player", "moving_h", (p, m, col) => { if (col && col.isBottom()) p.pos.x += m.vx * dt(); });
@@ -2879,8 +2880,7 @@
                 ]);
             } else {
                 let rp = remotePlayers[senderId];
-                rp.pos.x = data.x;
-                rp.pos.y = data.y;
+                rp.targetPos = vec2(data.x, data.y);
                 rp.flipX = data.flipX;
                 if (rp.curAnim() !== data.anim) rp.play(data.anim);
             }
@@ -2927,10 +2927,8 @@
             mapData.forEach(md => {
                 const m = get(md.id.startsWith('h') ? "moving_h" : "moving_v").find(x => x.mId === md.id);
                 if (m) {
-                    if (Math.abs(m.pos.x - md.x) > 15 || Math.abs(m.pos.y - md.y) > 15) {
-                        m.pos.x = md.x;
-                        m.pos.y = md.y;
-                    }
+                    if (Math.abs(m.pos.x - md.x) > 5) m.pos.x = lerp(m.pos.x, md.x, 0.5);
+                    if (Math.abs(m.pos.y - md.y) > 5) m.pos.y = lerp(m.pos.y, md.y, 0.5);
                     if (md.vx !== undefined) m.vx = md.vx;
                     if (md.vy !== undefined) m.vy = md.vy;
                 }
@@ -2983,6 +2981,15 @@
                 if (l.lId === lId) destroy(l);
             });
         };
+        
+        window.handleLootSync = (activeLootIds) => {
+            if (isHost) return;
+            get("loot").forEach(l => {
+                if (!activeLootIds.includes(l.lId)) {
+                    destroy(l);
+                }
+            });
+        };
 
         let lastSyncTime = 0;
         let lastMapSyncTime = 0;
@@ -3007,6 +3014,14 @@
                     });
                 }
             }
+            
+            for (let id in remotePlayers) {
+                let rp = remotePlayers[id];
+                if (rp.targetPos) {
+                    rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, 15 * dt());
+                    rp.pos.y = lerp(rp.pos.y, rp.targetPos.y, 15 * dt());
+                }
+            }
 
             if (isHost && time() - lastMapSyncTime > 0.05) {
                 lastMapSyncTime = time();
@@ -3019,6 +3034,9 @@
                 get("moving_h").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vx: m.vx }));
                 get("moving_v").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vy: m.vy }));
                 if (typeof window.broadcastMapSync === 'function' && mapData.length > 0) window.broadcastMapSync(mapData);
+                
+                const lootData = get("loot").map(l => l.lId);
+                if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
             }
             
             if (light && player.pos) light.pos = player.pos;
@@ -3196,10 +3214,14 @@
         onCollide("player","danger",(p,d)=>{
             if(!p.pos||p.stun||playerDead) return;
             hp--; updateHP(); 
-            if(hp<=0){ playerDead=true; go("lose",lvlIdx,score); return; }
-            p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
-            playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
-            wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
+            if(hp<=0){ 
+                hp=6; player.pos.x=80; player.pos.y=200; player.cVel=0; updateHP(); 
+                spawnKillSplash(player.pos); addToast("Zemřel jsi! Respawn."); 
+            } else {
+                p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
+                playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
+                wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
+            }
         });
         
         onCollide("player","loot",(p,l)=>{ 
