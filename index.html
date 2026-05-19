@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v11 - Sync Fix & Haptics</title>
+    <title>P2P v16 - Sync Fix & Haptics</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -2791,13 +2791,11 @@
             }
         });
 
-        // O(1) Taggování pro extrémně rychlé updaty pozic a synchronizace ze sítě
         let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; e.use(e.eId); });
         let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; m.use(m.mId); });
         let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; m.use(m.mId); });
         get("loot").forEach(l => l.use(l.lId));
 
-        // Decentralizovaný update plošin - klient jen Lerpuje to, co posílá Host!
         onUpdate("moving_h", (p) => { 
             if(getIsHost()) { 
                 p.move(p.vx, 0); 
@@ -2877,7 +2875,6 @@
             statsLabel.text = txt;
         });
 
-        // 10 SEKUNDOVÝ TELEMETRICKÝ LOG!
         loop(10, () => {
             const players = 1 + get("remote_player").length;
             const enemies = get("enemy").length;
@@ -3058,7 +3055,6 @@
         onKeyPress("space", doShoot); 
         onKeyPress("w", doJump);
 
-        // SYNC VZDÁLENÝCH HRÁČŮ
         window.handleGameSync = (senderId, data) => {
             if (data.lvl !== lvlIdx) return;
             playerStats[senderId] = { name: data.name || senderId, hp: data.hp || 0, score: data.score || 0 };
@@ -3072,7 +3068,7 @@
                     area({ width: 20, height: 38 }),
                     anchor("center"),
                     "remote_player",
-                    senderId, // TAG -> O(1) Search!
+                    senderId,
                     { id: senderId }
                 ]);
                 rp.add([
@@ -3088,7 +3084,6 @@
             }
         };
 
-        // LERP POHYBU VZDÁLENÝCH HRÁČŮ
         onUpdate("remote_player", (rp) => {
             if (rp.targetPos) {
                 rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, 15 * dt());
@@ -3106,7 +3101,7 @@
                 move(vec2(data.dirX, data.dirY), 1000),
                 offscreen({destroy:true}),
                 "bullet",
-                { owner: senderId } // Uložíme ID střelce, aby nemohl zranit sám sebe
+                { owner: senderId }
             ]);
         };
 
@@ -3334,7 +3329,6 @@
             }
         });
 
-        // Decentralizovaný update příšer
         onUpdate("enemy", (e) => {
             const isHost = getIsHost();
 
@@ -3356,11 +3350,9 @@
                 if (e.stunTimer <= 0) e.color = rgb(ec[0],ec[1],ec[2]); return; 
             }
             
-            // Vizualizace běží pro všechny uzly (odrazy, vlnění atd.)
             const bs = e.type==="bnc" ? (e.is("boss")?3.0:1.7) : 1.4; 
             e.scale = vec2(bs + Math.sin(time()*6)*0.06, bs - Math.sin(time()*6)*0.06);
             
-            // Reálný pohyb vyhodnocuje jen Host
             if (isHost) {
                 if (e.type==="fly") { 
                     if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); 
@@ -3389,7 +3381,6 @@
         });
 
         onCollide("bullet", "remote_player", (b, rp) => {
-            // Pokud jsem střelu vyrobil já, oznámím to ostatním přes game-hit
             if (b.owner === localId) {
                 destroy(b);
                 spawnBlood(rp.pos, 5);
@@ -3398,7 +3389,6 @@
         });
 
         onCollide("bullet", "player", (b, p) => {
-            // Jen vizuální krev – skutečné zranění obstará game-hit paket od střelce
             if (b.owner !== localId) {
                 destroy(b);
                 spawnBlood(p.pos, 5);
