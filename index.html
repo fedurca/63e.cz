@@ -26,7 +26,7 @@
             user-select: none; -webkit-user-select: none;
         }
 
-        /* === HERNÍ SEKNCE (FULLSCREEN) === */
+        /* === HERNÍ SEKCE (FULLSCREEN) === */
         #game-wrapper {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: #000; z-index: 1; overflow: hidden;
@@ -41,7 +41,7 @@
         #debug-panel-game button { display: block; width: 100%; margin-bottom: 8px; padding: 6px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 3px; font-size: 11px; }
         #debug-toggle { position: absolute; top: 8px; right: 8px; z-index: 10001; background: rgba(0,0,0,0.7); color: #0f0; border: 1px solid #0f0; width: 34px; height: 34px; font-size: 18px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
 
-        /* === CHAT SEKCE (SLIDE-UP) === */
+        /* === CHAT SEKCE (SLIDE-UP OVERLAY) === */
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
             display: flex; flex-direction: column; z-index: 100;
@@ -143,6 +143,7 @@
 </head>
 <body>
 
+<!-- === HRA === -->
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     
@@ -160,15 +161,17 @@
     </div>
 </div>
 
+<!-- === SETUP PŘEKRYV === -->
 <div id="setup-screen">
     <div class="setup-box">
         <h2>Vstup do hry a sítě</h2>
-        <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky.</p>
+        <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky po připojení.</p>
         <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
         <button id="join-btn" onclick="initSystem()">Připojit a hrát</button>
     </div>
 </div>
 
+<!-- === CHAT A SÍŤ (Slide-up) === -->
 <div id="app">
     <header>
         <div>
@@ -242,6 +245,9 @@
     </div>
 </div>
 
+<!-- ========================================== -->
+<!-- SÍŤOVÁ LOGIKA (CHAT + SYNCHRONIZACE HRY)   -->
+<!-- ========================================== -->
 <script>
     function toggleChat() {
         const app = document.getElementById('app');
@@ -291,7 +297,7 @@
     window.chat_myId = myId; 
     let myName = ""; 
     let isDnsHost = false; 
-    window.chat_isHost = () => isDnsHost; // Kaboom kontroluje, jestli AI řídí tento klient
+    window.chat_isHost = () => isDnsHost;
 
     let connections = {}; 
     let channels = {}; 
@@ -319,7 +325,7 @@
     let pendingAutoMsg = null; 
     let globalKnownHubId = null;
 
-    let activeCall = { pc: null, peerId: null, localStream: null, screenStream: null, isAudioMuted: false, isVideoMuted: false, isScreenSharing: false };
+    let activeCall = { pc: null, peerId: null, localStream = null, screenStream = null, isAudioMuted: false, isVideoMuted: false, isScreenSharing: false };
     let incomingCallData = null;
 
     let lastSyncRequestTime = 0;
@@ -760,7 +766,9 @@
             const json = await res.json(); 
             if(json.success && json.content) { 
                 updateDebugStats('dns', 'OK'); 
-                const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
+                const cleanB64 = json.content.replace(/["\s
+
+\]/g, ''); 
                 return dekomprimovat(cleanB64); 
             } 
         } catch(e) { } 
@@ -1161,7 +1169,6 @@
         logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success');
     }
 
-    // Vysílací metody pro hru
     window.broadcastGameSync = (data) => {
         if (Object.keys(knownNodes).length === 0) return;
         routeMessage({ id: generateMsgId(), ttl: 2, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
@@ -1209,14 +1216,11 @@
         if (!msgObj.path) msgObj.path = []; 
         msgObj.path.push(myId);
 
-        Object.values(channels).forEach(ch => { 
-            if (ch.readyState === 'open' && ch !== sourceChannel) { 
+        Object.values(connections).forEach((pc, idx) => {
+            const ch = channels[Object.keys(connections)[idx]];
+            if (ch && ch.readyState === 'open' && ch !== sourceChannel) { 
                 try { 
-                    const str = JSON.stringify(msgObj); 
-                    if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
-                        logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error'); 
-                    }
-                    ch.send(str); 
+                    ch.send(JSON.stringify(msgObj)); 
                 } catch(err) {} 
             } 
         });
@@ -1395,11 +1399,6 @@
                     const secretData = JSON.parse(plainJson); 
                     const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
                     
-                    if (msg.path && msg.path.length > 0) { 
-                        const pathNames = msg.path.map(id => knownNodes[id]?.name || id).join(" ➔ "); 
-                        logDebug(`✉ Zpráva (${authorName}) cestou: ${pathNames} ➔ Ty`, 'log-path'); 
-                    }
-                    
                     if(saveMessage({ id: msg.id, author: authorName, text: secretData.text, time: secretData.time })) {
                         renderMessage(authorName, secretData.text, 'other', secretData.time, true, null, false, msg.id);
                     }
@@ -1417,9 +1416,6 @@
                     const targetId = edge.id || edge; 
                     if (knownNodes[targetId]) { 
                         knownNodes[targetId].lastSeen = now; 
-                        if (edge.ping && !connections[targetId]) {
-                            knownNodes[targetId].ping = edge.ping; 
-                        }
                     } 
                 }); 
             } 
@@ -2270,6 +2266,9 @@
     }
 </script>
 
+<!-- ========================================== -->
+<!-- KABOOM.JS (HRA A MULTIPLAYER SYNC)         -->
+<!-- ========================================== -->
 <script type="module">
     import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
 
@@ -2334,12 +2333,12 @@
         if (idx === -1) idx = 0;
         
         const colors = [
-            { r: 30, g: 30, b: 30 },     // Host
-            { r: 255, g: 255, b: 255 },  // 2
-            { r: 255, g: 50, b: 50 },    // 3
-            { r: 50, g: 255, b: 50 },    // 4
-            { r: 255, g: 255, b: 50 },   // 5
-            { r: 50, g: 150, b: 255 }    // 6
+            { r: 30, g: 30, b: 30 },     
+            { r: 255, g: 255, b: 255 },  
+            { r: 255, g: 50, b: 50 },    
+            { r: 50, g: 255, b: 50 },    
+            { r: 255, g: 255, b: 50 },   
+            { r: 50, g: 150, b: 255 }    
         ];
         const c = colors[idx % colors.length];
         return rgb(c.r, c.g, c.b);
@@ -2464,7 +2463,7 @@
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
     const RAW_LVL = [
-        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], m:["                                                                                            ","                                                                                            ","             3         1      1                                                           F ","                                                   3                       P             ==","         $$    2       B     1 $$  P        B        ==             $$     1   P     B   1  ==","       ======  11     ======      =========     1        ==          ======  11     ======      ==","            1    ===        1  1   !    ^^   1            ==                   ===        3    ==","             3         P           !   ===                ==             P                     ==","             3         3             !1  1  1       2      ==         1  3    1    2              ==","         1       ======            !             1      ==      ======                         ==","======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========","                                                                                            ","                                                                                            ","                                                                                            "] },
+        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], m:["                                                                                            ","                                                                                            ","             3         1      1                                                           F ","                                                   3                       P             ==","         $$   2       B     1$$  P        B        ==             $$     1   P     B   1  ==","       ======  11     ======      =========     1        ==          ======  11     ======      ==","            1    ===        1  1   !    ^^   1            ==                   ===        3    ==","             3         P           !   ===                ==             P                     ==","             3         3             !1  1  1       2      ==         1  3    1    2              ==","         1       ======            !             1      ==      ======                         ==","======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], m:["                                                                                            ","                   1       B                 2                                              ","             2                                    1                                       F ","                                             P                    B                      ==","         H       3   3        B   W       $$      P      ==         H       3     P      1   W    ==","       ======   ===               W      ====    ===     ==       ======   ===               W    ==","               3   1        1     W   1  3       ^^      ==                 3          1     W    ==","           ^^       2      =====   W =====       ===      ==            ^^             =====   W    ==","======    ====    ====  2         W         1          == ======    ====    ====    2       W   ==","                 ======          ==============================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, m:["                                                                                            ","                               1                             1      2                               ","                   B           $$$      1                  F                                    ","             P      1         ===            ==   3          ==          2                      ","                   1       1              ==              ==  P                               ","                 1     B    ===   ===   1   ==   1          == ===         1                    ","       ======   ===   ===            1    ===     ====      ==  !                               ","          ^^    2         3     ^^        !        ^^       ==  !        3                      ","======    ====      2   =====  ====       !          1       == !                               ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
         { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, m:["                                                                                            ","                                                                                            ","                                          F                                                 ","             B                1          $$ ==       2           P                           ","       ===            H            ===   ==== ==            3               B                  ","                 ===      ===               !         ======        ==                          ","            W    3    P            1         !  =====                ==                          ","       ===  W ^^          1   2   =====    !         1          ==                             ","======      ======================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
@@ -2535,7 +2534,6 @@
 
     window.startGameKaboom = () => {
         initAudio();
-        // Pokud jsme už rovnou v HTTP relay fallbacku, zamezíme hře.
         if (typeof isHttpRelayMode !== "undefined" && isHttpRelayMode) {
             go("http_blocked");
         } else {
@@ -2555,7 +2553,7 @@
         initAudio();
         const lvl = LVL[lvlIdx];
         setBackground(lvl.bg);
-        document.getElementById('game-wrapper').style.backgroundColor = `rgb(${lvl.bg.join(',')})`; // Oprava Firefox pozadí
+        document.getElementById('game-wrapper').style.backgroundColor = `rgb(${lvl.bg.join(',')})`; 
         setGravity(lvl.g);
 
         let maxHp = Math.max(3, hp);
@@ -2620,7 +2618,6 @@
             }
         });
 
-        // Deterministické ID pro správnou síťovou synchronizaci
         let eIdx = 0; get("enemy").forEach(e => { e.eId = "e_" + (eIdx++); });
         let hIdx = 0; get("moving_h").forEach(m => { m.mId = "h_" + (hIdx++); });
         let vIdx = 0; get("moving_v").forEach(m => { m.mId = "v_" + (vIdx++); });
@@ -2839,7 +2836,6 @@
         onKeyPress("space", doShoot); 
         onKeyPress("w", doJump);
 
-        // SYNC METODY PRO KLIENTA
         window.handleGameSync = (senderId, data) => {
             if (data.lvl !== lvlIdx) return;
             if (!remotePlayers[senderId]) {
@@ -2881,12 +2877,12 @@
         };
 
         window.handleEnemySync = (enemiesData) => {
-            if (window.chat_isHost()) return; // Master ignoruje, řídí je lokálně
+            if (window.chat_isHost()) return;
+            
             enemiesData.forEach(ed => {
                 const en = get("enemy").find(e => e.eId === ed.id);
                 if (en) {
-                    en.pos.x = ed.x;
-                    en.pos.y = ed.y;
+                    en.targetPos = vec2(ed.x, ed.y);
                     en.hp = ed.hp;
                     en.flipX = ed.flipX;
                 }
@@ -2900,6 +2896,8 @@
                 if (m) {
                     m.pos.x = md.x;
                     m.pos.y = md.y;
+                    if (md.vx !== undefined) m.vx = md.vx;
+                    if (md.vy !== undefined) m.vy = md.vy;
                 }
             });
         };
@@ -2942,8 +2940,7 @@
         onUpdate(() => {
             if (!player.exists() || playerDead) return;
 
-            // Player pozice sync
-            if (time() - lastSyncTime > 0.066) {
+            if (time() - lastSyncTime > 0.04) {
                 lastSyncTime = time();
                 if (typeof window.broadcastGameSync === 'function') {
                     window.broadcastGameSync({
@@ -2956,18 +2953,16 @@
                 }
             }
 
-            // Sync Entit (Master)
-            if (window.chat_isHost() && time() - lastMapSyncTime > 0.1) {
+            if (window.chat_isHost() && time() - lastMapSyncTime > 0.05) {
                 lastMapSyncTime = time();
-                
                 const enemiesData = get("enemy").map(e => ({
                     id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: e.flipX || false
                 }));
                 if (typeof window.broadcastEnemySync === 'function') window.broadcastEnemySync(enemiesData);
 
                 const mapData = [];
-                get("moving_h").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y }));
-                get("moving_v").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y }));
+                get("moving_h").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vx: m.vx }));
+                get("moving_v").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vy: m.vy }));
                 if (typeof window.broadcastMapSync === 'function' && mapData.length > 0) window.broadcastMapSync(mapData);
             }
             
@@ -3057,20 +3052,42 @@
 
             if (debugVisible && Math.floor(time()*60)%10 === 0) {
                 const remoteIdsStr = Object.keys(remotePlayers).join(', ');
-                const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
-                               `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
-                               `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
-                               `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
-                               `${TEXTS.debugEnemies(get("enemy").length)}\n${TEXTS.debugCoins(get("coin").length)}\n` +
-                               `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
+                const dbgTxt = `${TEXTS.debugTitle}
+${TEXTS.debugLevel(lvlIdx+1)}
+${TEXTS.debugHP(hp, maxHp)}
+` +
+                               `${TEXTS.debugAmmo(ammo)}
+${TEXTS.debugScore(score)}
+${TEXTS.debugPos(player.pos.x, player.pos.y)}
+` +
+                               `${TEXTS.debugVel(player.cVel)}
+${TEXTS.debugGround(player.isGrounded())}
+` +
+                               `${TEXTS.debugStun(player.stun)}
+${TEXTS.debugGravity(lvl.g)}
+` +
+                               `${TEXTS.debugEnemies(get("enemy").length)}
+${TEXTS.debugCoins(get("coin").length)}
+` +
+                               `${TEXTS.debugFPS(Math.round(1/dt()))}
+${TEXTS.debugTime(time())}
+` +
                                `Peers: ${remoteIdsStr}`;
                 document.getElementById("debug-content").innerText = dbgTxt;
             }
         });
 
-        // AI řídí pouze Host, Spokes jen čekají na packet enemy-sync
         onUpdate("enemy", (e) => {
-            if (!window.chat_isHost() || !e.pos || playerDead) return;
+            if (!window.chat_isHost()) {
+                if (e.gravityScale !== 0) e.gravityScale = 0;
+                if (e.weight !== 0) e.weight = 0;
+                if (e.targetPos) {
+                    e.pos.x = lerp(e.pos.x, e.targetPos.x, 20 * dt());
+                    e.pos.y = lerp(e.pos.y, e.targetPos.y, 20 * dt());
+                }
+                return;
+            }
+
             if (e.stunTimer > 0) { 
                 e.stunTimer -= dt(); e.color = rgb(255,100,100); 
                 if (e.stunTimer <= 0) e.color = rgb(ec[0],ec[1],ec[2]); return; 
@@ -3104,17 +3121,14 @@
             spawnDust(w.pos); playSound(300, 'square', 0.1, 0.05); 
         });
 
-        // Trefení nepřátelského hráče po síti
         onCollide("bullet", "remote_player", (b, rp) => {
             destroy(b);
             spawnBlood(rp.pos, 5);
-            if (typeof window.broadcastPlayerHit === 'function') {
-                window.broadcastPlayerHit(rp.id);
-            }
+            if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(rp.id);
         });
         
         onCollide("bullet","enemy",(b,e)=>{
-            if (!window.chat_isHost()) { destroy(b); spawnBlood(e.pos, 5); return; } // AI/Zdraví kontroluje Host
+            if (!window.chat_isHost()) { destroy(b); spawnBlood(e.pos, 5); return; }
             destroy(b); spawnBlood(e.pos, 5); e.hp--; playSound(150, 'sawtooth', 0.1, 0.05);
             if(e.hp<=0){ 
                 const ep=e.pos.clone(); destroy(e); 
@@ -3160,7 +3174,6 @@
             if(!playerDead){ 
                 playerDead=true; 
                 if(typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(lvlIdx + 1);
-                
                 if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
                 else go("victory", score); 
             } 
@@ -3214,6 +3227,7 @@
         onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
     });
 
+    go("game", 0, 3, 15, 0);
 </script>
 </body>
 </html>
