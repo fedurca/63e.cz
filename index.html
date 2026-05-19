@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v15 - Robust Sync & Telemetry</title>
+    <title>P2P v15 - Refactored & Optimized</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -26,7 +26,6 @@
             user-select: none; -webkit-user-select: none;
         }
 
-        /* === HERNÍ SEKCE === */
         #game-wrapper {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             background-color: #000; z-index: 1; overflow: hidden;
@@ -41,7 +40,6 @@
         #debug-panel-game button { display: block; width: 100%; margin-bottom: 8px; padding: 6px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 3px; font-size: 11px; }
         #debug-toggle { position: absolute; top: 8px; right: 8px; z-index: 10001; background: rgba(0,0,0,0.7); color: #0f0; border: 1px solid #0f0; width: 34px; height: 34px; font-size: 18px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
 
-        /* === CHAT SEKCE === */
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
             display: flex; flex-direction: column; z-index: 100;
@@ -164,7 +162,7 @@
     <div class="setup-box">
         <h2>Vstup do hry a sítě</h2>
         <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky po připojení.</p>
-        <input type="text" id="username" placeholder="Tvá přezdívka" oninput="localStorage.setItem('chat_nickname', this.value.trim())">
+        <input type="text" id="username" placeholder="Tvá přezdívka">
         <button id="join-btn" onclick="initSystem()">Připojit a hrát</button>
     </div>
 </div>
@@ -186,7 +184,7 @@
             <div id="input-area">
                 <div id="ui-my-name">...</div>
                 <input type="file" id="file-input" onchange="handleFileUpload(event)">
-                <button class="btn-attach" id="btn-attach" onclick="document.getElementById('file-input').click()" disabled title="Poslat soubor">📎</button>
+                <button class="btn-attach" id="btn-attach" onclick="DOM.fileInput.click()" disabled title="Poslat soubor">📎</button>
                 <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
                 <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
             </div>
@@ -243,15 +241,46 @@
 </div>
 
 <script>
+    // CACHING DOM ELEMENTS PRO OPTIMALIZACI (zabrání zbytečnému DOM traversingu při každém framu/ticku)
+    const DOM = {
+        app: document.getElementById('app'),
+        chatToggleBtn: document.getElementById('chat-toggle-btn'),
+        chatArea: document.getElementById('chat-area'),
+        chatInput: document.getElementById('chat-input'),
+        sendBtn: document.getElementById('send-btn'),
+        btnAttach: document.getElementById('btn-attach'),
+        btnClearHistory: document.getElementById('btn-clear-history'),
+        uiRole: document.getElementById('ui-role'),
+        statusDot: document.getElementById('status-dot'),
+        statusTimer: document.getElementById('status-timer'),
+        uiMyName: document.getElementById('ui-my-name'),
+        uiUserCount: document.getElementById('ui-user-count'),
+        dbgNodes: document.getElementById('dbg-nodes'),
+        dbgId: document.getElementById('dbg-id'),
+        debugLog: document.getElementById('debug-log'),
+        netHealthList: document.getElementById('net-health-list'),
+        setupScreen: document.getElementById('setup-screen'),
+        username: document.getElementById('username'),
+        joinBtn: document.getElementById('join-btn'),
+        fileInput: document.getElementById('file-input'),
+        topoCanvas: document.getElementById('topo-canvas'),
+        topoTooltip: document.getElementById('topo-tooltip'),
+        remoteVideo: document.getElementById('remote-video'),
+        localVideo: document.getElementById('local-video'),
+        videoOverlay: document.getElementById('video-overlay'),
+        videoPeerName: document.getElementById('video-peer-name'),
+        btnVidMic: document.getElementById('btn-vid-mic'),
+        btnVidCam: document.getElementById('btn-vid-cam'),
+        btnVidShare: document.getElementById('btn-vid-share'),
+        incomingModal: document.getElementById('incoming-modal'),
+        incomingName: document.getElementById('incoming-name')
+    };
+
+    DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nickname', e.target.value.trim()));
+
     function toggleChat() {
-        const app = document.getElementById('app');
-        const btn = document.getElementById('chat-toggle-btn');
-        app.classList.toggle('chat-open');
-        if(app.classList.contains('chat-open')) {
-            btn.innerText = '⬇ Skrýt Chat';
-        } else {
-            btn.innerText = '💬 Chat';
-        }
+        DOM.app.classList.toggle('chat-open');
+        DOM.chatToggleBtn.innerText = DOM.app.classList.contains('chat-open') ? '⬇ Skrýt Chat' : '💬 Chat';
     }
 
     const WORKER_URL = "https://api.63e.cz";
@@ -448,7 +477,7 @@
     updateTelemetry(); 
     setInterval(updateTelemetry, 60000); 
 
-    document.getElementById('dbg-id').innerText = myId;
+    DOM.dbgId.innerText = myId;
 
     window.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search); 
@@ -468,23 +497,20 @@
         
         if (urlMsg) { 
             pendingAutoMsg = decodeURIComponent(urlMsg); 
-            document.getElementById('chat-input').value = pendingAutoMsg; 
+            DOM.chatInput.value = pendingAutoMsg; 
         }
         
         if (urlNick) { 
-            document.getElementById('username').value = decodeURIComponent(urlNick); 
-            localStorage.setItem('chat_nickname', document.getElementById('username').value); 
-            logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info'); 
+            DOM.username.value = decodeURIComponent(urlNick); 
+            localStorage.setItem('chat_nickname', DOM.username.value); 
+            logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info', myId); 
             setTimeout(() => { initSystem(); }, 500); 
         } else { 
             const savedName = localStorage.getItem('chat_nickname'); 
-            if (savedName) document.getElementById('username').value = savedName; 
+            if (savedName) DOM.username.value = savedName; 
         }
 
-        const canvas = document.getElementById('topo-canvas'); 
-        const tooltip = document.getElementById('topo-tooltip');
-        
-        canvas.addEventListener('mousemove', (e) => { 
+        DOM.topoCanvas.addEventListener('mousemove', (e) => { 
             const mouseX = e.offsetX; 
             const mouseY = e.offsetY; 
             let hoveredEdge = null; 
@@ -505,12 +531,12 @@
             }
             
             if (hoveredEdge) { 
-                tooltip.style.display = 'block'; 
+                DOM.topoTooltip.style.display = 'block'; 
                 let ttX = mouseX + 15; 
                 let ttY = mouseY + 15; 
-                if (ttX + 160 > canvas.width) ttX = mouseX - 170; 
-                tooltip.style.left = ttX + 'px'; 
-                tooltip.style.top = ttY + 'px'; 
+                if (ttX + 160 > DOM.topoCanvas.width) ttX = mouseX - 170; 
+                DOM.topoTooltip.style.left = ttX + 'px'; 
+                DOM.topoTooltip.style.top = ttY + 'px'; 
                 
                 const name = knownNodes[hoveredEdge.id] ? escapeHTML(knownNodes[hoveredEdge.id].name.substr(0,12)) : hoveredEdge.id; 
                 const s = hoveredEdge.stats; 
@@ -521,13 +547,13 @@
                 let serverStr = s.server || 'Local LAN'; 
                 const direction = (!isDnsHost && hoveredEdge.id === myId) ? `Ty ↔ Master` : `Master ↔ ${name}`; 
                 
-                tooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>${direction}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`; 
+                DOM.topoTooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>${direction}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`; 
             } else { 
-                tooltip.style.display = 'none'; 
+                DOM.topoTooltip.style.display = 'none'; 
             } 
         });
         
-        canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none'); 
+        DOM.topoCanvas.addEventListener('mouseleave', () => DOM.topoTooltip.style.display = 'none'); 
         window.addEventListener('resize', drawTopology);
     });
 
@@ -538,12 +564,11 @@
         
         const m = String(Math.floor(appSessionTime / 60)).padStart(2, '0'); 
         const s = String(appSessionTime % 60).padStart(2, '0'); 
-        const timerEl = document.getElementById('status-timer'); 
         
-        if(timerEl) timerEl.innerText = `${m}:${s}`; 
+        if(DOM.statusTimer) DOM.statusTimer.innerText = `${m}:${s}`; 
         
         if (delta > 10000) { 
-            logDebug(`[WATCHDOG] Detekováno uspání tabu/systému. Resetuji síť...`, "error"); 
+            logDebug(`[WATCHDOG] Detekováno uspání tabu/systému. Resetuji síť...`, "error", myId); 
             appSessionTime = 0; 
             fullResetAndReconnect(); 
         } 
@@ -554,7 +579,7 @@
         if (document.visibilityState === 'visible') { 
             const delta = Date.now() - watchdogTick; 
             if (delta > 10000) { 
-                logDebug(`[WATCHDOG] Návrat na tab po uspání. Vynucuji reset...`, "error"); 
+                logDebug(`[WATCHDOG] Návrat na tab po uspání. Vynucuji reset...`, "error", myId); 
                 appSessionTime = 0; 
                 fullResetAndReconnect(); 
                 watchdogTick = Date.now(); 
@@ -639,13 +664,12 @@
     });
 
     function logDebug(msg, type = 'info', sourceId = null) { 
-        const logWindow = document.getElementById('debug-log'); 
         const idStr = sourceId || (typeof myId !== 'undefined' ? myId : 'SYS');
         
-        if (logWindow) {
+        if (DOM.debugLog) {
             const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
-            logWindow.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
-            logWindow.scrollTop = logWindow.scrollHeight; 
+            DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
+            DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight; 
         }
 
         try {
@@ -677,15 +701,16 @@
     }
     
     function updateDebugStats(stat, value) { 
-        document.getElementById(`dbg-${stat}`).innerText = value; 
+        const el = document.getElementById(`dbg-${stat}`);
+        if(el) el.innerText = value; 
     }
 
     function unlockChat() {
-        document.getElementById('setup-screen').style.display = 'none'; 
-        document.getElementById('chat-input').disabled = false; 
-        document.getElementById('send-btn').disabled = false; 
-        document.getElementById('btn-attach').disabled = false; 
-        document.getElementById('btn-clear-history').style.display = 'inline-block';
+        DOM.setupScreen.style.display = 'none'; 
+        DOM.chatInput.disabled = false; 
+        DOM.sendBtn.disabled = false; 
+        DOM.btnAttach.disabled = false; 
+        DOM.btnClearHistory.style.display = 'inline-block';
         
         let roleName = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)'; 
         let statusClass = isDnsHost ? 'host' : 'online'; 
@@ -695,15 +720,15 @@
             statusClass = 'relay'; 
         }
         
-        document.getElementById('status-dot').className = `status-dot ${statusClass}`; 
-        document.getElementById('ui-role').innerText = roleName;
+        DOM.statusDot.className = `status-dot ${statusClass}`; 
+        DOM.uiRole.innerText = roleName;
 
         if (pendingAutoMsg) { 
-            logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info'); 
+            logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info', myId); 
             const msgToSend = pendingAutoMsg; 
             pendingAutoMsg = null; 
             setTimeout(() => { 
-                document.getElementById('chat-input').value = msgToSend; 
+                DOM.chatInput.value = msgToSend; 
                 sendMsg(); 
                 window.history.replaceState({}, document.title, window.location.pathname); 
             }, 2000); 
@@ -770,16 +795,15 @@
     }
 
     function reRenderAllHistory() { 
-        const chat = document.getElementById('chat-area'); 
-        chat.innerHTML = ''; 
+        DOM.chatArea.innerHTML = ''; 
         chatHistory.forEach(msg => { 
             renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file, false, msg.id); 
         }); 
         const div = document.createElement('div'); 
         div.className = "history-divider"; 
         div.innerHTML = `<span>Konec sjednocené historie</span>`; 
-        chat.appendChild(div); 
-        chat.scrollTop = chat.scrollHeight; 
+        DOM.chatArea.appendChild(div); 
+        DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight; 
     }
     
     function loadHistory() { 
@@ -845,7 +869,6 @@
     }
 
     function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false, msgId = null) { 
-        const chat = document.getElementById('chat-area'); 
         const div = document.createElement('div'); 
         div.className = `msg msg-${type}`; 
         const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined }); 
@@ -864,7 +887,7 @@
             } else { 
                 const isImage = fileObj.dataUrl.startsWith('data:image/'); 
                 if (isImage) { 
-                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`; 
+                    contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`; 
                 } else { 
                     contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment" style="flex-direction:row; align-items:center;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`; 
                 } 
@@ -877,8 +900,8 @@
             div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${contentHtml}`; 
         } 
         
-        chat.appendChild(div); 
-        if(scroll) chat.scrollTop = chat.scrollHeight; 
+        DOM.chatArea.appendChild(div); 
+        if(scroll) DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight; 
     }
 
     function requestFile(fileId) {
@@ -913,18 +936,17 @@
         }; 
         
         pc.ontrack = (e) => { 
-            const remoteVideo = document.getElementById('remote-video'); 
-            if (remoteVideo.srcObject !== e.streams[0]) remoteVideo.srcObject = e.streams[0]; 
+            if (DOM.remoteVideo.srcObject !== e.streams[0]) DOM.remoteVideo.srcObject = e.streams[0]; 
         }; 
         
         try { 
             logDebug(`[VIDEO] Žádám systém o práva pro kameru a mikrofon...`, 'webrtc', myId); 
             activeCall.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); 
             logDebug(`[VIDEO] Práva na AV stream úspěšně udělena.`, 'success', myId); 
-            document.getElementById('local-video').srcObject = activeCall.localStream; 
+            DOM.localVideo.srcObject = activeCall.localStream; 
             activeCall.localStream.getTracks().forEach(track => pc.addTrack(track, activeCall.localStream)); 
-            document.getElementById('video-overlay').style.display = 'flex'; 
-            document.getElementById('video-peer-name').innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`; 
+            DOM.videoOverlay.style.display = 'flex'; 
+            DOM.videoPeerName.innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`; 
         } catch (e) { 
             logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error', myId); 
             alert("Pro přijetí/vytvoření hovoru je nutné povolit kameru a mikrofon."); 
@@ -964,8 +986,8 @@
                 sendVideoSignal(senderId, 'reject', 'busy'); 
             } else { 
                 incomingCallData = { senderId, sdp: data }; 
-                document.getElementById('incoming-name').innerText = knownNodes[senderId]?.name || senderId; 
-                document.getElementById('incoming-modal').style.display = 'block'; 
+                DOM.incomingName.innerText = knownNodes[senderId]?.name || senderId; 
+                DOM.incomingModal.style.display = 'block'; 
                 logDebug(`[VIDEO] Příchozí hovor od ${knownNodes[senderId]?.name || senderId}.`, 'info', senderId); 
             } 
         } else if (action === 'answer') { 
@@ -987,7 +1009,7 @@
     }
     
     async function acceptCall() { 
-        document.getElementById('incoming-modal').style.display = 'none'; 
+        DOM.incomingModal.style.display = 'none'; 
         if (!incomingCallData) return; 
         
         const senderId = incomingCallData.senderId; 
@@ -1014,7 +1036,7 @@
     }
     
     function rejectCall() { 
-        document.getElementById('incoming-modal').style.display = 'none'; 
+        DOM.incomingModal.style.display = 'none'; 
         if (incomingCallData) { 
             sendVideoSignal(incomingCallData.senderId, 'reject', 'declined'); 
             incomingCallData = null; 
@@ -1034,12 +1056,12 @@
         activeCall.isVideoMuted = false; 
         activeCall.isScreenSharing = false; 
         
-        document.getElementById('remote-video').srcObject = null; 
-        document.getElementById('local-video').srcObject = null; 
-        document.getElementById('video-overlay').style.display = 'none'; 
-        document.getElementById('btn-vid-mic').className = 'video-btn'; 
-        document.getElementById('btn-vid-cam').className = 'video-btn'; 
-        document.getElementById('btn-vid-share').className = 'video-btn'; 
+        DOM.remoteVideo.srcObject = null; 
+        DOM.localVideo.srcObject = null; 
+        DOM.videoOverlay.style.display = 'none'; 
+        DOM.btnVidMic.className = 'video-btn'; 
+        DOM.btnVidCam.className = 'video-btn'; 
+        DOM.btnVidShare.className = 'video-btn'; 
         
         if (wasActive) logDebug(`[VIDEO] Hovor ukončen.`, 'info', myId); 
     }
@@ -1048,39 +1070,36 @@
         if (!activeCall.localStream) return; 
         activeCall.isAudioMuted = !activeCall.isAudioMuted; 
         activeCall.localStream.getAudioTracks().forEach(t => t.enabled = !activeCall.isAudioMuted); 
-        const btn = document.getElementById('btn-vid-mic'); 
-        btn.innerText = activeCall.isAudioMuted ? '🔇 Zapnout mik' : '🎤 Vypnout mik'; 
-        btn.className = activeCall.isAudioMuted ? 'video-btn active' : 'video-btn'; 
+        DOM.btnVidMic.innerText = activeCall.isAudioMuted ? '🔇 Zapnout mik' : '🎤 Vypnout mik'; 
+        DOM.btnVidMic.className = activeCall.isAudioMuted ? 'video-btn active' : 'video-btn'; 
     }
     
     function toggleVideo() { 
         if (!activeCall.localStream) return; 
         activeCall.isVideoMuted = !activeCall.isVideoMuted; 
         activeCall.localStream.getVideoTracks().forEach(t => t.enabled = !activeCall.isVideoMuted); 
-        const btn = document.getElementById('btn-vid-cam'); 
-        btn.innerText = activeCall.isVideoMuted ? '📸 Zapnout cam' : '📷 Vypnout cam'; 
-        btn.className = activeCall.isVideoMuted ? 'video-btn active' : 'video-btn'; 
+        DOM.btnVidCam.innerText = activeCall.isVideoMuted ? '📸 Zapnout cam' : '📷 Vypnout cam'; 
+        DOM.btnVidCam.className = activeCall.isVideoMuted ? 'video-btn active' : 'video-btn'; 
     }
     
     async function toggleScreenShare() { 
         if (!activeCall.pc) return; 
         const videoSender = activeCall.pc.getSenders().find(s => s.track.kind === 'video'); 
         if (!videoSender) return; 
-        const btn = document.getElementById('btn-vid-share'); 
         
         if (!activeCall.isScreenSharing) { 
             try { 
                 activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); 
                 const screenTrack = activeCall.screenStream.getVideoTracks()[0]; 
                 await videoSender.replaceTrack(screenTrack); 
-                document.getElementById('local-video').srcObject = activeCall.screenStream; 
+                DOM.localVideo.srcObject = activeCall.screenStream; 
                 activeCall.isScreenSharing = true; 
-                btn.className = 'video-btn active'; 
-                btn.innerText = '🖥️ Zastavit obs'; 
-                screenTrack.onended = () => { revertToCamera(videoSender, btn); }; 
+                DOM.btnVidShare.className = 'video-btn active'; 
+                DOM.btnVidShare.innerText = '🖥️ Zastavit obs'; 
+                screenTrack.onended = () => { revertToCamera(videoSender, DOM.btnVidShare); }; 
             } catch (e) { logDebug(`Sdílení zrušeno: ${e.message}`, 'error', myId); } 
         } else { 
-            revertToCamera(videoSender, btn); 
+            revertToCamera(videoSender, DOM.btnVidShare); 
         } 
     }
     
@@ -1092,7 +1111,7 @@
         if (activeCall.localStream) { 
             const camTrack = activeCall.localStream.getVideoTracks()[0]; 
             if (camTrack) await videoSender.replaceTrack(camTrack); 
-            document.getElementById('local-video').srcObject = activeCall.localStream; 
+            DOM.localVideo.srcObject = activeCall.localStream; 
         } 
         activeCall.isScreenSharing = false; 
         if(btn) { 
@@ -1259,7 +1278,7 @@
                 if (isKeyChanged) delete knownNodes[msg.sender].derivedAesKey;
                 
                 updateDebugStats('nodes', Object.keys(knownNodes).length); 
-                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length;
+                DOM.uiUserCount.innerText = Object.keys(knownNodes).length;
                 
                 if (isNewNode) { 
                     const safeName = escapeHTML(msg.name); 
@@ -1444,20 +1463,19 @@
                 delete knownNodes[msg.target]; 
                 if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(msg.target);
                 updateDebugStats('nodes', Object.keys(knownNodes).length); 
-                document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length; 
+                DOM.uiUserCount.innerText = Object.keys(knownNodes).length; 
             } 
         }
     }
 
     function drawTopology() {
-        const canvas = document.getElementById('topo-canvas'); 
-        if (!canvas) return; 
-        const ctx = canvas.getContext('2d'); 
-        const w = canvas.offsetWidth || canvas.width; 
-        const h = canvas.offsetHeight || canvas.height; 
+        if (!DOM.topoCanvas) return; 
+        const ctx = DOM.topoCanvas.getContext('2d'); 
+        const w = DOM.topoCanvas.offsetWidth || DOM.topoCanvas.width; 
+        const h = DOM.topoCanvas.offsetHeight || DOM.topoCanvas.height; 
         
-        canvas.width = w; 
-        canvas.height = h; 
+        DOM.topoCanvas.width = w; 
+        DOM.topoCanvas.height = h; 
         ctx.clearRect(0, 0, w, h); 
         drawnEdges = []; 
         
@@ -1507,7 +1525,7 @@
     }
 
     async function sendMsg() { 
-        const text = document.getElementById('chat-input').value.trim(); 
+        const text = DOM.chatInput.value.trim(); 
         if (!text) return; 
         
         const timeNow = Date.now(); 
@@ -1525,7 +1543,7 @@
         saveMessage({ id: msgId, author: myName, text: text, time: timeNow }); 
         renderMessage('Ty', text, 'self', timeNow, true, null, false, msgId); 
         routeMessage(msgObj); 
-        document.getElementById('chat-input').value = ''; 
+        DOM.chatInput.value = ''; 
     }
     
     async function handleFileUpload(event) { 
@@ -1882,8 +1900,7 @@
     }, 5000);
 
     setInterval(() => {
-        const list = document.getElementById('net-health-list'); 
-        if(!list) return; 
+        if(!DOM.netHealthList) return; 
         
         let html = '<table><tr><th>Uzel</th><th>Role</th><th>Linka</th><th>RTT</th><th>Bitrate</th><th>Status</th></tr>'; 
         const now = Date.now(); 
@@ -1907,7 +1924,7 @@
                     cleanupConnection(id); 
                     delete knownNodes[id]; 
                     if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(id);
-                    document.getElementById('ui-user-count').innerText = Object.keys(knownNodes).length; 
+                    DOM.uiUserCount.innerText = Object.keys(knownNodes).length; 
                 } 
             }
 
@@ -1960,7 +1977,7 @@
         }); 
         
         html += '</table>'; 
-        list.innerHTML = html;
+        DOM.netHealthList.innerHTML = html;
     }, 1000);
 
     async function fullResetAndReconnect() {
@@ -2012,7 +2029,7 @@
         isCheckingIsolation = true; 
         
         if (joinInterval) clearInterval(joinInterval); 
-        document.getElementById('ui-role').innerText = 'Izolován';
+        DOM.uiRole.innerText = 'Izolován';
         
         const hostAlive = await readSignal('host-alive'); 
         const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
@@ -2042,15 +2059,15 @@
     }
 
     async function initSystem() {
-        document.getElementById('join-btn').disabled = true; 
-        document.getElementById('ui-role').innerText = "Kontroluji API..."; 
+        DOM.joinBtn.disabled = true; 
+        DOM.uiRole.innerText = "Kontroluji API..."; 
         appSessionTime = 0; 
         
-        myName = document.getElementById('username').value.trim() || 'Anonym_' + myId; 
+        myName = DOM.username.value.trim() || 'Anonym_' + myId; 
         localStorage.setItem('chat_nickname', myName); 
-        document.getElementById('ui-my-name').innerText = escapeHTML(myName); 
+        DOM.uiMyName.innerText = escapeHTML(myName); 
         
-        document.getElementById('setup-screen').style.display = 'none'; 
+        DOM.setupScreen.style.display = 'none'; 
         loadHistory(); 
         await initCrypto();
         
@@ -2163,7 +2180,7 @@
     }
 
     async function joinViaDns() {
-        document.getElementById('ui-role').innerText = "Spojuji se (WebRTC)..."; 
+        DOM.uiRole.innerText = "Spojuji se (WebRTC)..."; 
         currentSessionId = generateMsgId(); 
         writeSignal(`offer-${myId}`, { consumed: true, ts: 0 }); 
         await createP2PNode('hub', true, true, currentSessionId); 
@@ -2288,7 +2305,7 @@
 
     let audioCtx = null;
     
-    // Globální check na Host/Spoke, který se volá dynamicky, aby se nemohl zaseknout do state!
+    // Globální funkce zjišťující roli – chrání před tím, aby Spoke uzel začal počítat pozice (lerp bug)
     const getIsHost = () => typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
 
     function initAudio() {
@@ -2479,41 +2496,186 @@
     loadSprite("cloud", `data:image/svg+xml;utf8,<svg width="120" height="60" xmlns="http://www.w3.org/2000/svg"><ellipse cx="40" cy="35" rx="30" ry="20" fill="white" opacity="0.15"/><ellipse cx="70" cy="25" rx="35" ry="22" fill="white" opacity="0.15"/><ellipse cx="55" cy="40" rx="25" ry="15" fill="white" opacity="0.12"/></svg>`);
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
-    const RAW_LVL = [
-        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], m:["                                                                                            ","                       $$$ P   +                                                            ","             3         1      1                                                            F ","                                                 3                      P             ==","         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==","       ======  11      ======      =========     1        ==         ======  11      ======      ==","            1    ===        1  1   !    ^^   1            ==                  ===        3    ==","             3         P            !   ===                ==            P                    ==","             3         3             !1  1  1        2      ==         1  3    1    2              ==","         1       ======            !             1      ==      ======                        ==","======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], m:["                                                                                            ","                  1        B                2     +  P                                        ","             2          $$$                    1                                          F ","                                             P                    B                     ==","         +       3   3        B   W        $$      P      ==         +       3     P      1   W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","               3   1        1      W   1  3        ^^      ==                  3          1      W    ==","            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====  2         W         1          == ======   ====    ====    2        W   ==","                 ======          ==============================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, m:["                                                                                            ","                               1                             1      2                      ","                   B            $$$      1      +           F                                  ","             P      1         ===            ==   3          ==          2                     ","                   1       1              ==              ==  P                               ","                 1     B    ===   ===   1   ==   1          == ===         1                   ","       ======   ===   ===            1    ===   ====      ==  !                               ","          ^^    2         3     ^^        !        ^^       ==  !        3                     ","======   ====      2   =====  ====        !          1       == !                               ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, m:["                                                                                            ","                                                                                            ","                                         F                                                ","             B                1          $$ ==       2            P                           ","       ===            +            ===   ==== ==            3               B                  ","                 ===      ===               !         ======        ==                          ","           W    3    P            1         !  =====                ==                          ","       ===  W ^^          1   2   =====    !         1          ==                              ","======      ======================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255], m:["                                                                                            ","                                                                                            ","                                         F                                                ","             3                2          $$ ==                 1                            ","       ===            B            ===   ==== ==            1              P                   ","          W      ===      ===               !    B        ======        ==                        ","          W          P             1         !  =====                ==                          ","          W ^^         3        =====       !         2          ==                              ","======   ====    ====    ====    ====    ====    ====    ==========================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0], m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                               1          ==  1       ==             P                       ","       ===          3      ==========        == ======   ==       3                              ","          W      ======         P        === !            ==                                      ","          W            1       B             !            ==                                      ","          W ^^                               !            ==                                      ","======   ====    2                    1               ==========================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255], m:["                                                                                            ","                                                                                            F ","                                                                                           ==","                                         $$ ==   +      ==                                      ","       ======         B       3          ====   ===     ==               P                   ","          W                1          1       !   ^^      ==        B                             ","          W  ^^            =====      =====  !  ===      ==                                      ","======   ====   ====            2            !            ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true, m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                         2               $$ ==   P      ==                                      ","       ======         1                 ====   ===     ==              P                   ","          W      B         1          3      !   ^^      ==                                      ","          W  ^^            =====      =====  !  ===      ==                                      ","======   ====   ====       1               !            ==                                      ","             ======                       =======================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true, m:["                                                                                            ","                                                                                            ","                                          F              ==                                  ","                 B       3           2      ==  P       ==                                      ","       ======   ===   ===                $$ == ===      ==             P                   ","          W                 1            ==== !         ==                                      ","          W             === ====   3         !  ^^      ==                                      ","======                       1       ====== !  ===     ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], m:["                                                                                            ","                                                                                            ","                                         F            ==                                      ","                 $$     P                ==   +        ==                                      ","       ======   ===    ===        1       ====   ===      ==             B                          ","          W             2      1            !   ^^      ==        ======                        ","          W  ^^         =====  =====        !    ===      ==             P                          ","======   ====    ====            1         !              ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], m:["                                                                                            ","                                                                                            ","                                                                                           F ","                                                                                           ==","         +       1       2        W       $$      P      ==         +       1               W    ==","       ======   ===                W      ====    ===     ==       ======   ===                W    ==","                 3          1      W   1          ^^      ==                3          1      W    ==","            ^^             =====   W =====       ===      ==            ^^             =====   W    ==","======   ====    ====            W         P             == ======   ====    ====            W   ==","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] },
-        { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, m:["                                                                                            ","                                                                                            ","                                         F                                                ","                 B                    $$ ==            3    X    3                             ","       ======   ===        1  1        ==== ==      P      =========================================","          W          W        1   1      !   ===          ==                                      ","          W  ^^      W  ^^   === ===     !    1            ==            P                          ","======   ====      ====                !                ==                                      ","====================================================================================================","                                                                                            ","                                                                                            ","                                                                                            ","                                                                                            "] }
+    // Optimalizace formátu map – umožňuje přehledný vizuální zápis, který se následně automaticky naparsuje
+    const mapSuffix = [
+        "                            ", "                            ", "                     F      ", "                    ====    ", 
+        "                            ", "               U            ", "                            ", "               V            ", 
+        "                            ", "               D            ", "====    L   H   R           ", "                            ", 
+        "                            ", "                            "  
     ];
 
-    const mapSuffix = [
-        "                            ", 
-        "                            ", 
-        "                     F      ", 
-        "                    ====    ", 
-        "                            ", 
-        "               U            ", 
-        "                            ", 
-        "               V            ", 
-        "                            ", 
-        "               D            ", 
-        "====    L   H   R           ", 
-        "                            ", 
-        "                            ", 
-        "                            "  
+    const RAW_LVL = [
+        { 
+            bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], 
+            core: [
+                "",
+                "                       $$$ P   +",
+                "             3         1      1",
+                "                                                 3                      P             ==",
+                "         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==",
+                "       ======  11      ======      =========     1        ==         ======  11      ======      ==",
+                "            1    ===        1  1   !    ^^   1            ==                  ===        3    ==",
+                "             3         P            !   ===                ==            P                    ==",
+                "             3         3             !1  1  1        2      ==         1  3    1    2              ==",
+                "         1       ======            !             1      ==      ======                        ==",
+                "======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========",
+                "", "", ""
+            ]
+        },
+        { 
+            bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], 
+            core: [
+                "",
+                "                  1        B                2     +  P",
+                "             2          $$$                    1",
+                "                                             P                    B                     ==",
+                "         +       3   3        B   W        $$      P      ==         +       3     P      1   W    ==",
+                "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
+                "               3   1        1      W   1  3        ^^      ==                  3          1      W    ==",
+                "            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==",
+                "======   ====    ====  2         W         1          == ======   ====    ====    2        W   ==",
+                "                 ======          ==============================================================",
+                "", "", "", ""
+            ]
+        },
+        { 
+            bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, 
+            core: [
+                "",
+                "                               1                             1      2",
+                "                   B            $$$      1      +",
+                "             P      1         ===            ==   3          ==          2",
+                "                   1       1              ==              ==  P",
+                "                 1     B    ===   ===   1   ==   1          == ===         1",
+                "       ======   ===   ===            1    ===   ====      ==  !",
+                "          ^^    2         3     ^^        !        ^^       ==  !        3",
+                "======   ====      2   =====  ====        !          1       == !",
+                "====================================================================================================",
+                "", "", "", ""
+            ]
+        },
+        { 
+            bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, 
+            core: [
+                "", "", "",
+                "             B                1          $$ ==       2            P",
+                "       ===            +            ===   ==== ==            3               B",
+                "                 ===      ===               !         ======        ==",
+                "           W    3    P            1         !  =====                ==",
+                "       ===  W ^^          1   2   =====    !         1          ==",
+                "======      ======================================================================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255], 
+            core: [
+                "", "", "",
+                "             3                2          $$ ==",
+                "       ===            B            ===   ==== ==            1              P",
+                "          W      ===      ===               !    B        ======        ==",
+                "          W          P             1         !  =====                ==",
+                "          W ^^         3        =====       !         2          ==",
+                "======   ====    ====    ====    ====    ====    ====    ==========================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0], 
+            core: [
+                "", "", "",
+                "                               1          ==  1       ==             P",
+                "       ===          3      ==========        == ======   ==       3",
+                "          W      ======         P        === !            ==",
+                "          W            1       B             !            ==",
+                "          W ^^                               !            ==",
+                "======   ====    2                    1               ==========================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255], 
+            core: [
+                "", "", "",
+                "                                         $$ ==   +      ==",
+                "       ======         B       3          ====   ===     ==               P",
+                "          W                1          1       !   ^^      ==        B",
+                "          W  ^^            =====      =====  !  ===      ==",
+                "======   ====   ====            2            !            ==",
+                "====================================================================================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true, 
+            core: [
+                "", "", "",
+                "                         2               $$ ==   P      ==",
+                "       ======         1                 ====   ===     ==              P",
+                "          W      B         1          3      !   ^^      ==",
+                "          W  ^^            =====      =====  !  ===      ==",
+                "======   ====   ====       1               !            ==",
+                "             ======                       =======================================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true, 
+            core: [
+                "", "", "",
+                "                 B       3           2      ==  P       ==",
+                "       ======   ===   ===                $$ == ===      ==             P",
+                "          W                 1            ==== !         ==",
+                "          W             === ====   3         !  ^^      ==",
+                "======                       1       ====== !  ===     ==",
+                "====================================================================================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], 
+            core: [
+                "", "", "",
+                "                 $$     P                ==   +        ==",
+                "       ======   ===    ===        1       ====   ===      ==             B",
+                "          W             2      1            !   ^^      ==        ======",
+                "          W  ^^         =====  =====        !    ===      ==             P",
+                "======   ====    ====            1         !              ==",
+                "====================================================================================================",
+                "", "", "", "", ""
+            ]
+        },
+        { 
+            bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], 
+            core: [
+                "", "", "", "",
+                "         +       1       2        W       $$      P      ==         +       1               W    ==",
+                "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
+                "                 3          1      W   1          ^^      ==                3          1      W    ==",
+                "            ^^             =====   W =====       ===      ==            ^^             =====   W    ==",
+                "======   ====    ====            W         P             == ======   ====    ====            W   ==",
+                "====================================================================================================",
+                "", "", "", ""
+            ]
+        },
+        { 
+            bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, 
+            core: [
+                "", "", "",
+                "                 B                    $$ ==            3    X    3",
+                "       ======   ===        1  1        ==== ==      P      =========================================",
+                "          W          W        1   1      !   ===",
+                "          W  ^^      W  ^^   === ===     !    1            ==            P",
+                "======   ====      ====                !                ==",
+                "====================================================================================================",
+                "", "", "", "", ""
+            ]
+        }
     ];
 
     const LVL = RAW_LVL.map(l => ({ 
         ...l, 
-        m: l.m.map((row, i) => row.substring(0, 92).padEnd(92, " ") + mapSuffix[i]) 
+        m: l.core.map((row, i) => row.padEnd(92, " ") + mapSuffix[i]) 
     }));
 
     const debugPanel = document.getElementById("debug-panel-game");
@@ -2569,7 +2731,6 @@
         let coyoteTime = 0; 
         let jumpBuffer = 0;
         
-        let remotePlayers = {}; 
         let playerStats = {}; 
         
         const MAP_W = lvl.m[0].length * 40; 
@@ -2626,10 +2787,13 @@
             }
         });
 
-        let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; });
-        let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; });
-        let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; });
+        // O(1) Taggování pro extrémně rychlé updaty pozic a synchronizace ze sítě
+        let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; e.use(e.eId); });
+        let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; m.use(m.mId); });
+        let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; m.use(m.mId); });
+        get("loot").forEach(l => l.use(l.lId));
 
+        // Decentralizovaný update plošin - klient jen Lerpuje to, co posílá Host!
         onUpdate("moving_h", (p) => { 
             if(getIsHost()) { 
                 p.move(p.vx, 0); 
@@ -2709,12 +2873,12 @@
             statsLabel.text = txt;
         });
 
+        // 10 SEKUNDOVÝ TELEMETRICKÝ LOG!
         loop(10, () => {
             const players = 1 + get("remote_player").length;
             const enemies = get("enemy").length;
             const loot = get("loot").length;
-            const p = get("player")[0];
-            const pStr = p ? `X:${Math.round(p.pos.x)} Y:${Math.round(p.pos.y)}` : "Mrtvý";
+            const pStr = player.exists() ? `X:${Math.round(player.pos.x)} Y:${Math.round(player.pos.y)}` : "Mrtvý";
             const role = getIsHost() ? "Master" : "Spoke";
             logDebug(`[HERNÍ TELEMETRIE] Role: ${role} | Hráčů: ${players} | Zlounů: ${enemies} | Lootu: ${loot} | Moje poz: ${pStr}`, "info", myId);
         });
@@ -2885,33 +3049,43 @@
         onKeyPress("space", doShoot); 
         onKeyPress("w", doJump);
 
+        // SYNC VZDÁLENÝCH HRÁČŮ
         window.handleGameSync = (senderId, data) => {
             if (data.lvl !== lvlIdx) return;
             playerStats[senderId] = { name: data.name || senderId, hp: data.hp || 0, score: data.score || 0 };
             
-            if (!remotePlayers[senderId]) {
-                remotePlayers[senderId] = add([
+            let rp = get(senderId)[0];
+            if (!rp) {
+                rp = add([
                     sprite("player"),
                     pos(data.x, data.y),
                     color(getPlayerColor(senderId)),
                     area({ width: 20, height: 38 }),
                     anchor("center"),
                     "remote_player",
+                    senderId, // TAG -> O(1) Search!
                     { id: senderId }
                 ]);
-                remotePlayers[senderId].add([
+                rp.add([
                     text(senderId.substring(0,6), {size: 10}),
                     pos(0, -30),
                     anchor("center"),
                     color(255,255,255)
                 ]);
             } else {
-                let rp = remotePlayers[senderId];
                 rp.targetPos = vec2(data.x, data.y);
                 rp.flipX = data.flipX;
                 if (rp.curAnim() !== data.anim) rp.play(data.anim);
             }
         };
+
+        // LERP POHYBU VZDÁLENÝCH HRÁČŮ
+        onUpdate("remote_player", (rp) => {
+            if (rp.targetPos) {
+                rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, 15 * dt());
+                rp.pos.y = lerp(rp.pos.y, rp.targetPos.y, 15 * dt());
+            }
+        });
 
         window.handleGameShoot = (senderId, data) => {
             if (data.lvl !== lvlIdx) return;
@@ -2929,15 +3103,13 @@
         window.handleEnemySync = (enemiesData) => {
             if (getIsHost()) return;
             
-            const masterIds = enemiesData.map(ed => ed.id);
+            const masterIds = new Set(enemiesData.map(ed => ed.id));
             get("enemy").forEach(e => {
-                if (!masterIds.includes(e.eId)) {
-                    destroy(e);
-                }
+                if (!masterIds.has(e.eId)) destroy(e);
             });
 
             enemiesData.forEach(ed => {
-                const en = get("enemy").find(e => e.eId === ed.id);
+                const en = get(ed.id)[0];
                 if (en) {
                     en.targetPos = vec2(ed.x, ed.y);
                     if (!en.pos || en.pos.dist(en.targetPos) > 100) {
@@ -2952,7 +3124,7 @@
         window.handleMapSync = (mapData) => {
             if (getIsHost()) return;
             mapData.forEach(md => {
-                const m = get(md.id.startsWith('h') ? "moving_h" : "moving_v").find(x => x.mId === md.id);
+                const m = get(md.id)[0];
                 if (m) {
                     m.targetPos = vec2(md.x, md.y);
                     if (md.vx !== undefined) m.vx = md.vx;
@@ -2979,7 +3151,7 @@
                     wait(0.5, () => { if(player.exists()) { player.stun = false; player.color = getPlayerColor(localId); } });
                 }
             } else {
-                let rp = remotePlayers[targetId];
+                let rp = get(targetId)[0];
                 if (rp) {
                     rp.color = rgb(255,50,50);
                     wait(0.5, () => { if(rp.exists()) rp.color = getPlayerColor(targetId); });
@@ -2995,25 +3167,21 @@
         };
 
         window.handlePlayerLeft = (id) => {
-            if (remotePlayers[id]) {
-                destroy(remotePlayers[id]);
-                delete remotePlayers[id];
-            }
+            const rp = get(id)[0];
+            if (rp) destroy(rp);
             if (playerStats[id]) delete playerStats[id];
         };
 
         window.handleLootPickup = (lId) => {
-            get("loot").forEach(l => {
-                if (l.lId === lId) destroy(l);
-            });
+            const l = get(lId)[0];
+            if (l) destroy(l);
         };
         
         window.handleLootSync = (activeLootIds) => {
             if (getIsHost()) return;
+            const idSet = new Set(activeLootIds);
             get("loot").forEach(l => {
-                if (!activeLootIds.includes(l.lId)) {
-                    destroy(l);
-                }
+                if (!idSet.has(l.lId)) destroy(l);
             });
         };
 
@@ -3038,14 +3206,6 @@
                         score: score,
                         name: myName || localId
                     });
-                }
-            }
-            
-            for (let id in remotePlayers) {
-                let rp = remotePlayers[id];
-                if (rp.targetPos) {
-                    rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, 15 * dt());
-                    rp.pos.y = lerp(rp.pos.y, rp.targetPos.y, 15 * dt());
                 }
             }
 
@@ -3150,7 +3310,7 @@
             bgNear.pos.x = -((cx-400)*0.35) % 800;
 
             if (debugVisible && Math.floor(time()*60)%10 === 0) {
-                const remoteIdsStr = Object.keys(remotePlayers).join(', ');
+                const remoteIdsStr = get("remote_player").map(rp => rp.id).join(', ');
                 const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
                                `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
                                `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
