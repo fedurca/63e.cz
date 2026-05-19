@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v13 - Sync Fix</title>
+    <title>P2P v14 - Robust Sync & Telemetry</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -638,11 +638,13 @@
         }
     });
 
-    function logDebug(msg, type = 'info') { 
+    function logDebug(msg, type = 'info', sourceId = null) { 
         const logWindow = document.getElementById('debug-log'); 
+        const idStr = sourceId || (typeof myId !== 'undefined' ? myId : 'SYS');
+        
         if (logWindow) {
             const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
-            logWindow.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${type}">${msg}</span></div>`; 
+            logWindow.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
             logWindow.scrollTop = logWindow.scrollHeight; 
         }
 
@@ -652,7 +654,7 @@
             else if (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) currentRole = "HTTP Relay";
 
             const logData = {
-                id: typeof myId !== 'undefined' ? myId : 'N/A',
+                id: idStr,
                 name: typeof myName !== 'undefined' && myName ? myName : 'Unknown',
                 role: currentRole,
                 type: type,
@@ -880,13 +882,13 @@
     }
 
     function requestFile(fileId) {
-        logDebug(`[FILE] Žádám síť o poskytnutí souboru ${fileId}...`, 'file');
+        logDebug(`[FILE] Žádám síť o poskytnutí souboru ${fileId}...`, 'file', myId);
         routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-file', sender: myId, fileId: fileId });
     }
 
     async function sendVideoSignal(targetId, action, data) { 
         if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
-            logDebug(`[VIDEO] Nelze spojit video přes HTTP Relay.`, 'error'); 
+            logDebug(`[VIDEO] Nelze spojit video přes HTTP Relay.`, 'error', myId); 
             return; 
         } 
         const payload = JSON.stringify({ action, data }); 
@@ -896,13 +898,13 @@
     
     async function initVideoPc(peerId, isInitiator) { 
         if (activeCall.pc) return activeCall.pc; 
-        logDebug(`[VIDEO] Inicializace WebRTC (Video) s ${peerId}`, 'webrtc'); 
+        logDebug(`[VIDEO] Inicializace WebRTC (Video) s ${peerId}`, 'webrtc', myId); 
         const pc = new RTCPeerConnection(WEBRTC_CONFIG); 
         activeCall.pc = pc; 
         activeCall.peerId = peerId; 
         
         pc.oniceconnectionstatechange = () => { 
-            logDebug(`[VIDEO] ICE Stav: ${pc.iceConnectionState}`, 'webrtc'); 
+            logDebug(`[VIDEO] ICE Stav: ${pc.iceConnectionState}`, 'webrtc', myId); 
             if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') endVideoCall(false); 
         }; 
         
@@ -916,15 +918,15 @@
         }; 
         
         try { 
-            logDebug(`[VIDEO] Žádám systém o práva pro kameru a mikrofon...`, 'webrtc'); 
+            logDebug(`[VIDEO] Žádám systém o práva pro kameru a mikrofon...`, 'webrtc', myId); 
             activeCall.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); 
-            logDebug(`[VIDEO] Práva na AV stream úspěšně udělena.`, 'success'); 
+            logDebug(`[VIDEO] Práva na AV stream úspěšně udělena.`, 'success', myId); 
             document.getElementById('local-video').srcObject = activeCall.localStream; 
             activeCall.localStream.getTracks().forEach(track => pc.addTrack(track, activeCall.localStream)); 
             document.getElementById('video-overlay').style.display = 'flex'; 
             document.getElementById('video-peer-name').innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`; 
         } catch (e) { 
-            logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error'); 
+            logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error', myId); 
             alert("Pro přijetí/vytvoření hovoru je nutné povolit kameru a mikrofon."); 
             endVideoCall(); 
             return null; 
@@ -947,7 +949,7 @@
             alert("Již máte probíhající hovor."); 
             return; 
         } 
-        logDebug(`[VIDEO] Vytáčím uživatele ${targetId}...`, 'info'); 
+        logDebug(`[VIDEO] Vytáčím uživatele ${targetId}...`, 'info', myId); 
         await initVideoPc(targetId, true); 
     }
     
@@ -964,7 +966,7 @@
                 incomingCallData = { senderId, sdp: data }; 
                 document.getElementById('incoming-name').innerText = knownNodes[senderId]?.name || senderId; 
                 document.getElementById('incoming-modal').style.display = 'block'; 
-                logDebug(`[VIDEO] Příchozí hovor od ${knownNodes[senderId]?.name || senderId}.`, 'info'); 
+                logDebug(`[VIDEO] Příchozí hovor od ${knownNodes[senderId]?.name || senderId}.`, 'info', senderId); 
             } 
         } else if (action === 'answer') { 
             if (activeCall.pc && activeCall.peerId === senderId) {
@@ -975,11 +977,11 @@
                 try { await activeCall.pc.addIceCandidate(new RTCIceCandidate(data)); } catch(e) {} 
             } 
         } else if (action === 'reject') { 
-            logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (${data}).`, 'error'); 
+            logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (${data}).`, 'error', senderId); 
             alert(`Hovor byl odmítnut (${data}).`); 
             endVideoCall(false); 
         } else if (action === 'end') { 
-            logDebug(`[VIDEO] Uzel ${senderId} ukončil hovor.`, 'info'); 
+            logDebug(`[VIDEO] Uzel ${senderId} ukončil hovor.`, 'info', senderId); 
             endVideoCall(false); 
         } 
     }
@@ -992,7 +994,7 @@
         const offerData = incomingCallData.sdp; 
         incomingCallData = null; 
         
-        logDebug(`[VIDEO] Přijímám hovor...`, 'info'); 
+        logDebug(`[VIDEO] Přijímám hovor...`, 'info', myId); 
         const pc = await initVideoPc(senderId, false); 
         
         if (pc) { 
@@ -1001,9 +1003,9 @@
                 const answer = await pc.createAnswer(); 
                 await pc.setLocalDescription(answer); 
                 sendVideoSignal(senderId, 'answer', answer); 
-                logDebug(`[VIDEO] Hovor spojen (Answer odeslán).`, 'success'); 
+                logDebug(`[VIDEO] Hovor spojen (Answer odeslán).`, 'success', myId); 
             } catch (e) { 
-                logDebug(`[VIDEO] Neočekávaná chyba: ${e.message}`, 'error'); 
+                logDebug(`[VIDEO] Neočekávaná chyba: ${e.message}`, 'error', myId); 
                 endVideoCall(true); 
             } 
         } else { 
@@ -1039,7 +1041,7 @@
         document.getElementById('btn-vid-cam').className = 'video-btn'; 
         document.getElementById('btn-vid-share').className = 'video-btn'; 
         
-        if (wasActive) logDebug(`[VIDEO] Hovor ukončen.`, 'info'); 
+        if (wasActive) logDebug(`[VIDEO] Hovor ukončen.`, 'info', myId); 
     }
     
     function toggleAudio() { 
@@ -1076,7 +1078,7 @@
                 btn.className = 'video-btn active'; 
                 btn.innerText = '🖥️ Zastavit obs'; 
                 screenTrack.onended = () => { revertToCamera(videoSender, btn); }; 
-            } catch (e) { logDebug(`Sdílení zrušeno: ${e.message}`, 'error'); } 
+            } catch (e) { logDebug(`Sdílení zrušeno: ${e.message}`, 'error', myId); } 
         } else { 
             revertToCamera(videoSender, btn); 
         } 
@@ -1103,13 +1105,13 @@
         if (!activeCall.pc || !activeCall.peerId || isIceRestarting) return; 
         isIceRestarting = true; 
         setTimeout(() => isIceRestarting = false, 5000); 
-        logDebug(`[VIDEO] Spouštím ICE Restart...`, 'webrtc'); 
+        logDebug(`[VIDEO] Spouštím ICE Restart...`, 'webrtc', myId); 
         try { 
             const offer = await activeCall.pc.createOffer({ iceRestart: true }); 
             await activeCall.pc.setLocalDescription(offer); 
             sendVideoSignal(activeCall.peerId, 'offer', offer); 
         } catch(e) { 
-            logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error'); 
+            logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error', myId); 
             isIceRestarting = false; 
         } 
     }
@@ -1120,7 +1122,7 @@
         const batchSize = 20;
         
         if (state.index >= chatHistory.length) {
-            logDebug(`[SYNC] Kompletní synchronizace pro ${target} dokončena.`, 'success');
+            logDebug(`[SYNC] Kompletní synchronizace pro ${target} dokončena.`, 'success', myId);
             delete syncState[target];
             activeSyncOperations.delete(target);
             return;
@@ -1137,9 +1139,9 @@
             
             state.timeout = setTimeout(() => {
                 state.retries = (state.retries || 0) + 1;
-                logDebug(`[SYNC] Timeout pro ACK od ${target} (Pokus ${state.retries}), opakuji...`, 'error');
+                logDebug(`[SYNC] Timeout pro ACK od ${target} (Pokus ${state.retries}), opakuji...`, 'error', myId);
                 if(state.retries > 3) {
-                    logDebug(`[SYNC] Zrušena synchronizace pro ${target} po 3 pokusech.`, 'error');
+                    logDebug(`[SYNC] Zrušena synchronizace pro ${target} po 3 pokusech.`, 'error', myId);
                     delete syncState[target];
                     activeSyncOperations.delete(target);
                 } else {
@@ -1158,7 +1160,7 @@
             routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, target: targetId, payload: encryptedChunk });
             await new Promise(r => setTimeout(r, 50)); 
         }
-        logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success');
+        logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
     }
 
     window.broadcastGameSync = (data) => {
@@ -1223,7 +1225,7 @@
                 try { 
                     const str = JSON.stringify(msgObj); 
                     if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
-                        logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error'); 
+                        logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId); 
                     }
                     ch.send(str); 
                 } catch(err) {} 
@@ -1263,7 +1265,7 @@
                     const safeName = escapeHTML(msg.name); 
                     const teleStr = formatTelemetry(msg.tele); 
                     renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do hry a sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true, null); 
-                    logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce'); 
+                    logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce', msg.sender); 
                 }
                 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
@@ -1323,11 +1325,11 @@
         }
         else if (msg.type === 'request-history') {
             if (activeSyncOperations.has(msg.sender)) {
-                logDebug(`[SYNC] Ignoruji duplicitní žádost od ${msg.sender}.`, 'info');
+                logDebug(`[SYNC] Ignoruji duplicitní žádost od ${msg.sender}.`, 'info', myId);
                 return;
             }
             
-            logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync');
+            logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync', msg.sender);
             
             if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
                 activeSyncOperations.add(msg.sender);
@@ -1341,7 +1343,7 @@
             if (plaintextHistory) { 
                 try { 
                     mergeIncomingHistory(JSON.parse(plaintextHistory)); 
-                    logDebug(`[SYNC] Přijata dávka historie od ${knownNodes[msg.sender]?.name || msg.sender}. Odesílám ACK.`, 'sync'); 
+                    logDebug(`[SYNC] Přijata dávka historie od ${knownNodes[msg.sender]?.name || msg.sender}. Odesílám ACK.`, 'sync', myId); 
                     routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-ack', sender: myId, target: msg.sender, batchIndex: msg.batchIndex });
                 } catch(e) {} 
             } 
@@ -1358,14 +1360,14 @@
         else if (msg.type === 'request-file') {
              const requestedMsg = chatHistory.find(m => m.id === msg.fileId);
              if (requestedMsg && requestedMsg.file && requestedMsg.file.dataUrl) {
-                 logDebug(`[FILE] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal soubor, začínám odesílat bloky.`, 'file');
+                 logDebug(`[FILE] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal soubor, začínám odesílat bloky.`, 'file', msg.sender);
                  const base64Data = requestedMsg.file.dataUrl.split(',')[1];
                  const fileMeta = { name: requestedMsg.file.name, size: requestedMsg.file.size, type: requestedMsg.file.dataUrl.split(';')[0].split(':')[1] || 'application/octet-stream' };
                  sendFileChunks(msg.fileId, base64Data, fileMeta, msg.sender);
              }
         }
         else if (msg.type === 'clear-history') { 
-            logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error'); 
+            logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error', msg.sender); 
             clearLocalHistory(); 
         }
         else if (msg.type === 'file-chunk') {
@@ -1377,7 +1379,7 @@
                 
                 if (!fileBuffers[fileId]) { 
                     fileBuffers[fileId] = { chunks: [], receivedSet: new Set(), total: chunkData.totalChunks, meta: chunkData.meta }; 
-                    logDebug(`[FILE IN] Stahuji bloky: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file'); 
+                    logDebug(`[FILE IN] Stahuji bloky: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file', myId); 
                 }
                 
                 if (!fileBuffers[fileId].receivedSet.has(chunkData.chunkIndex)) {
@@ -1385,7 +1387,7 @@
                     fileBuffers[fileId].receivedSet.add(chunkData.chunkIndex);
                     
                     if (fileBuffers[fileId].receivedSet.size === fileBuffers[fileId].total) {
-                        logDebug(`[FILE IN] Soubor kompletně stažen!`, 'success'); 
+                        logDebug(`[FILE IN] Soubor kompletně stažen!`, 'success', myId); 
                         const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fileBuffers[fileId].chunks.join('')}`; 
                         const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý'; 
                         const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl }; 
@@ -1438,7 +1440,7 @@
         }
         else if (msg.type === 'node-left') { 
             if (knownNodes[msg.target]) { 
-                logDebug(`Uzel ${knownNodes[msg.target].name} opustil síť a hru.`, 'error'); 
+                logDebug(`Uzel ${knownNodes[msg.target].name} opustil síť a hru.`, 'error', myId); 
                 delete knownNodes[msg.target]; 
                 if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(msg.target);
                 updateDebugStats('nodes', Object.keys(knownNodes).length); 
@@ -1535,7 +1537,7 @@
             return; 
         } 
         
-        logDebug(`[FILE] Načítám soubor ${file.name}...`, 'file'); 
+        logDebug(`[FILE] Načítám soubor ${file.name}...`, 'file', myId); 
         const reader = new FileReader(); 
         
         reader.onload = async (e) => { 
@@ -1617,7 +1619,7 @@
         
         pc.onicecandidate = (e) => { 
             if (e.candidate) { 
-                logDebug(`[ICE] Kandidát: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Port: ${e.candidate.port}`, 'webrtc'); 
+                logDebug(`[ICE] Kandidát: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Port: ${e.candidate.port}`, 'webrtc', myId); 
                 clearTimeout(candidateTimer); 
                 candidateTimer = setTimeout(finish, 1500); 
             } else {
@@ -1631,22 +1633,22 @@
     async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) {
         if (connections[targetId]) return; 
         
-        logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc'); 
+        logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc', myId); 
         const pc = new RTCPeerConnection(WEBRTC_CONFIG); 
         connections[targetId] = pc;
         
-        pc.onicegatheringstatechange = () => logDebug(`[WebRTC] ICE Gathering: ${pc.iceGatheringState}`, 'info'); 
-        pc.onsignalingstatechange = () => logDebug(`[WebRTC] Signaling: ${pc.signalingState}`, 'info'); 
-        pc.onconnectionstatechange = () => logDebug(`[WebRTC] Connection: ${pc.connectionState}`, 'info');
+        pc.onicegatheringstatechange = () => logDebug(`[WebRTC] ICE Gathering: ${pc.iceGatheringState}`, 'info', myId); 
+        pc.onsignalingstatechange = () => logDebug(`[WebRTC] Signaling: ${pc.signalingState}`, 'info', myId); 
+        pc.onconnectionstatechange = () => logDebug(`[WebRTC] Connection: ${pc.connectionState}`, 'info', myId);
 
         pc.oniceconnectionstatechange = () => {
             const state = pc.iceConnectionState; 
             const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57'); 
-            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}; font-weight:bold">${state}</span>`, 'info');
+            logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}; font-weight:bold">${state}</span>`, 'info', myId);
             
             if (state === 'disconnected' || state === 'failed') {
                 if (targetId === 'hub' && !isDnsHost && !isHttpRelayMode) {
-                    logDebug(`[API] WebRTC síť blokuje spojení (${state}). Přecházím na HTTP Relay!`, "log-relay");
+                    logDebug(`[API] WebRTC síť blokuje spojení (${state}). Přecházím na HTTP Relay!`, "log-relay", myId);
                     cleanupConnection(targetId, true);
                 } else { 
                     cleanupConnection(targetId); 
@@ -1669,7 +1671,7 @@
                 
                 if(activePairs.length > 0) { 
                     let infoStr = activePairs.map(p => `[${p.lType}->${p.rType} ${p.pro}] S:${p.state} N:${p.nom}`).join(' | '); 
-                    logDebug(`[ICE DUMP] ${infoStr}`, 'log-ice'); 
+                    logDebug(`[ICE DUMP] ${infoStr}`, 'log-ice', myId); 
                 } 
             } catch(e){} 
         }, 4000);
@@ -1686,7 +1688,7 @@
                 
                 if (useDns && sid) { 
                     pc.offerSid = sid; 
-                    logDebug(`[API OUT] Odesílám Offer...`, 'info'); 
+                    logDebug(`[API OUT] Odesílám Offer...`, 'info', myId); 
                     
                     const ok = await writeSignal(`offer-${myId}`, { sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, sid: sid, ts: Date.now() }); 
                     
@@ -1709,7 +1711,7 @@
             channels[targetId] = channel; 
             updateDebugStats('peers', Object.keys(channels).length); 
             unlockChat(); 
-            logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success'); 
+            logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId); 
             
             setTimeout(async () => { 
                 const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
@@ -1792,10 +1794,10 @@
                 if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
                 
                 if (Date.now() - pc.checkingStartTime > 25000) {
-                    logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error');
+                    logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error', myId);
                     
                     if (peerId === 'hub' && !isDnsHost && !isHttpRelayMode) {
-                        logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay");
+                        logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay", myId);
                         cleanupConnection(peerId, true);
                     } else {
                         if (peerId === 'hub') blacklistedHubTimeout = Date.now() + 30000;
@@ -1900,7 +1902,7 @@
                 } else if (isMaster && !isHttpRelayMode) {
                     cleanupConnection('hub'); 
                 } else if (lastSeenDiff > 60000) { 
-                    logDebug(`[WATCHDOG] Uzel ${id} neodpovídá (>60s), mažu data a zavírám linku.`, 'error'); 
+                    logDebug(`[WATCHDOG] Uzel ${id} neodpovídá (>60s), mažu data a zavírám linku.`, 'error', myId); 
                     if(isHttpTarget) knownHttpClients.delete(id); 
                     cleanupConnection(id); 
                     delete knownNodes[id]; 
@@ -1967,7 +1969,7 @@
         appSessionTime = 0; 
         currentSessionId = null; 
         
-        logDebug("Provádím kompletní reset...", "info"); 
+        logDebug("Provádím kompletní reset...", "info", myId); 
         endVideoCall(true);
         
         if (joinInterval) clearInterval(joinInterval); 
@@ -2027,7 +2029,7 @@
         aliveIds.sort();
         
         if (aliveIds[0] === myId) { 
-            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc"); 
+            logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc", myId); 
             isCheckingIsolation = false; 
             startDnsHostLoop(); 
         } else { 
@@ -2081,7 +2083,7 @@
             const aliveCheck = await readSignal('host-alive'); 
             if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) { 
                 if (myId > aliveCheck.id) { 
-                    logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error"); 
+                    logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error", myId); 
                     blacklistedHubId = null; 
                     fullResetAndReconnect(); 
                     return; 
@@ -2120,7 +2122,7 @@
                                     await writeSignal(`answer-${guestId}`, { sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, sid: offerSid, ts: Date.now() }); 
                                 }); 
                             } catch(e) { 
-                                logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error'); 
+                                logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error', myId); 
                                 cleanupConnection(guestId); 
                             }
                         }
@@ -2133,7 +2135,7 @@
                 httpQueue.forEach(clientId => { 
                     if(!knownHttpClients.has(clientId)) { 
                         knownHttpClients.add(clientId); 
-                        logDebug(`[HTTP RELAY] Uzel ${clientId} připojen přes API fallback.`, 'log-relay'); 
+                        logDebug(`[HTTP RELAY] Uzel ${clientId} připojen přes API fallback.`, 'log-relay', myId); 
                     } 
                 }); 
                 await writeSignal('queue-http', []); 
@@ -2174,7 +2176,7 @@
             pokusy++;
             if (pokusy > 6) { 
                 clearInterval(joinInterval); 
-                logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay"); 
+                logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
                 cleanupConnection('hub', true); 
                 return; 
             }
@@ -2208,7 +2210,7 @@
                         await connections['hub'].setRemoteDescription(new RTCSessionDescription({ type: String(answerData.type).toLowerCase().trim(), sdp: String(answerData.sdp) })); 
                         await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 }); 
                     } catch(e) { 
-                        logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error'); 
+                        logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error', myId); 
                     }
                 }
             }
@@ -2269,7 +2271,7 @@
             }
 
             if (Date.now() - lastHttpPong > 25000) {
-                logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error');
+                logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error', myId);
                 clearInterval(httpRelayInterval);
                 httpOutbox = {};
                 blacklistedHubId = globalKnownHubId || 'hub';
@@ -2286,6 +2288,9 @@
 
     let audioCtx = null;
     
+    // Globální check na Host/Spoke, který se volá dynamicky, aby se nemohl zaseknout do state!
+    const getIsHost = () => typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
+
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
@@ -2625,13 +2630,25 @@
         let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; });
         let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; });
 
-        const isHost = typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
-
-        onUpdate("moving_h", (p) => { p.move(p.vx, 0); }); 
-        onCollide("moving_h", "bound_h", (p, b) => p.vx = Math.abs(p.vx) * b.dir);
+        onUpdate("moving_h", (p) => { 
+            if(getIsHost()) { 
+                p.move(p.vx, 0); 
+            } else if (p.targetPos) {
+                p.pos.x = lerp(p.pos.x, p.targetPos.x, 15 * dt());
+                p.pos.y = lerp(p.pos.y, p.targetPos.y, 15 * dt());
+            }
+        }); 
+        onCollide("moving_h", "bound_h", (p, b) => { if(getIsHost()) p.vx = Math.abs(p.vx) * b.dir; });
         
-        onUpdate("moving_v", (p) => { p.move(0, p.vy); }); 
-        onCollide("moving_v", "bound_v", (p, b) => p.vy = Math.abs(p.vy) * b.dir);
+        onUpdate("moving_v", (p) => { 
+            if(getIsHost()) {
+                p.move(0, p.vy); 
+            } else if (p.targetPos) {
+                p.pos.x = lerp(p.pos.x, p.targetPos.x, 15 * dt());
+                p.pos.y = lerp(p.pos.y, p.targetPos.y, 15 * dt());
+            }
+        }); 
+        onCollide("moving_v", "bound_v", (p, b) => { if(getIsHost()) p.vy = Math.abs(p.vy) * b.dir; });
         
         onCollideUpdate("player", "moving_h", (p, m, col) => { if (col && col.isBottom()) p.pos.x += m.vx * dt(); });
         onCollideUpdate("player", "moving_v", (p, m, col) => { if (col && col.isBottom() && m.vy > 0) p.pos.y += m.vy * dt(); });
@@ -2690,6 +2707,16 @@
                 txt += `${st.name.substring(0,10)} | HP:${st.hp} Sc:${st.score}\n`;
             }
             statsLabel.text = txt;
+        });
+
+        loop(10, () => {
+            const players = 1 + get("remote_player").length;
+            const enemies = get("enemy").length;
+            const loot = get("loot").length;
+            const p = get("player")[0];
+            const pStr = p ? `X:${Math.round(p.pos.x)} Y:${Math.round(p.pos.y)}` : "Mrtvý";
+            const role = getIsHost() ? "Master" : "Spoke";
+            logDebug(`[HERNÍ TELEMETRIE] Role: ${role} | Hráčů: ${players} | Zlounů: ${enemies} | Lootu: ${loot} | Moje poz: ${pStr}`, "info", myId);
         });
         
         let scoreClickCount = 0;
@@ -2900,7 +2927,7 @@
         };
 
         window.handleEnemySync = (enemiesData) => {
-            if (isHost) return;
+            if (getIsHost()) return;
             
             const masterIds = enemiesData.map(ed => ed.id);
             get("enemy").forEach(e => {
@@ -2923,12 +2950,11 @@
         };
 
         window.handleMapSync = (mapData) => {
-            if (isHost) return;
+            if (getIsHost()) return;
             mapData.forEach(md => {
                 const m = get(md.id.startsWith('h') ? "moving_h" : "moving_v").find(x => x.mId === md.id);
                 if (m) {
-                    if (Math.abs(m.pos.x - md.x) > 5) m.pos.x = lerp(m.pos.x, md.x, 0.5);
-                    if (Math.abs(m.pos.y - md.y) > 5) m.pos.y = lerp(m.pos.y, md.y, 0.5);
+                    m.targetPos = vec2(md.x, md.y);
                     if (md.vx !== undefined) m.vx = md.vx;
                     if (md.vy !== undefined) m.vy = md.vy;
                 }
@@ -2983,7 +3009,7 @@
         };
         
         window.handleLootSync = (activeLootIds) => {
-            if (isHost) return;
+            if (getIsHost()) return;
             get("loot").forEach(l => {
                 if (!activeLootIds.includes(l.lId)) {
                     destroy(l);
@@ -3023,7 +3049,7 @@
                 }
             }
 
-            if (isHost && time() - lastMapSyncTime > 0.05) {
+            if (getIsHost() && time() - lastMapSyncTime > 0.05) {
                 lastMapSyncTime = time();
                 const enemiesData = get("enemy").map(e => ({
                     id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: e.flipX || false
@@ -3137,7 +3163,7 @@
         });
 
         onUpdate("enemy", (e) => {
-            if (!isHost) {
+            if (!getIsHost()) {
                 if (e.gravityScale !== 0) e.gravityScale = 0;
                 if (e.weight !== 0) e.weight = 0;
                 if (e.isStatic === false) e.isStatic = true; 
@@ -3193,7 +3219,7 @@
         });
         
         onCollide("bullet","enemy",(b,e)=>{
-            if (!isHost) { destroy(b); spawnBlood(e.pos, 5); return; }
+            if (!getIsHost()) { destroy(b); spawnBlood(e.pos, 5); return; }
             destroy(b); spawnBlood(e.pos, 5); e.hp--; playSound(150, 'sawtooth', 0.1, 0.05);
             if(e.hp<=0){ 
                 const ep=e.pos.clone(); destroy(e); 
