@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v17 - Refactored & Optimized</title>
+    <title>P2P v16 - Sync Fix & Haptics</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -241,7 +241,6 @@
 </div>
 
 <script>
-    // CACHING DOM ELEMENTS PRO OPTIMALIZACI (zabrání zbytečnému DOM traversingu při každém framu/ticku)
     const DOM = {
         app: document.getElementById('app'),
         chatToggleBtn: document.getElementById('chat-toggle-btn'),
@@ -2332,6 +2331,13 @@
         osc.stop(audioCtx.currentTime + duration);
     }
 
+    // Pomocná haptická funkce pro mobilní zařízení
+    function vibrate(pattern) {
+        if (typeof window.navigator.vibrate === 'function') {
+            try { window.navigator.vibrate(pattern); } catch(e){}
+        }
+    }
+
     window.addEventListener('click', initAudio); 
     window.addEventListener('keydown', initAudio); 
     window.addEventListener('touchstart', initAudio);
@@ -2357,24 +2363,16 @@
         return !!(document.fullscreenElement || document.webkitFullscreenElement);
     }
 
-    function getPlayerColor(nodeId) {
-        let allNodes = Object.keys(window.chat_knownNodes || {});
-        let localId = window.chat_myId || 'local';
-        if (!allNodes.includes(localId)) allNodes.push(localId);
-        allNodes.sort();
-        
-        let idx = allNodes.indexOf(nodeId);
-        if (idx === -1) idx = 0;
-        
+    // Nyní nezávislé na tom, kolik lidí je zrovna připojeno - id se vždy transformuje na tutéž unikátní barvu
+    function getPlayerColor(nodeId, isLocal = false) {
+        if (isLocal) return rgb(255, 255, 255); // Lokální hráč je vždy jasně bílý
+        let hash = 0;
+        for (let i = 0; i < nodeId.length; i++) hash = nodeId.charCodeAt(i) + ((hash << 5) - hash);
         const colors = [
-            { r: 30, g: 30, b: 30 },     // Host
-            { r: 255, g: 255, b: 255 },  // 2
-            { r: 255, g: 50, b: 50 },    // 3
-            { r: 50, g: 255, b: 50 },    // 4
-            { r: 255, g: 255, b: 50 },   // 5
-            { r: 50, g: 150, b: 255 }    // 6
+            { r: 255, g: 50, b: 50 }, { r: 50, g: 255, b: 50 }, { r: 255, g: 255, b: 50 },
+            { r: 50, g: 150, b: 255 }, { r: 255, g: 150, b: 50 }, { r: 200, g: 50, b: 255 }, { r: 0, g: 255, b: 255 }
         ];
-        const c = colors[idx % colors.length];
+        const c = colors[Math.abs(hash) % colors.length];
         return rgb(c.r, c.g, c.b);
     }
 
@@ -2702,7 +2700,13 @@
             cheatBuf.push(k); if (cheatBuf.length > 6) cheatBuf.shift();
             if (cheatBuf.length === 6 && cheatBuf.every(v => v === k)) {
                 const t = cheatMap[k]; cheatBuf = [];
-                if (t === "v") go("victory", 9999); else go("game", t, 6, 25, 0);
+                if (t === "v") {
+                    if (typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(9999);
+                    go("victory", 9999);
+                } else {
+                    if (typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(t);
+                    go("game", t, 6, 25, 0);
+                }
             }
         } else cheatBuf = [];
     });
@@ -2830,7 +2834,7 @@
         function doShake(intensity) { screenShake = Math.max(screenShake, intensity); }
 
         const localId = typeof window.chat_myId !== 'undefined' ? window.chat_myId : 'local';
-        const playerColor = getPlayerColor(localId);
+        const playerColor = getPlayerColor(localId, true);
         
         const player = add([ 
             sprite("player"), pos(80, 200), color(playerColor), 
@@ -2943,6 +2947,9 @@
             
             if (cheatClicks >= 3) {
                 cheatClicks = 0;
+                if (typeof window.broadcastLevelComplete === 'function') {
+                    window.broadcastLevelComplete(lvlIdx + 1 < LVL.length ? lvlIdx + 1 : 9999);
+                }
                 if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
                 else go("victory", score);
             }
@@ -2993,6 +3000,7 @@
         function performJump(force) { 
             const bonus = Math.abs(player.cVel) > 50 ? (lvl.g < 1000 ? 30 : 80) : 0; 
             player.jump(force + bonus); 
+            vibrate(10);
             spawnDust(player.pos.add(0, 15)); 
         }
 
@@ -3012,9 +3020,10 @@
             ammo--; 
             ammoLabel.text = `x ${ammo}`; 
             playSound(600, 'square', 0.1, 0.05); 
+            vibrate(15);
             let dir = player.flipX ? LEFT : RIGHT;
             let spawnPos = vec2(player.pos.x+(player.flipX?-20:20), player.pos.y);
-            add([sprite("bullet"), pos(spawnPos), area(), anchor("center"), move(dir, 1000), offscreen({destroy:true}), "bullet"]); 
+            add([sprite("bullet"), pos(spawnPos), area(), anchor("center"), move(dir, 1000), offscreen({destroy:true}), "bullet", { owner: localId }]); 
 
             if (typeof window.broadcastGameShoot === 'function') {
                 window.broadcastGameShoot({ x: spawnPos.x, y: spawnPos.y, dirX: dir.x, dirY: dir.y, lvl: lvlIdx });
@@ -3096,7 +3105,8 @@
                 anchor("center"),
                 move(vec2(data.dirX, data.dirY), 1000),
                 offscreen({destroy:true}),
-                "bullet" 
+                "bullet",
+                { owner: senderId } // Uložíme ID střelce, aby nemohl zranit sám sebe
             ]);
         };
 
@@ -3138,6 +3148,7 @@
                 if(playerDead) return;
                 hp--; updateHP(); 
                 if(hp <= 0) { 
+                    vibrate(200);
                     hp = 6;
                     player.pos.x = 80;
                     player.pos.y = 200;
@@ -3147,8 +3158,9 @@
                     addToast("Byl jsi zabit protihráčem! Respawn.");
                 } else {
                     player.stun = true; player.color = rgb(255,50,50);
+                    vibrate([50, 50, 50]);
                     doShake(10); playSound(150, 'sawtooth', 0.3, 0.1);
-                    wait(0.5, () => { if(player.exists()) { player.stun = false; player.color = getPlayerColor(localId); } });
+                    wait(0.5, () => { if(player.exists()) { player.stun = false; player.color = getPlayerColor(localId, true); } });
                 }
             } else {
                 let rp = get(targetId)[0];
@@ -3322,18 +3334,18 @@
             }
         });
 
+        // Decentralizovaný update příšer
         onUpdate("enemy", (e) => {
-            if (!getIsHost()) {
+            const isHost = getIsHost();
+
+            if (!isHost) {
                 if (e.gravityScale !== 0) e.gravityScale = 0;
-                if (e.weight !== 0) e.weight = 0;
                 if (e.isStatic === false) e.isStatic = true; 
-                if (e.vel) { e.vel.x = 0; e.vel.y = 0; }
                 
                 if (e.targetPos) {
                     e.pos.x = lerp(e.pos.x, e.targetPos.x, 20 * dt());
                     e.pos.y = lerp(e.pos.y, e.targetPos.y, 20 * dt());
                 }
-                return;
             } else {
                 if (e.gravityScale === 0) e.gravityScale = 1;
                 if (e.isStatic === true) e.isStatic = false;
@@ -3344,21 +3356,25 @@
                 if (e.stunTimer <= 0) e.color = rgb(ec[0],ec[1],ec[2]); return; 
             }
             
+            // Vizualizace běží pro všechny uzly (odrazy, vlnění atd.)
             const bs = e.type==="bnc" ? (e.is("boss")?3.0:1.7) : 1.4; 
             e.scale = vec2(bs + Math.sin(time()*6)*0.06, bs - Math.sin(time()*6)*0.06);
             
-            if (e.type==="fly") { 
-                if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); 
-            } else e.move(e.speed,0);
-            
-            if (e.type==="jmp" && e.isGrounded()) { 
-                e.jump(520); e.jTmr -= dt(); if (e.jTmr<=0) { e.jump(520); e.jTmr=rand(1.2,2.8); } 
-            }
-            if (e.type==="bnc") { 
-                if (player.exists() && player.pos && Math.abs(player.pos.x-e.pos.x)<450) {
-                    e.speed=lerp(e.speed,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); 
+            // Reálný pohyb vyhodnocuje jen Host
+            if (isHost) {
+                if (e.type==="fly") { 
+                    if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); 
+                } else e.move(e.speed,0);
+                
+                if (e.type==="jmp" && e.isGrounded()) { 
+                    e.jump(520); e.jTmr -= dt(); if (e.jTmr<=0) { e.jump(520); e.jTmr=rand(1.2,2.8); } 
                 }
-                if (e.isGrounded()) { e.jump(680); e.scale=vec2(bs*1.15,bs*0.75); } 
+                if (e.type==="bnc") { 
+                    if (player.exists() && player.pos && Math.abs(player.pos.x-e.pos.x)<450) {
+                        e.speed=lerp(e.speed,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); 
+                    }
+                    if (e.isGrounded()) { e.jump(680); e.scale=vec2(bs*1.15,bs*0.75); } 
+                }
             }
             
             if (Math.abs(e.pos.x-camPos().x) > 2000 && !e.is("boss")) destroy(e);
@@ -3373,9 +3389,20 @@
         });
 
         onCollide("bullet", "remote_player", (b, rp) => {
-            destroy(b);
-            spawnBlood(rp.pos, 5);
-            if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(rp.id);
+            // Pokud jsem střelu vyrobil já, oznámím to ostatním přes game-hit
+            if (b.owner === localId) {
+                destroy(b);
+                spawnBlood(rp.pos, 5);
+                if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(rp.id);
+            }
+        });
+
+        onCollide("bullet", "player", (b, p) => {
+            // Jen vizuální krev – skutečné zranění obstará game-hit paket od střelce
+            if (b.owner !== localId) {
+                destroy(b);
+                spawnBlood(p.pos, 5);
+            }
         });
         
         onCollide("bullet","enemy",(b,e)=>{
@@ -3393,20 +3420,23 @@
         onCollide("player","pusher",(p,e)=>{
             if(!p.pos||!e.pos||p.stun||e.stunTimer>0||playerDead) return;
             p.stun=true; p.cVel=(p.pos.x<e.pos.x?-1:1)*420; p.jump(lvl.g<1000?300:500); p.color=rgb(180,180,180);
+            vibrate([50, 50, 50]);
             playSound(200, 'sawtooth', 0.2, 0.1); doShake(6); 
-            wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
+            wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId, true); } });
         });
         
         onCollide("player","danger",(p,d)=>{
             if(!p.pos||p.stun||playerDead) return;
             hp--; updateHP(); 
             if(hp<=0){ 
+                vibrate(200);
                 hp=6; player.pos.x=80; player.pos.y=200; player.cVel=0; updateHP(); 
                 spawnKillSplash(player.pos); addToast("Zemřel jsi! Respawn."); 
             } else {
                 p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
+                vibrate([50, 50, 50]);
                 playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
-                wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
+                wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId, true); } });
             }
         });
         
@@ -3414,14 +3444,17 @@
             if (l.is("coin")) {
                 score++; scoreLabel.text=`Score: ${score}`; 
                 add([sprite("coin"), pos(l.pos), scale(0.8), move(UP,50), opacity(0.9), lifespan(0.4,{fade:0.4})]); 
+                vibrate(10);
                 playSound(1200, 'sine', 0.1, 0.05); setTimeout(()=>playSound(1600, 'sine', 0.1, 0.05), 100); 
             }
             if (l.is("pistol")) {
                 ammo+=5; ammoLabel.text=`x ${ammo}`; 
+                vibrate(10);
                 playSound(800, 'square', 0.1, 0.05); 
             }
             if (l.is("heal")) {
                 hp++; if(hp>maxHp) maxHp=hp; updateHP(); 
+                vibrate(10);
                 playSound(900, 'sine', 0.3, 0.05); 
             }
             destroy(l);
@@ -3466,7 +3499,7 @@
         add([rect(width(),40), color(50,200,50), pos(0,height()-40), area(), body({isStatic:true}), anchor("botleft")]);
         
         const localId = typeof window.chat_myId !== 'undefined' ? window.chat_myId : 'local';
-        const pCol = getPlayerColor(localId);
+        const pCol = getPlayerColor(localId, true);
         add([sprite("player"), pos(400,height()-40), scale(1.4), color(pCol), anchor("bot")]).play("idle");
         
         LVL.forEach((l,i)=>{ 
