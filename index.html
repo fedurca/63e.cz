@@ -139,7 +139,17 @@
         #incoming-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 25px; border-radius: 12px; z-index: 100000; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); border: 2px solid var(--primary); min-width: 250px;} 
         .modal-btns { margin-top: 20px; display: flex; justify-content: center; gap: 10px; } 
         .modal-btns button { border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
-    </style>
+    
+#scoreboard {
+ position:absolute; top:10px; right:10px; width:240px;
+ background:rgba(0,0,0,0.72); border:1px solid rgba(255,255,255,0.15);
+ border-radius:12px; padding:10px; color:#fff; z-index:6000;
+ backdrop-filter: blur(5px); font-size:12px;
+}
+.score-title{font-weight:bold;color:#00d2ff;margin-bottom:8px}
+.score-row{display:flex;justify-content:space-between;margin-bottom:4px}
+
+</style>
 </head>
 <body>
 
@@ -147,7 +157,13 @@
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     
-    <div id="crash-screen">
+    
+<div id="scoreboard">
+<div class="score-title">HRÁČI</div>
+<div id="scoreboard-list"></div>
+</div>
+
+<div id="crash-screen">
         <h1 id="crash-title">❌ CHYBA HRY</h1>
         <p id="err-desc"></p>
         <pre id="err-stack"></pre>
@@ -333,6 +349,13 @@
     let syncState = {}; 
 
     let isHttpRelayMode = false; 
+    let relayRecoveryTimer = null;
+    let relayRecoveryInProgress = false;
+    let lastDirectConnection = 0;
+    window.playerStats = {};
+    window.enemyStateVersion = 0;
+    window.lootVersion = 0;
+ 
     let knownHttpClients = new Set(); 
     let httpOutbox = {}; 
     let httpRelayInterval = null;
@@ -3234,6 +3257,152 @@
         
         onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
     });
+
+
+
+function updateScoreboard() {
+    const el = document.getElementById('scoreboard-list');
+    if(!el) return;
+
+    const players = Object.values(window.playerStats || {})
+        .sort((a,b)=>(b.kills||0)-(a.kills||0));
+
+    el.innerHTML = players.map(p => `
+        <div class="score-row">
+            <span>${escapeHTML(p.name || '???')}</span>
+            <span>❤️${p.hp || 0} 🔫${p.kills || 0} 💀${p.deaths || 0}</span>
+        </div>
+    `).join('');
+}
+
+setInterval(updateScoreboard, 250);
+
+function startRelayRecoveryLoop() {
+    if(relayRecoveryTimer) clearInterval(relayRecoveryTimer);
+
+    relayRecoveryTimer = setInterval(async () => {
+        if(!isHttpRelayMode || relayRecoveryInProgress) return;
+
+        relayRecoveryInProgress = true;
+
+        try {
+            logDebug('[RECOVERY] Pokus o návrat do P2P...', 'relay');
+
+            const hubData = await readSignal('global_hub');
+
+            if(hubData && hubData.id && typeof connectToPeer === 'function') {
+                try {
+                    await connectToPeer(hubData.id, true);
+                } catch(e) {}
+
+                setTimeout(() => {
+                    if(connections[hubData.id]) {
+                        isHttpRelayMode = false;
+                        document.getElementById('status-dot').className = 'status-dot online';
+                        document.getElementById('ui-role').innerText = 'Node (Spoke)';
+                        logDebug('[RECOVERY] P2P obnoveno.', 'success');
+                    }
+                }, 2500);
+            }
+
+        } catch(e) {
+            logDebug('[RECOVERY] ' + e.message, 'error');
+        }
+
+        relayRecoveryInProgress = false;
+
+    }, 8000);
+}
+
+startRelayRecoveryLoop();
+
+window.addEventListener('load', () => {
+
+    if(window.lootItems && Array.isArray(window.lootItems)) {
+        const extraLoot = [];
+
+        for(let i=0;i<30;i++) {
+            extraLoot.push({
+                id:'coin_extra_'+i,
+                type:'coin',
+                x:Math.random()*5000,
+                y:Math.random()*5000,
+                collected:false
+            });
+        }
+
+        for(let i=0;i<15;i++) {
+            extraLoot.push({
+                id:'ammo_extra_'+i,
+                type:'ammo',
+                x:Math.random()*5000,
+                y:Math.random()*5000,
+                collected:false
+            });
+        }
+
+        for(let i=0;i<12;i++) {
+            extraLoot.push({
+                id:'health_extra_'+i,
+                type:'health',
+                x:Math.random()*5000,
+                y:Math.random()*5000,
+                collected:false
+            });
+        }
+
+        window.lootItems.push(...extraLoot);
+    }
+
+    setInterval(() => {
+
+        if(!window.players) return;
+
+        Object.values(window.players).forEach(p => {
+
+            if(!window.playerStats[p.id]) {
+                window.playerStats[p.id] = {};
+            }
+
+            window.playerStats[p.id].name = p.name || p.id;
+            window.playerStats[p.id].hp = p.hp || 0;
+            window.playerStats[p.id].kills = p.kills || 0;
+            window.playerStats[p.id].deaths = p.deaths || 0;
+
+            if(p.hp <= 0 && !p.__respawning) {
+                p.__respawning = true;
+
+                setTimeout(() => {
+                    p.hp = 100;
+
+                    if(p.spawnX !== undefined) {
+                        p.x = p.spawnX;
+                        p.y = p.spawnY;
+                    }
+
+                    p.__respawning = false;
+                }, 2500);
+            }
+        });
+
+    }, 100);
+
+});
+
+const __origRouteMessage = window.routeMessage;
+if(__origRouteMessage) {
+    window.routeMessage = function(msg) {
+
+        if(msg && msg.type === 'game-sync') {
+            if(msg.payload && msg.payload.t === 'enemy-sync') {
+                msg.payload.version = ++window.enemyStateVersion;
+            }
+        }
+
+        return __origRouteMessage.apply(this, arguments);
+    }
+}
+
 
 </script>
 </body>
