@@ -96,7 +96,7 @@
         #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 450px; flex-shrink: 0; height: 100%; overflow-y: hidden; border-left: 1px solid #333; }
         @media (max-width: 800px) { #debug-panel { display: none; } }
 
-        .debug-header { background: #333; padding: 6px 10px; font-size: 0.75rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; justify-content: space-between; }
+        .debug-header { background: #333; padding: 6px 10px; font-size: 0.75rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.7rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; } 
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
@@ -208,7 +208,7 @@
             </div>
             <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ</div>
             <div id="net-health-panel"><div id="net-health-list"></div></div>
-            <div class="debug-header">📜 SYSTÉMOVÝ LOG</div>
+            <div class="debug-header">📜 SYSTÉMOVÝ LOG <button id="btn-copy-log" style="background:#0f0; color:#000; border:none; border-radius:3px; padding:2px 6px; cursor:pointer; font-size:9px;">📋 Kopírovat</button></div>
             <div id="debug-log"></div>
         </div>
     </div>
@@ -276,6 +276,15 @@
     };
 
     DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nickname', e.target.value.trim()));
+
+    document.getElementById('btn-copy-log').addEventListener('click', () => {
+        const text = DOM.debugLog.innerText;
+        if(navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(() => alert('Systémový log zkopírován!'));
+        } else {
+            prompt('Zkopíruj ručně:', text);
+        }
+    });
 
     function toggleChat() {
         DOM.app.classList.toggle('chat-open');
@@ -1195,6 +1204,11 @@
         if (Object.keys(knownNodes).length === 0) return;
         routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
     };
+
+    window.broadcastEnemyHit = (eId, newHp) => {
+        if (Object.keys(knownNodes).length === 0) return;
+        routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, hp: newHp });
+    };
     
     window.broadcastMapSync = (mapData) => {
         if (Object.keys(knownNodes).length === 0) return;
@@ -1222,9 +1236,9 @@
     };
 
     function routeMessage(msgObj, sourceChannel = null) {
-        if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
+        if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'enemy-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
 
-        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+        if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
             if (seenMessages.has(msgObj.id)) return; 
             seenMessages.add(msgObj.id); 
             if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1251,12 +1265,12 @@
         });
 
         if (isHttpRelayMode) { 
-            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
+            if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
                 addToHttpOutbox('hub', msgObj); 
             }
         } else if (isDnsHost) { 
             knownHttpClients.forEach(clientId => { 
-                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+                if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
                     addToHttpOutbox(clientId, msgObj); 
                 } 
             }); 
@@ -1316,6 +1330,11 @@
         else if (msg.type === 'game-hit') {
             if (typeof window.handlePlayerHit === 'function') {
                 window.handlePlayerHit(msg.target);
+            }
+        }
+        else if (msg.type === 'enemy-hit') {
+            if (typeof window.handleEnemyHit === 'function') {
+                window.handleEnemyHit(msg.eId, msg.hp);
             }
         }
         else if (msg.type === 'game-next') {
@@ -2304,7 +2323,6 @@
 
     let audioCtx = null;
     
-    // Globální funkce zjišťující roli – chrání před tím, aby Spoke uzel začal počítat pozice (lerp bug)
     const getIsHost = () => typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
 
     function initAudio() {
@@ -2331,7 +2349,6 @@
         osc.stop(audioCtx.currentTime + duration);
     }
 
-    // Pomocná haptická funkce pro mobilní zařízení
     function vibrate(pattern) {
         if (typeof window.navigator.vibrate === 'function') {
             try { window.navigator.vibrate(pattern); } catch(e){}
@@ -2363,9 +2380,8 @@
         return !!(document.fullscreenElement || document.webkitFullscreenElement);
     }
 
-    // Nyní nezávislé na tom, kolik lidí je zrovna připojeno - id se vždy transformuje na tutéž unikátní barvu
     function getPlayerColor(nodeId, isLocal = false) {
-        if (isLocal) return rgb(255, 255, 255); // Lokální hráč je vždy jasně bílý
+        if (isLocal) return rgb(255, 255, 255); 
         let hash = 0;
         for (let i = 0; i < nodeId.length; i++) hash = nodeId.charCodeAt(i) + ((hash << 5) - hash);
         const colors = [
@@ -2494,7 +2510,6 @@
     loadSprite("cloud", `data:image/svg+xml;utf8,<svg width="120" height="60" xmlns="http://www.w3.org/2000/svg"><ellipse cx="40" cy="35" rx="30" ry="20" fill="white" opacity="0.15"/><ellipse cx="70" cy="25" rx="35" ry="22" fill="white" opacity="0.15"/><ellipse cx="55" cy="40" rx="25" ry="15" fill="white" opacity="0.12"/></svg>`);
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
-    // Optimalizace formátu map – umožňuje přehledný vizuální zápis, který se následně automaticky naparsuje
     const mapSuffix = [
         "                            ", "                            ", "                     F      ", "                    ====    ", 
         "                            ", "               U            ", "                            ", "               V            ", 
@@ -2509,14 +2524,14 @@
                 "",
                 "                       $$$ P   +",
                 "             3         1      1",
-                "                                                 3                      P             ==",
+                "                                               3                    P              ==",
                 "         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==",
-                "       ======  11      ======      =========     1        ==         ======  11      ======      ==",
-                "            1    ===        1  1   !    ^^   1            ==                  ===        3    ==",
-                "             3         P            !   ===                ==            P                    ==",
+                "       ======  11      ======     =========     1        ==         ======  11      ======     ==",
+                "            1    ===        1  1   !    ^^   1            ==                 ===        3    ==",
+                "             3         P            !   ===                ==            P                  ==",
                 "             3         3             !1  1  1        2      ==         1  3    1    2              ==",
-                "         1       ======            !             1      ==      ======                        ==",
-                "======  ^^  =======  ===   ======  ================================  ^^  =======  ===   ==========",
+                "         1      ======            !             1      ==      ======                       ==",
+                "======  ^^  =======  ===  ======  ================================  ^^  =======  ===  ==========",
                 "", "", ""
             ]
         },
@@ -2524,14 +2539,14 @@
             bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], 
             core: [
                 "",
-                "                  1        B                2     +  P",
+                "                 1        B                2      +  P",
                 "             2          $$$                    1",
-                "                                             P                    B                     ==",
+                "                                             P                    B                    ==",
                 "         +       3   3        B   W        $$      P      ==         +       3     P      1   W    ==",
                 "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
-                "               3   1        1      W   1  3        ^^      ==                  3          1      W    ==",
+                "               3   1        1      W   1  3        ^^      ==                 3          1      W    ==",
                 "            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==",
-                "======   ====    ====  2         W         1          == ======   ====    ====    2        W   ==",
+                "======  ====    ====  2         W         1          == ======  ====    ====    2        W   ==",
                 "                 ======          ==============================================================",
                 "", "", "", ""
             ]
@@ -2540,14 +2555,14 @@
             bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, 
             core: [
                 "",
-                "                               1                             1      2",
-                "                   B            $$$      1      +",
+                "                               1                            1      2",
+                "                  B            $$$      1      +",
                 "             P      1         ===            ==   3          ==          2",
-                "                   1       1              ==              ==  P",
-                "                 1     B    ===   ===   1   ==   1          == ===         1",
+                "                  1       1              ==              ==  P",
+                "                 1      B    ===   ===   1   ==   1          == ===         1",
                 "       ======   ===   ===            1    ===   ====      ==  !",
-                "          ^^    2         3     ^^        !        ^^       ==  !        3",
-                "======   ====      2   =====  ====        !          1       == !",
+                "          ^^    2         3     ^^        !        ^^        ==  !        3",
+                "======  ====      2    =====  ====        !          1        == !",
                 "====================================================================================================",
                 "", "", "", ""
             ]
@@ -2556,11 +2571,11 @@
             bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, 
             core: [
                 "", "", "",
-                "             B                1          $$ ==       2            P",
+                "             B                1          $$ ==        2            P",
                 "       ===            +            ===   ==== ==            3               B",
                 "                 ===      ===               !         ======        ==",
-                "           W    3    P            1         !  =====                ==",
-                "       ===  W ^^          1   2   =====    !         1          ==",
+                "            W    3    P            1         !  =====                ==",
+                "       ===  W ^^          1   2    =====     !         1          ==",
                 "======      ======================================================================================",
                 "", "", "", "", ""
             ]
@@ -2574,7 +2589,7 @@
                 "          W      ===      ===               !    B        ======        ==",
                 "          W          P             1         !  =====                ==",
                 "          W ^^         3        =====       !         2          ==",
-                "======   ====    ====    ====    ====    ====    ====    ==========================================",
+                "======  ====    ====    ====    ====    ====    ====    ==========================================",
                 "", "", "", "", ""
             ]
         },
@@ -2583,11 +2598,11 @@
             core: [
                 "", "", "",
                 "                               1          ==  1       ==             P",
-                "       ===          3      ==========        == ======   ==       3",
-                "          W      ======         P        === !            ==",
+                "       ===          3      ==========        == ======  ==       3",
+                "          W      ======        P        === !            ==",
                 "          W            1       B             !            ==",
                 "          W ^^                               !            ==",
-                "======   ====    2                    1               ==========================================",
+                "======  ====    2                    1               ==========================================",
                 "", "", "", "", ""
             ]
         },
@@ -2597,9 +2612,9 @@
                 "", "", "",
                 "                                         $$ ==   +      ==",
                 "       ======         B       3          ====   ===     ==               P",
-                "          W                1          1       !   ^^      ==        B",
+                "          W               1          1       !   ^^      ==        B",
                 "          W  ^^            =====      =====  !  ===      ==",
-                "======   ====   ====            2            !            ==",
+                "======  ====   ====            2            !            ==",
                 "====================================================================================================",
                 "", "", "", "", ""
             ]
@@ -2609,10 +2624,10 @@
             core: [
                 "", "", "",
                 "                         2               $$ ==   P      ==",
-                "       ======         1                 ====   ===     ==              P",
+                "       ======         1                  ====   ===     ==               P",
                 "          W      B         1          3      !   ^^      ==",
                 "          W  ^^            =====      =====  !  ===      ==",
-                "======   ====   ====       1               !            ==",
+                "======  ====   ====        1               !            ==",
                 "             ======                       =======================================================",
                 "", "", "", "", ""
             ]
@@ -2624,8 +2639,8 @@
                 "                 B       3           2      ==  P       ==",
                 "       ======   ===   ===                $$ == ===      ==             P",
                 "          W                 1            ==== !         ==",
-                "          W             === ====   3         !  ^^      ==",
-                "======                       1       ====== !  ===     ==",
+                "          W               === ====   3         !  ^^      ==",
+                "======                       1       ====== !  ===      ==",
                 "====================================================================================================",
                 "", "", "", "", ""
             ]
@@ -2635,10 +2650,10 @@
             core: [
                 "", "", "",
                 "                 $$     P                ==   +        ==",
-                "       ======   ===    ===        1       ====   ===      ==             B",
+                "       ======   ===    ===        1        ====   ===      ==              B",
                 "          W             2      1            !   ^^      ==        ======",
                 "          W  ^^         =====  =====        !    ===      ==             P",
-                "======   ====    ====            1         !              ==",
+                "======  ====    ====            1         !             ==",
                 "====================================================================================================",
                 "", "", "", "", ""
             ]
@@ -2647,11 +2662,11 @@
             bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], 
             core: [
                 "", "", "", "",
-                "         +       1       2        W       $$      P      ==         +       1               W    ==",
+                "         +       1       2        W        $$      P      ==         +       1               W    ==",
                 "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
-                "                 3          1      W   1          ^^      ==                3          1      W    ==",
+                "                 3          1      W   1         ^^      ==                3          1      W    ==",
                 "            ^^             =====   W =====       ===      ==            ^^             =====   W    ==",
-                "======   ====    ====            W         P             == ======   ====    ====            W   ==",
+                "======  ====    ====            W         P             == ======  ====    ====            W   ==",
                 "====================================================================================================",
                 "", "", "", ""
             ]
@@ -2660,11 +2675,11 @@
             bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, 
             core: [
                 "", "", "",
-                "                 B                    $$ ==            3    X    3",
+                "                 B                   $$ ==            3    X    3",
                 "       ======   ===        1  1        ==== ==      P      =========================================",
                 "          W          W        1   1      !   ===",
                 "          W  ^^      W  ^^   === ===     !    1            ==            P",
-                "======   ====      ====                !                ==",
+                "======  ====      ====                !                ==",
                 "====================================================================================================",
                 "", "", "", "", ""
             ]
@@ -3105,21 +3120,33 @@
             ]);
         };
 
+        window.handleEnemyHit = (eId, hp) => {
+            let en = get(eId)[0];
+            if (en && en.hp > hp) {
+                en.hp = hp;
+                en.stunTimer = 0.2;
+                if (en.hp <= 0) {
+                    const ep = en.pos.clone(); 
+                    destroy(en); 
+                    spawnBlood(ep, en.is("boss") ? 60 : 20); 
+                    doShake(en.is("boss") ? 15 : 3); 
+                    spawnKillSplash(ep);
+                }
+            }
+        };
+
         window.handleEnemySync = (enemiesData) => {
             if (getIsHost()) return;
-            
             const masterIds = new Set(enemiesData.map(ed => ed.id));
             get("enemy").forEach(e => {
                 if (!masterIds.has(e.eId)) destroy(e);
             });
-
             enemiesData.forEach(ed => {
                 const en = get(ed.id)[0];
                 if (en) {
                     en.targetPos = vec2(ed.x, ed.y);
-                    if (!en.pos || en.pos.dist(en.targetPos) > 100) {
-                        en.pos = en.targetPos.clone();
-                    }
+                    if (!en.pos || en.pos.dist(en.targetPos) > 100) en.pos = en.targetPos.clone();
+                    if (en.hp > ed.hp) en.stunTimer = 0.2;
                     en.hp = ed.hp;
                     en.flipX = ed.flipX;
                 }
@@ -3139,25 +3166,7 @@
         };
 
         window.handlePlayerHit = (targetId) => {
-            if (targetId === localId) {
-                if(playerDead) return;
-                hp--; updateHP(); 
-                if(hp <= 0) { 
-                    vibrate(200);
-                    hp = 6;
-                    player.pos.x = 80;
-                    player.pos.y = 200;
-                    player.cVel = 0;
-                    updateHP();
-                    spawnKillSplash(player.pos);
-                    addToast("Byl jsi zabit protihráčem! Respawn.");
-                } else {
-                    player.stun = true; player.color = rgb(255,50,50);
-                    vibrate([50, 50, 50]);
-                    doShake(10); playSound(150, 'sawtooth', 0.3, 0.1);
-                    wait(0.5, () => { if(player.exists()) { player.stun = false; player.color = getPlayerColor(localId, true); } });
-                }
-            } else {
+            if (targetId !== localId) {
                 let rp = get(targetId)[0];
                 if (rp) {
                     rp.color = rgb(255,50,50);
@@ -3318,11 +3327,12 @@
 
             if (debugVisible && Math.floor(time()*60)%10 === 0) {
                 const remoteIdsStr = get("remote_player").map(rp => rp.id).join(', ');
+                const enemyDbg = get("enemy").map(e => `${e.eId.split('_').pop()}:[${Math.round(e.pos.x)},${Math.round(e.pos.y)}]`).join(' ');
                 const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
                                `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
                                `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
                                `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
-                               `${TEXTS.debugEnemies(get("enemy").length)}\n${TEXTS.debugCoins(get("coin").length)}\n` +
+                               `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(get("coin").length)}\n` +
                                `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
                                `Peers: ${remoteIdsStr}`;
                 document.getElementById("debug-content").innerText = dbgTxt;
@@ -3333,16 +3343,13 @@
             const isHost = getIsHost();
 
             if (!isHost) {
-                if (e.gravityScale !== 0) e.gravityScale = 0;
-                if (e.isStatic === false) e.isStatic = true; 
-                
+                e.gravityScale = 0;
                 if (e.targetPos) {
                     e.pos.x = lerp(e.pos.x, e.targetPos.x, 20 * dt());
                     e.pos.y = lerp(e.pos.y, e.targetPos.y, 20 * dt());
                 }
             } else {
                 if (e.gravityScale === 0) e.gravityScale = 1;
-                if (e.isStatic === true) e.isStatic = false;
             }
 
             if (e.stunTimer > 0) { 
@@ -3384,26 +3391,45 @@
             if (b.owner === localId) {
                 destroy(b);
                 spawnBlood(rp.pos, 5);
-                if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(rp.id);
             }
         });
 
         onCollide("bullet", "player", (b, p) => {
             if (b.owner !== localId) {
-                destroy(b);
-                spawnBlood(p.pos, 5);
+                destroy(b); spawnBlood(p.pos, 5);
+                if(playerDead) return;
+                
+                hp--; updateHP(); 
+                if(hp <= 0){ 
+                    vibrate(200);
+                    hp = 6; player.pos.x = 80; player.pos.y = 200; player.cVel = 0; updateHP(); 
+                    spawnKillSplash(player.pos); addToast("Zabil tě protihráč! Respawn."); 
+                } else {
+                    p.stun = true; p.cVel = (p.pos.x < b.pos.x ? -1 : 1) * 400; p.jump(JUMP_FORCE * 0.7); p.color = rgb(255, 50, 50);
+                    vibrate([50, 50, 50]);
+                    playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
+                    wait(0.5, () => { if(p.exists()){ p.stun = false; p.color = getPlayerColor(localId, true); } });
+                }
+                
+                if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(localId);
             }
         });
         
         onCollide("bullet","enemy",(b,e)=>{
-            if (!getIsHost()) { destroy(b); spawnBlood(e.pos, 5); return; }
-            destroy(b); spawnBlood(e.pos, 5); e.hp--; playSound(150, 'sawtooth', 0.1, 0.05);
-            if(e.hp<=0){ 
-                const ep=e.pos.clone(); destroy(e); 
-                score += e.is("boss") ? 100 : 5; scoreLabel.text=`Score: ${score}`; 
-                spawnBlood(ep, e.is("boss") ? 60 : 20); doShake(e.is("boss") ? 15 : 3); spawnKillSplash(ep);
-            } else { 
-                e.stunTimer = 0.2; 
+            if (b.owner === localId) {
+                destroy(b); spawnBlood(e.pos, 5); 
+                e.hp--; playSound(150, 'sawtooth', 0.1, 0.05);
+                
+                if(e.hp <= 0){ 
+                    const ep = e.pos.clone(); destroy(e); 
+                    score += e.is("boss") ? 100 : 5; scoreLabel.text = `Score: ${score}`; 
+                    spawnBlood(ep, e.is("boss") ? 60 : 20); doShake(e.is("boss") ? 15 : 3); spawnKillSplash(ep);
+                } else { 
+                    e.stunTimer = 0.2; 
+                }
+                if (typeof window.broadcastEnemyHit === 'function') window.broadcastEnemyHit(e.eId, e.hp);
+            } else {
+                destroy(b); spawnBlood(e.pos, 5); 
             }
         });
 
