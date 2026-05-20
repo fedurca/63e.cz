@@ -301,6 +301,19 @@
         bindBtn('btn-jump', () => { if(window.doJump) window.doJump(); }, () => {});
         bindBtn('btn-shoot', () => { if(window.doShoot) window.doShoot(); }, () => {});
         
+        // ROBUSTNÍ DETEKCE MOBILU (Touch enabler)
+        const enableTouchControls = () => {
+            const controls = document.getElementById('mobile-controls');
+            if (controls) controls.style.display = 'flex';
+        };
+
+        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+            enableTouchControls();
+        } else {
+            // Pro jistotu přidáme listener, kdyby dotyk nastal až později (např. hybridní zařízení)
+            window.addEventListener('touchstart', enableTouchControls, { once: true, passive: true });
+        }
+
         // FULLSCREEN PODPORA PRO MOBILY
         document.getElementById('fullscreen-toggle').addEventListener('click', () => {
             if (typeof window.initAudioContextGlobal === 'function') window.initAudioContextGlobal();
@@ -1279,9 +1292,9 @@
         routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
     };
 
-    window.broadcastEnemyHit = (eId, newHp) => {
+    window.broadcastEnemyHit = (eId, dmg) => {
         if (Object.keys(knownNodes).length === 0) return;
-        routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, hp: newHp });
+        routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
     };
     
     window.broadcastMapSync = (mapData) => {
@@ -1408,7 +1421,7 @@
         }
         else if (msg.type === 'enemy-hit') {
             if (typeof window.handleEnemyHit === 'function') {
-                window.handleEnemyHit(msg.eId, msg.hp);
+                window.handleEnemyHit(msg.eId, msg.dmg);
             }
         }
         else if (msg.type === 'game-next') {
@@ -2583,39 +2596,31 @@
     loadSprite("cloud", `data:image/svg+xml;utf8,<svg width="120" height="60" xmlns="http://www.w3.org/2000/svg"><ellipse cx="40" cy="35" rx="30" ry="20" fill="white" opacity="0.15"/><ellipse cx="70" cy="25" rx="35" ry="22" fill="white" opacity="0.15"/><ellipse cx="55" cy="40" rx="25" ry="15" fill="white" opacity="0.12"/></svg>`);
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
-    /* PŘEPRACOVANÉ MAPY - 4 PATRA, VĚTŠÍ ROZMĚRY, DOPLNĚNÉ PLOŠINY PRO SNADNÝ VÝSKOK K CÍLI */
-    const mapSuffix = [
-        "                            ", "                            ", "                            ", "                            ", 
-        "                            ", "                            ", "                            ", "                            ", 
-        "                            ", "                            ", "                            ", "                            ", 
-        "                            ", "                            "  
-    ];
-
     const TALL_MAP_1 = [
         "                                                                                                                        ",
         "                                                                                                                        ",
-        "                                                                           $      +                        F            ",
-        "                                                                       ========  ====  =======  ======   ======         ",
-        "                                                                                                       ====             ",
-        "                                      B                                                              ====               ",
-        "                  1           ==================         3        ==                               ====                 ",
-        "             =========   ==                               =====                                   ====                  ",
-        "                                                                                                 ====                   ",
-        "                                                                                                ====                    ",
-        "         3                         +                 2                         $    P          ====                     ",
-        "   =============         =================       ==========       ======      ====  ====  ========                      ",
-        "                                                                                               ==                       ",
+        "                                                       $      +                      F            ",
+        "                                                      ========  ====  =======  ======   ======         ",
+        "                                                                                            ====            ",
+        "                                      B                                                    ====               ",
+        "                  1            ==================         3        ==                            ====                 ",
+        "             =========   ==                                =====                                ====                  ",
+        "                                                                                             ====                   ",
+        "                                                                                            ====                    ",
+        "         3                         +                2                         $    P           ====                     ",
+        "   =============          =================        ==========        ======      ====  ====  ========                     ",
+        "                                                                                            ==                       ",
+        "                                                                                              ==                  ",
+        "                                                                                                 ==                 ",
+        "                                B                              1                     +                ==                ",
+        "              $    P                        3            =============        ==================        ==                ",
+        "            =============          ==================                                                ==                 ",
+        "       ==                                                                                             ==                  ",
+        "  ==                                                                                                 ==                   ",
         "                                                                                                  ==                    ",
-        "                                                                                                     ==                 ",
-        "                                B                             1                      +                 ==               ",
-        "              $    P                        3           =============        ==================       ==                ",
-        "            =============         ==================                                                 ==                 ",
-        "       ==                                                                                           ==                  ",
-        "  ==                                                                                               ==                   ",
-        "                                                                                                  ==                    ",
-        "                                1                   2                                       $   P==                     ",
-        "             1            =============       =============         3           ====================                    ",
-        "       =============                                              ======                                                ",
+        "                                1                  2                                        $   P==                     ",
+        "             1            =============        =============        3            ====================                   ",
+        "        =============                                              ======                                               ",
         "========================================================================================================================"
     ];
 
@@ -2625,24 +2630,24 @@
         "         =========                                                                                                      ",
         "                ====                                                                                                    ",
         "                  ====                                                                                                  ",
-        "                    ====                                   B                                                            ",
-        "                      ====                           =============        3             1                               ",
-        "                        ====                   ==                      =======       =======       ========             ",
+        "                    ====                                  B                                                             ",
+        "                      ====                            =============        3            1                               ",
+        "                        ====                  ==                     =======       =======       ========               ",
         "                          ====             ==                                                                           ",
-        "                            ====       ==                                                                               ",
+        "                            ====        ==                                                                              ",
         "                              ==== ==                                                                                   ",
         "                                                                                                                        ",
-        "                                                                              +                                         ",
-        "             3           1                           B                  =============         2                         ",
-        "         ========     ========     ========     ========     ========                               ========            ",
+        "                                                                          +                                             ",
+        "             3            1                            B                 =============        2                         ",
+        "         ========      ========      ========      ========      ========                            ========             ",
         "                                                                                                                        ",
         "                                                                                                                        ",
         "   ==                                                                                                                   ",
         "      ==                                                                                                                ",
         "         ==                                                                                                             ",
         "            ==                                                                                                          ",
-        "               ====             2                        1                          3                                   ",
-        "                   ====   1                =============           =============              =============                     ",
+        "               ====            2                       1                          3                                     ",
+        "                   ====   1                =============            =============              =============                    ",
         "                     ==================                                                                                 ",
         "========================================================================================================================"
     ];
@@ -2650,25 +2655,25 @@
     const TALL_MAP_BOSS = [
         "                                                                                                                        ",
         "                                                                                                                        ",
-        "                                                                                         F                              ",
-        "                                                                                     =========                          ",
-        "                                              +       +                             ====                                ",
+        "                                                                                     F                              ",
+        "                                                                          =========                                 ",
+        "                                              +       +                            ====                                 ",
         "                                           ======= =======                         ====                                 ",
-        "                                        ==                 ==                     ====                                  ",
-        "                                     ==                       ==                 ====                                   ",
-        "                                  ==                             ==             ====                                    ",
+        "                                        ==                 ==                    ====                                 ",
+        "                                      ==                       ==                ====                                   ",
+        "                                  ==                             ==              ====                                   ",
         "                                                                               ====                                     ",
-        "                            3                                          3      ====                                      ",
+        "                            3                                          3       ====                                     ",
         "                      =============                              =========== ====                                       ",
         "                                                                                                                        ",
         "                                                                                                                        ",
-        "                  2                           X   X                            2                                        ",
-        "            =============               =================                =============                                  ",
+        "                  2                            X   X                            2                                       ",
+        "            =============                =================                =============                                 ",
         "                                                                                                                        ",
         "                                                                                                                        ",
         "                                                                                                                        ",
-        "        1                                                                                      1                        ",
-        "  =============                                                                          =============                  ",
+        "        1                                                                                1                        ",
+        "  =============                                                                =============                  ",
         "                                                                                                                        ",
         "                                                                                                                        ",
         "                        3                                              3                                                ",
@@ -3010,10 +3015,10 @@
             ]);
         };
 
-        window.handleEnemyHit = (eId, hp) => {
+        window.handleEnemyHit = (eId, dmg) => {
             let en = get(eId)[0];
-            if (en && en.hp > hp) {
-                en.hp = hp;
+            if (en) {
+                en.hp -= dmg;
                 en.stunTimer = 0.2;
                 if (en.hp <= 0) {
                     const ep = en.pos.clone(); 
@@ -3037,7 +3042,7 @@
                     en.targetPos = vec2(ed.x, ed.y);
                     if (!en.pos || en.pos.dist(en.targetPos) > 100) en.pos = en.targetPos.clone();
                     if (en.hp > ed.hp) en.stunTimer = 0.2;
-                    en.hp = ed.hp;
+                    en.hp = Math.min(en.hp, ed.hp); // Zamezení bounce-backu HP na klientovi
                     en.flipX = ed.flipX;
                 }
             });
@@ -3221,6 +3226,7 @@
 
             if (!isHost) {
                 e.gravityScale = 0;
+                if (e.vel) { e.vel.x = 0; e.vel.y = 0; } // Oprava driftování po gravitaci
                 if (e.targetPos) {
                     e.pos.x = lerp(e.pos.x, e.targetPos.x, 20 * dt());
                     e.pos.y = lerp(e.pos.y, e.targetPos.y, 20 * dt());
@@ -3239,8 +3245,13 @@
             
             if (isHost) {
                 if (e.type==="fly") { 
-                    if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; e.move(e.speed*e.dir,0); 
-                } else e.move(e.speed,0);
+                    if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; 
+                    e.move(e.speed*e.dir,0); 
+                    e.flipX = e.dir < 0; // Oprava rotace hostem
+                } else {
+                    e.move(e.speed,0);
+                    e.flipX = e.speed < 0; // Oprava rotace hostem
+                }
                 
                 if (e.type==="jmp" && e.isGrounded()) { 
                     e.jump(520); e.jTmr -= dt(); if (e.jTmr<=0) { e.jump(520); e.jTmr=rand(1.2,2.8); } 
@@ -3253,7 +3264,7 @@
                 }
             }
             
-            if (Math.abs(e.pos.x-camPos().x) > 2000 && !e.is("boss")) destroy(e);
+            // Odstraněn bug s despawnem na Masteru, když jsou hráči příliš daleko od sebe.
         });
 
         onCollide("enemy","solid",(e,b,col)=>{ if (col && (col.isLeft()||col.isRight())) { if (e.type==="fly") e.dir=-e.dir; else e.speed*=-1; } });
@@ -3304,7 +3315,9 @@
                 } else { 
                     e.stunTimer = 0.2; 
                 }
-                if (typeof window.broadcastEnemyHit === 'function') window.broadcastEnemyHit(e.eId, e.hp);
+                
+                // Oprava Race condition - vysíláme hodnotu dmg, nikoliv absolutní HP
+                if (typeof window.broadcastEnemyHit === 'function') window.broadcastEnemyHit(e.eId, 1);
             } else {
                 destroy(b); spawnBlood(e.pos, 5); 
             }
