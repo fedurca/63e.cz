@@ -1,4 +1,4 @@
-window.TALL_MAP_1 = [
+const TALL_MAP_1 = [
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                               $      +                    F            ",
@@ -26,7 +26,7 @@ window.TALL_MAP_1 = [
     "========================================================================================================================"
 ];
 
-window.TALL_MAP_2 = [
+const TALL_MAP_2 = [
     "                                                                                                                        ",
     "             F                                                                                                          ",
     "         =========                                                                                                      ",
@@ -54,7 +54,7 @@ window.TALL_MAP_2 = [
     "========================================================================================================================"
 ];
 
-window.TALL_MAP_BOSS = [
+const TALL_MAP_BOSS = [
     "                                                                                                                        ",
     "                                                                                                                        ",
     "                                                                                         F                              ",
@@ -83,7 +83,7 @@ window.TALL_MAP_BOSS = [
     "========================================================================================================================"
 ];
 
-window.BASE_THEMES = [
+const BASE_THEMES = [
     { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100] },
     { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0] },
     { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true },
@@ -98,8 +98,8 @@ window.BASE_THEMES = [
     { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true }
 ];
 
-window.LVL = window.BASE_THEMES.map((l, i) => {
-    let coreMap = (i % 2 === 0) ? window.TALL_MAP_1 : window.TALL_MAP_2;
-    if (l.isBoss) coreMap = window.TALL_MAP_BOSS;
+export const LVL = BASE_THEMES.map((l, i) => {
+    let coreMap = (i % 2 === 0) ? TALL_MAP_1 : TALL_MAP_2;
+    if (l.isBoss) coreMap = TALL_MAP_BOSS;
     return { ...l, m: coreMap };
 });
