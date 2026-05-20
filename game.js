@@ -1,4 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
+import { LVL } from "./maps.js";
 
 let audioCtx = null;
 
@@ -37,7 +38,6 @@ window.addEventListener('click', initAudio);
 window.addEventListener('keydown', initAudio); 
 window.addEventListener('touchstart', initAudio);
 
-// OPRAVA: Přímé vrácení rgb() objektu namísto textového řetězce (eliminuje nutnost parseColor)
 function getPlayerColor(nodeId) {
     let hash = 0;
     for (let i = 0; i < nodeId.length; i++) hash = nodeId.charCodeAt(i) + ((hash << 5) - hash);
@@ -174,8 +174,13 @@ window.triggerHttpBlock = () => {
 
 scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     initAudio();
-    const LVL = window.LVL;
     const lvl = LVL[lvlIdx];
+    
+    if (!lvl) {
+        go("victory", score);
+        return;
+    }
+
     setBackground(lvl.bg[0], lvl.bg[1], lvl.bg[2]);
     document.getElementById('game-wrapper').style.backgroundColor = `rgb(${lvl.bg.join(',')})`; 
     setGravity(lvl.g);
@@ -602,7 +607,6 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         } else {
             let dir = (useTilt && tiltAccel !== 0) ? tiltAccel : 0;
             
-            // OPRAVA PRO NEDIFINOVANÝ STAV (např. při chybě loadingu)
             if ((window.ctrlState && window.ctrlState.left) || isKeyDown("left") || isKeyDown("a")) dir = -1;
             if ((window.ctrlState && window.ctrlState.right) || isKeyDown("right") || isKeyDown("d")) dir = 1;
 
@@ -848,7 +852,7 @@ scene("victory", (sc) => {
     const pCol = getPlayerColor(localId);
     add([sprite("player"), pos(400,height()-40), scale(1.4), color(pCol), anchor("bot")]).play("idle");
     
-    window.LVL.forEach((l,i)=>{ 
+    LVL.forEach((l,i)=>{ 
         const xP = i<5?50+i*65:470+(i-5)*65; 
         const yP = i<5?height()-40:height()-80; 
         add([sprite("e_nrm"), color(l.ec[0],l.ec[1],l.ec[2]), scale(1.3), pos(xP,yP), anchor("bot"), "cheer"]); 
@@ -865,7 +869,7 @@ scene("victory", (sc) => {
     onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
 });
 
-// START HRY (ZDE BYLA OPRAVENA RACE-CONDITION PRO SPLIT-CODE)
+// STARTER
 window.startGameKaboom = () => {
     if (window.gameStarted) return;
     window.gameStarted = true;
@@ -873,7 +877,7 @@ window.startGameKaboom = () => {
     go("game", 0, 6, 25, 0);
 };
 
-// Spuštění, pokud už uživatel odklikl menu před načtením modulu Kaboom.js
+// Automaticky spustit, pokud bylo UI menu uz odkliknuto pres parametr
 const setupScreen = document.getElementById('setup-screen');
 if (setupScreen && setupScreen.style.display === 'none') {
     window.startGameKaboom();
