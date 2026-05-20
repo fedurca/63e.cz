@@ -1,7 +1,70 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./map.js";
+import { LVL } from "./maps.js?v=20260520-webfix";
 
-const LEVELS = Array.isArray(LVL) ? LVL : [];
+// Obrana proti špatně nasazené / staré mapě na webu:
+// některé starší buildy měly LVL jako pole řádků mapy bez tématu
+// nebo web kvůli cache načetl nekompatibilní map.js. Tady level normalizujeme,
+// aby hra nespadla na chybě typu: Cannot read properties of undefined (reading '0').
+const DEFAULT_LEVEL_THEMES = [
+    { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100] },
+    { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0] },
+    { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true },
+    { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true },
+    { bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255] },
+    { bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0] },
+    { bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255] },
+    { bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true },
+    { bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true },
+    { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0] },
+    { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150] },
+    { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true },
+];
+
+function safeColor(value, fallback) {
+    if (!Array.isArray(value)) return fallback.slice();
+    const out = value.slice(0, 3).map(v => Number.isFinite(Number(v)) ? Number(v) : 0);
+    while (out.length < 3) out.push(fallback[out.length] || 0);
+    return out;
+}
+
+function normalizeMapRows(m) {
+    if (!Array.isArray(m)) return null;
+    const rows = m.map(r => String(r ?? ""));
+    const nonEmpty = rows.filter(r => r.length > 0);
+    if (!nonEmpty.length) return null;
+    const width = Math.max(...nonEmpty.map(r => r.length), 1);
+    return rows.map(r => r.padEnd(width, " "));
+}
+
+function normalizeLevel(raw, idx) {
+    const theme = DEFAULT_LEVEL_THEMES[idx % DEFAULT_LEVEL_THEMES.length] || DEFAULT_LEVEL_THEMES[0];
+    if (Array.isArray(raw)) {
+        const m = normalizeMapRows(raw);
+        return m ? { ...theme, m } : null;
+    }
+    if (!raw || typeof raw !== "object") return null;
+
+    const rawMap = raw.m || raw.map || raw.tiles || raw.level;
+    const m = normalizeMapRows(rawMap);
+    if (!m) return null;
+
+    return {
+        ...theme,
+        ...raw,
+        m,
+        bg: safeColor(raw.bg, theme.bg),
+        th: safeColor(raw.th, theme.th),
+        tt: safeColor(raw.tt, theme.tt),
+        ec: safeColor(raw.ec, theme.ec),
+        g: Number.isFinite(Number(raw.g)) ? Number(raw.g) : theme.g,
+        f: Number.isFinite(Number(raw.f)) ? Number(raw.f) : theme.f,
+    };
+}
+
+const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
+window.__GAME_BUILD = "p2p-v23-webfix-20260520";
+window.__GAME_LEVEL_COUNT = LEVELS.length;
+
 function safeLevelIndex(value) {
     const n = Number(value);
     if (!Number.isFinite(n)) return 0;
@@ -193,6 +256,9 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     if (!lvl) {
         go("victory", Number.isFinite(Number(score)) ? Number(score) : 0);
         return;
+    }
+    if (!Array.isArray(lvl.m) || !lvl.m.length || typeof lvl.m[0] !== "string") {
+        throw new Error(`Neplatná mapa levelu ${lvlIdx}: chybí pole řádků lvl.m`);
     }
 
     setBackground(lvl.bg[0], lvl.bg[1], lvl.bg[2]);

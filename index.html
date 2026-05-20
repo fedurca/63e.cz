@@ -6,6 +6,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>P2P v23 - redeploy</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -156,6 +159,33 @@
         .modal-btns { margin-top: 20px; display: flex; justify-content: center; gap: 10px; } 
         .modal-btns button { border: none; padding: 10px 20px; border-radius: 8px; font-size: 1rem; font-weight: bold; cursor: pointer; }
     </style>
+
+<script>
+// Jednorázová obrana proti staré webové verzi v cache / starému Service Workeru.
+// Lokální test běží čistě, ale ostrý web mohl servírovat staré index/game/map soubory.
+(function clearOldGameCaches() {
+    try {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations()
+                .then(regs => regs.forEach(reg => reg.unregister()))
+                .catch(() => {});
+        }
+        if (window.caches && caches.keys) {
+            caches.keys()
+                .then(keys => keys.filter(k => /stickman|p2p|game/i.test(k)).forEach(k => caches.delete(k)))
+                .catch(() => {});
+        }
+    } catch (e) {}
+})();
+window.addEventListener('error', function(e) {
+    var el = document.getElementById('crash-screen');
+    if (!el) return;
+    el.style.display = 'block';
+    var msg = (e && e.message) ? e.message : String(e || 'Neznámá chyba');
+    var stack = (e && e.error && e.error.stack) ? e.error.stack : '';
+    el.innerHTML = '<h1>Error</h1><pre>' + msg.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '\n\n' + stack.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])) + '</pre><button onclick="location.reload()">Restartovat hru</button>';
+});
+</script>
 </head>
 <body>
 
@@ -270,8 +300,8 @@
     </div>
 </div>
 
-<script src="network.js"></script>
-<script type="module" src="game.js"></script>
+<script src="network.js?v=20260520-webfix"></script>
+<script type="module" src="game.js?v=20260520-webfix"></script>
 
 </body>
 </html>
