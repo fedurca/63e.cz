@@ -128,8 +128,66 @@ window.toggleChat = function() {
     DOM.chatToggleBtn.innerText = DOM.app.classList.contains('chat-open') ? '⬇ Skrýt Chat' : '💬 Chat';
 };
 
-const WORKER_URL = "https://api.63e.cz";
+const DEFAULT_WORKER_URL = "https://api.63e.cz";
+const WORKER_URL = (new URLSearchParams(location.search).get("signal") || localStorage.getItem("signal_worker_url") || DEFAULT_WORKER_URL).replace(/\/+$/, "");
 const MAX_HISTORY = 250;
+const LOCAL_SIGNAL_PREFIX = "p2p_v22_signal:";
+let signalTransport = "api";
+let apiBackoffUntil = 0;
+let apiWarned = false;
+
+function localSignalKey(key) {
+    return LOCAL_SIGNAL_PREFIX + String(key).replace(/[^a-zA-Z0-9_.:-]/g, "_");
+}
+
+function writeLocalSignal(subdomena, data) {
+    try {
+        localStorage.setItem(localSignalKey(subdomena), JSON.stringify({ ts: Date.now(), content: komprimovat(data) }));
+        signalTransport = "local";
+        updateDebugStats('dns', `LOCAL: ${subdomena}`);
+        return true;
+    } catch (e) {
+        logDebug(`[SIGNAL] Lokální fallback selhal: ${escapeHTML(e.message || String(e))}`, 'error', myId);
+        return false;
+    }
+}
+
+function readLocalSignal(subdomena) {
+    try {
+        const raw = localStorage.getItem(localSignalKey(subdomena));
+        if (!raw) return null;
+        const rec = JSON.parse(raw);
+        if (!rec || !rec.content) return null;
+        signalTransport = "local";
+        updateDebugStats('dns', `LOCAL: ${subdomena}`);
+        return dekomprimovat(rec.content);
+    } catch (e) {
+        return null;
+    }
+}
+
+function markApiUnavailable(err) {
+    signalTransport = "local";
+    apiBackoffUntil = Date.now() + 30000;
+    updateDebugStats('dns', 'LOCAL fallback');
+    if (!apiWarned) {
+        apiWarned = true;
+        const reason = err && err.message ? err.message : String(err || 'neznámá chyba');
+        logDebug(`[SIGNAL] API ${WORKER_URL} není dostupné nebo ho blokuje CORS (${escapeHTML(reason)}). Přepínám na lokální fallback. Pro multiplayer mezi různými prohlížeči nebo zařízeními musí běžet stránka i signalizační API na povolené stejné/origin doméně.`, 'error', myId);
+    }
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 3500) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, { ...options, signal: ctrl.signal, cache: 'no-store' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } finally {
+        clearTimeout(t);
+    }
+}
 
 const WEBRTC_CONFIG = {
     iceServers: [ 
@@ -409,13 +467,14 @@ function dekomprimovat(b64) {
 let logBuffer = [];
 function flushLogs() {
     if (logBuffer.length === 0) return;
+    if (Date.now() < apiBackoffUntil) return;
     const logsToSend = [...logBuffer];
     logBuffer = [];
-    fetch(`${WORKER_URL}/log`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logs: logsToSend }), keepalive: true }).catch(e => {  });
+    fetch(`${WORKER_URL}/log`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logs: logsToSend }), keepalive: true }).catch(e => { logBuffer.unshift(...logsToSend.slice(-20)); });
 }
 setInterval(flushLogs, 5000);
 window.addEventListener('beforeunload', () => {
-    if (logBuffer.length > 0) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+    if (logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
 });
 
 function logDebug(msg, type = 'info', sourceId = null) { 
@@ -503,31 +562,47 @@ async function decryptE2E(ivB64, cipherB64, senderId) {
 }
 
 async function writeSignal(subdomena, data, retry = 2) { 
-    updateDebugStats('dns', `ZÁPIS: ${subdomena}`); 
+    updateDebugStats('dns', signalTransport === 'local' ? `LOCAL: ${subdomena}` : `ZÁPIS: ${subdomena}`); 
+
+    if (Date.now() < apiBackoffUntil) {
+        return writeLocalSignal(subdomena, data);
+    }
+
+    let lastErr = null;
     while (retry > 0) { 
         try { 
-            const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) }); 
-            const out = await res.json(); 
-            if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
-        } catch (e) { } 
+            const out = await fetchJsonWithTimeout(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) }); 
+            if(out && out.success) { signalTransport = 'api'; updateDebugStats('dns', 'OK'); return true; } 
+            lastErr = new Error(out && out.error ? out.error : 'API vrátilo success=false');
+        } catch (e) { lastErr = e; } 
         retry--; 
         if(retry > 0) await new Promise(r => setTimeout(r, 800)); 
     } 
-    return false; 
+
+    markApiUnavailable(lastErr);
+    return writeLocalSignal(subdomena, data);
 }
 
 async function readSignal(subdomena) { 
-    updateDebugStats('dns', `ČTENÍ: ${subdomena}`); 
+    updateDebugStats('dns', signalTransport === 'local' ? `LOCAL: ${subdomena}` : `ČTENÍ: ${subdomena}`); 
+
+    if (Date.now() < apiBackoffUntil) {
+        return readLocalSignal(subdomena);
+    }
+
     try { 
-        const res = await fetch(`${WORKER_URL}?key=${subdomena}&_t=${Date.now()}`); 
-        const json = await res.json(); 
-        if(json.success && json.content) { 
+        const json = await fetchJsonWithTimeout(`${WORKER_URL}?key=${encodeURIComponent(subdomena)}&_t=${Date.now()}`); 
+        if(json && json.success && json.content) { 
+            signalTransport = 'api';
             updateDebugStats('dns', 'OK'); 
             const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
             return dekomprimovat(cleanB64); 
         } 
-    } catch(e) { } 
-    return null; 
+        return readLocalSignal(subdomena);
+    } catch(e) { 
+        markApiUnavailable(e);
+        return readLocalSignal(subdomena);
+    } 
 }
 
 function reRenderAllHistory() { 
@@ -1746,6 +1821,7 @@ async function fullResetAndReconnect() {
     connections = {}; 
     channels = {}; 
     knownNodes = {}; 
+    window.chat_knownNodes = knownNodes;
     networkGraph = { root: null, edges: [] }; 
     processingOffers.clear(); 
     peerStats = {}; 
@@ -1900,6 +1976,11 @@ async function startDnsHostLoop() {
             httpQueue.forEach(clientId => { 
                 if(!knownHttpClients.has(clientId)) { 
                     knownHttpClients.add(clientId); 
+                    if(!knownNodes[clientId]) {
+                        knownNodes[clientId] = { name: clientId, publicKeyJWK: null, lastSeen: Date.now(), tele: {} };
+                        updateDebugStats('nodes', Object.keys(knownNodes).length);
+                        if (DOM.uiUserCount) DOM.uiUserCount.innerText = Object.keys(knownNodes).length;
+                    }
                     logDebug(`[HTTP RELAY] Uzel ${clientId} připojen přes API fallback.`, 'log-relay', myId); 
                 } 
             }); 
@@ -1911,6 +1992,7 @@ async function startDnsHostLoop() {
             if(incomingArr && Array.isArray(incomingArr)) { 
                 incomingArr.forEach(msg => { 
                     if(msg.type === '_ping') { 
+                        if(!knownNodes[clientId]) knownNodes[clientId] = { name: clientId, publicKeyJWK: null, lastSeen: Date.now(), tele: {} };
                         knownNodes[clientId].lastSeen = Date.now(); 
                         if(msg.tele) knownNodes[clientId].tele = msg.tele; 
                         addToHttpOutbox(clientId, { type: '_pong', sender: myId, t: msg.t, tele: myTelemetry }); 

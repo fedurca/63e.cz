@@ -1,5 +1,15 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js";
+import { LVL } from "./map.js";
+
+const LEVELS = Array.isArray(LVL) ? LVL : [];
+function safeLevelIndex(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+}
+function safeLevelCount() {
+    return LEVELS.length || 0;
+}
 
 let audioCtx = null;
 
@@ -105,7 +115,7 @@ kaboom({ canvas: document.getElementById("game-canvas"), width: 800, height: 480
 
 const TEXTS = {
     debugTitle: "=== DEBUG INFO ===",
-    debugLevel: (lvl) => `Level: ${lvl}/12`, debugHP: (hp, max) => `HP: ${hp}/${max}`,
+    debugLevel: (lvl) => `Level: ${lvl}/${safeLevelCount() || 0}`, debugHP: (hp, max) => `HP: ${hp}/${max}`,
     debugAmmo: (ammo) => `Ammo: ${ammo}`, debugScore: (sc) => `Score: ${sc}`,
     debugPos: (x, y) => `Pozice: (${x.toFixed(0)}, ${y.toFixed(0)})`, debugVel: (v) => `Rychlost: ${v.toFixed(1)}`,
     debugGround: (g) => `Na zemi: ${g}`, debugStun: (s) => `Stun: ${s}`,
@@ -174,10 +184,14 @@ window.triggerHttpBlock = () => {
 
 scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     initAudio();
-    const lvl = LVL[lvlIdx];
+    lvlIdx = safeLevelIndex(lvlIdx);
+    if (!safeLevelCount()) {
+        throw new Error("Mapy se nenačetly: LVL je prázdné. Zkontroluj soubor map.js/maps.js.");
+    }
+    const lvl = LEVELS[lvlIdx];
     
     if (!lvl) {
-        go("victory", score);
+        go("victory", Number.isFinite(Number(score)) ? Number(score) : 0);
         return;
     }
 
@@ -307,7 +321,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     const ammoLabel = ui.add([text(`x ${ammo}`, {size:20}), pos(235,20)]);
     
     const lvlIndicator = ui.add([
-        text(`Level ${lvlIdx+1}/${LVL.length}`, {size:20}), pos(width()/2, 20), anchor("center"), area(), "lvl_indicator"
+        text(`Level ${lvlIdx+1}/${safeLevelCount()}`, {size:20}), pos(width()/2, 20), anchor("center"), area(), "lvl_indicator"
     ]);
 
     let tripleCharge = 0;
@@ -507,7 +521,8 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     window.handleLevelComplete = (nextLvlIdx) => {
         if (playerDead) return;
         playerDead = true;
-        if (nextLvlIdx < LVL.length) go("game", nextLvlIdx, hp, ammo, score);
+        nextLvlIdx = safeLevelIndex(nextLvlIdx);
+        if (nextLvlIdx < safeLevelCount()) go("game", nextLvlIdx, hp, ammo, score);
         else go("victory", score);
     };
 
@@ -816,13 +831,14 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         if(!playerDead){ 
             playerDead=true; 
             if(typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(lvlIdx + 1);
-            if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
+            if (lvlIdx + 1 < safeLevelCount()) go("game", lvlIdx + 1, hp, ammo, score);
             else go("victory", score); 
         } 
     });
 });
 
 scene("lose", (lvlIdx, sc) => {
+    lvlIdx = safeLevelIndex(lvlIdx);
     setBackground(30,10,10); 
     document.getElementById('game-wrapper').style.backgroundColor = `rgb(30,10,10)`;
     add([text(`ZEMŘEL JSI V LEVELU ${lvlIdx+1}!`, {size:32}), pos(width()/2, height()/2 - 40), color(255,100,100), anchor("center")]);
@@ -852,7 +868,7 @@ scene("victory", (sc) => {
     const pCol = getPlayerColor(localId);
     add([sprite("player"), pos(400,height()-40), scale(1.4), color(pCol), anchor("bot")]).play("idle");
     
-    LVL.forEach((l,i)=>{ 
+    LEVELS.forEach((l,i)=>{ 
         const xP = i<5?50+i*65:470+(i-5)*65; 
         const yP = i<5?height()-40:height()-80; 
         add([sprite("e_nrm"), color(l.ec[0],l.ec[1],l.ec[2]), scale(1.3), pos(xP,yP), anchor("bot"), "cheer"]); 
@@ -872,6 +888,14 @@ scene("victory", (sc) => {
 // STARTER
 window.startGameKaboom = () => {
     if (window.gameStarted) return;
+    if (!safeLevelCount()) {
+        const el = document.getElementById("crash-screen");
+        if (el) {
+            el.style.display = "block";
+            el.innerHTML = `<h1>Error</h1><pre>Mapy se nenačetly: LVL je prázdné. Ověř soubor map.js/maps.js a načti stránku bez cache.</pre>`;
+        }
+        return;
+    }
     window.gameStarted = true;
     initAudio();
     go("game", 0, 6, 25, 0);
