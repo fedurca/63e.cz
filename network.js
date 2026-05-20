@@ -1,0 +1,2050 @@
+let DOM = {};
+
+document.addEventListener("DOMContentLoaded", () => {
+    DOM = {
+        app: document.getElementById('app'),
+        chatToggleBtn: document.getElementById('chat-toggle-btn'),
+        chatArea: document.getElementById('chat-area'),
+        chatInput: document.getElementById('chat-input'),
+        sendBtn: document.getElementById('send-btn'),
+        btnAttach: document.getElementById('btn-attach'),
+        btnClearHistory: document.getElementById('btn-clear-history'),
+        uiRole: document.getElementById('ui-role'),
+        statusDot: document.getElementById('status-dot'),
+        statusTimer: document.getElementById('status-timer'),
+        uiMyName: document.getElementById('ui-my-name'),
+        uiUserCount: document.getElementById('ui-user-count'),
+        dbgNodes: document.getElementById('dbg-nodes'),
+        dbgId: document.getElementById('dbg-id'),
+        debugLog: document.getElementById('debug-log'),
+        netHealthList: document.getElementById('net-health-list'),
+        setupScreen: document.getElementById('setup-screen'),
+        username: document.getElementById('username'),
+        joinBtn: document.getElementById('join-btn'),
+        fileInput: document.getElementById('file-input'),
+        topoCanvas: document.getElementById('topo-canvas'),
+        topoTooltip: document.getElementById('topo-tooltip'),
+        remoteVideo: document.getElementById('remote-video'),
+        localVideo: document.getElementById('local-video'),
+        videoOverlay: document.getElementById('video-overlay'),
+        videoPeerName: document.getElementById('video-peer-name'),
+        btnVidMic: document.getElementById('btn-vid-mic'),
+        btnVidCam: document.getElementById('btn-vid-cam'),
+        btnVidShare: document.getElementById('btn-vid-share'),
+        incomingModal: document.getElementById('incoming-modal'),
+        incomingName: document.getElementById('incoming-name')
+    };
+
+    DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nickname', e.target.value.trim()));
+
+    document.getElementById('btn-copy-log').addEventListener('click', () => {
+        const text = DOM.debugLog.innerText;
+        if(navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(() => alert('Systémový log zkopírován!'));
+        } else {
+            prompt('Zkopíruj ručně:', text);
+        }
+    });
+
+    DOM.topoCanvas.addEventListener('mousemove', (e) => { 
+        const mouseX = e.offsetX; 
+        const mouseY = e.offsetY; 
+        let hoveredEdge = null; 
+        
+        for (const edge of drawnEdges) { 
+            const A = mouseX - edge.x1, B = mouseY - edge.y1, C = edge.x2 - edge.x1, D = edge.y2 - edge.y1; 
+            const dot = A * C + B * D; 
+            const len_sq = C * C + D * D; 
+            let param = -1; 
+            if (len_sq !== 0) param = dot / len_sq; 
+            let xx, yy; 
+            if (param < 0) { xx = edge.x1; yy = edge.y1; } 
+            else if (param > 1) { xx = edge.x2; yy = edge.y2; } 
+            else { xx = edge.x1 + param * C; yy = edge.y1 + param * D; } 
+            const dx = mouseX - xx, dy = mouseY - yy; 
+            const dist = Math.sqrt(dx * dx + dy * dy); 
+            if (dist < 8) { hoveredEdge = edge; break; } 
+        }
+        
+        if (hoveredEdge) { 
+            DOM.topoTooltip.style.display = 'block'; 
+            let ttX = mouseX + 15; 
+            let ttY = mouseY + 15; 
+            if (ttX + 160 > DOM.topoCanvas.width) ttX = mouseX - 170; 
+            DOM.topoTooltip.style.left = ttX + 'px'; 
+            DOM.topoTooltip.style.top = ttY + 'px'; 
+            
+            const name = knownNodes[hoveredEdge.id] ? escapeHTML(knownNodes[hoveredEdge.id].name.substr(0,12)) : hoveredEdge.id; 
+            const s = hoveredEdge.stats; 
+            const rtt = s.rtt > 0 ? s.rtt + ' ms' : 'N/A'; 
+            const bit = s.bitrate !== undefined ? s.bitrate + ' kbps' : '0 kbps'; 
+            const type = s.isRelay ? '<span style="color:#feca57">Relay (TURN/HTTP)</span>' : '<span style="color:#2ed573">Direct (P2P)</span>'; 
+            let protoStr = (s.protocol || 'UDP').toUpperCase(); 
+            let serverStr = s.server || 'Local LAN'; 
+            const direction = (!isDnsHost && hoveredEdge.id === myId) ? `Ty ↔ Master` : `Master ↔ ${name}`; 
+            
+            DOM.topoTooltip.innerHTML = `<span style="color:#fff">Cesta:</span> <b>${direction}</b><br><span style="color:#fff">Linka:</span> ${type}<br><span style="color:#fff">Ping:</span> <span style="color:#00d2d3">${rtt}</span><br><span style="color:#fff">Bitrate:</span> <span style="color:#00d2d3">${bit}</span><div class="tooltip-server">🔗 Via: ${serverStr} (${protoStr})</div>`; 
+        } else { 
+            DOM.topoTooltip.style.display = 'none'; 
+        } 
+    });
+    
+    DOM.topoCanvas.addEventListener('mouseleave', () => DOM.topoTooltip.style.display = 'none'); 
+    window.addEventListener('resize', drawTopology);
+
+    const urlParams = new URLSearchParams(window.location.search); 
+    let urlNick = urlParams.get('n') || urlParams.get('nick'); 
+    let urlMsg = urlParams.get('m') || urlParams.get('msg'); 
+    const rawQuery = window.location.search; 
+    
+    if (!urlMsg && rawQuery.includes('?m=')) { 
+        const parts = rawQuery.split('?m='); 
+        urlNick = new URLSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
+        urlMsg = parts[1]; 
+    } else if (!urlMsg && rawQuery.includes('?msg=')) { 
+        const parts = rawQuery.split('?msg='); 
+        urlNick = new URLSearchParams(parts[0]).get('n') || new URLSearchParams(parts[0]).get('nick'); 
+        urlMsg = parts[1]; 
+    }
+    
+    if (urlMsg) { 
+        pendingAutoMsg = decodeURIComponent(urlMsg); 
+        DOM.chatInput.value = pendingAutoMsg; 
+    }
+    
+    if (urlNick) { 
+        DOM.username.value = decodeURIComponent(urlNick); 
+        localStorage.setItem('chat_nickname', DOM.username.value); 
+        logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info', myId); 
+        setTimeout(() => { window.initSystem(); }, 500); 
+    } else { 
+        const savedName = localStorage.getItem('chat_nickname'); 
+        if (savedName) DOM.username.value = savedName; 
+    }
+});
+
+window.toggleChat = function() {
+    DOM.app.classList.toggle('chat-open');
+    DOM.chatToggleBtn.innerText = DOM.app.classList.contains('chat-open') ? '⬇ Skrýt Chat' : '💬 Chat';
+};
+
+const WORKER_URL = "https://api.63e.cz";
+const MAX_HISTORY = 250;
+
+const WEBRTC_CONFIG = {
+    iceServers: [ 
+        { urls: 'stun:stun.cloudflare.com:3478' }, 
+        { urls: 'stun:stun1.l.google.com:3478' }, 
+        { urls: 'stun:global.stun.twilio.com:3478' }, 
+        { urls: 'turns:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }, 
+        { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' } 
+    ],
+    iceCandidatePoolSize: 2
+};
+
+function getStableNodeId() { 
+    let saved = localStorage.getItem('p2p_stable_id'); 
+    if (saved) return saved; 
+    const fp = navigator.userAgent + screen.width + 'x' + screen.height + (navigator.hardwareConcurrency || 2); 
+    let hash = 0; 
+    for (let i = 0; i < fp.length; i++) { 
+        hash = ((hash << 5) - hash) + fp.charCodeAt(i); 
+        hash |= 0; 
+    } 
+    let id = Math.abs(hash).toString(36).substring(0, 6); 
+    while(id.length < 6) id += '0'; 
+    localStorage.setItem('p2p_stable_id', id); 
+    return id; 
+}
+
+function generateMsgId() { 
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
+}
+
+let myId = getStableNodeId(); 
+window.chat_myId = myId; 
+let myName = ""; 
+let isDnsHost = false; 
+window.chat_isHost = () => isDnsHost;
+
+let connections = {}; 
+let channels = {}; 
+let networkGraph = { root: myId, edges: [] }; 
+let seenMessages = new Set(); 
+let knownNodes = {}; 
+window.chat_knownNodes = knownNodes; 
+
+let chatHistory = []; 
+let myKeyPair = null; 
+let joinInterval = null; 
+let dnsInterval = null; 
+let isResetting = false; 
+let isCheckingIsolation = false; 
+let currentSessionId = null; 
+let fileBuffers = {};
+let blacklistedHubId = null; 
+let blacklistedHubTimeout = 0; 
+let processingOffers = new Set(); 
+let peerStats = {}; 
+let drawnEdges = []; 
+let appSessionTime = 0; 
+let watchdogTick = Date.now(); 
+let isIceRestarting = false; 
+let pendingAutoMsg = null; 
+let globalKnownHubId = null;
+
+let activeCall = { pc: null, peerId: null, localStream: null, screenStream: null, isAudioMuted: false, isVideoMuted: false, isScreenSharing: false };
+let incomingCallData = null;
+
+let lastSyncRequestTime = 0;
+let activeSyncOperations = new Set();
+let syncState = {}; 
+
+let isHttpRelayMode = false; 
+window.isHttpRelayMode = false;
+let knownHttpClients = new Set(); 
+let httpOutbox = {}; 
+let httpRelayInterval = null;
+
+function addToHttpOutbox(target, msg) { 
+    if(!httpOutbox[target]) httpOutbox[target] = []; 
+    httpOutbox[target].push(msg); 
+    if(httpOutbox[target].length > 20) httpOutbox[target].shift(); 
+}
+
+let myTelemetry = { os: '?', browser: '?', res: `${screen.width}x${screen.height}`, dpi: '?', diag: '?', bat: '?', lang: '?', loc: 'Měřím...', perf: 'Měřím...' };
+
+function formatTelemetry(t) { 
+    if (!t || !t.os) return 'Telemetrie nedostupná'; 
+    const dpi = t.dpi ? `${t.dpi} DPI, ` : ''; 
+    const diag = t.diag ? `${t.diag}` : ''; 
+    return `💻 ${t.os} | 🌐 ${t.browser} | 📱 ${t.res} (${dpi}${diag}) | 🔋 ${t.bat} | 🗣️ ${t.lang} | 🌍 ${t.loc} | ⚡ ${t.perf}`; 
+}
+
+async function estimateDevicePower() { 
+    return new Promise((resolve) => { 
+        setTimeout(() => { 
+            let w = 0; 
+            for (let i = 1; i < 500000; i++) { w += Math.sqrt(i); } 
+            const start = performance.now(); 
+            let result = 0; 
+            for (let i = 1; i < 10000000; i++) { result += Math.sqrt(i) * Math.sin(i); } 
+            const end = performance.now(); 
+            const durationMs = Math.round(end - start) || 1; 
+            let score = Math.round(200000 / durationMs); 
+            let year = "Neznámý"; 
+            if (score >= 8000) year = "2022-2024 (High-End)"; 
+            else if (score >= 4000) year = "2020-2021 (Moderní CPU)"; 
+            else if (score >= 1500) year = "2017-2019 (Mainstream)"; 
+            else if (score >= 500) year = "Starší / Střední třída"; 
+            else year = "Omezený výkon / Úspora baterie"; 
+            resolve(`Skóre: ${score} (${year})`); 
+        }, 100); 
+    }); 
+}
+
+async function estimateLocation() { 
+    const regions = [ 
+        { id: 'CZ', url: 'https://www.nic.cz/favicon.ico' }, 
+        { id: 'SK', url: 'https://sk-nic.sk/favicon.ico' }, 
+        { id: 'DE', url: 'https://www.denic.de/favicon.ico' }, 
+        { id: 'AT', url: 'https://www.nic.at/favicon.ico' }, 
+        { id: 'PL', url: 'https://www.dns.pl/favicon.ico' }, 
+        { id: 'UK', url: 'https://www.nominet.uk/favicon.ico' }
+    ]; 
+    const continents = { 'CZ': 'Evropa', 'SK': 'Evropa', 'DE': 'Evropa', 'AT': 'Evropa', 'PL': 'Evropa', 'UK': 'Evropa' }; 
+    const ping = async (url) => { 
+        const start = performance.now(); 
+        try { 
+            await fetch(url + '?t=' + Math.random(), { mode: 'no-cors', cache: 'no-store' }); 
+            return performance.now() - start; 
+        } catch(e) { return 9999; } 
+    }; 
+    let promises = regions.map(async (r) => { return { id: r.id, time: await ping(r.url) }; }); 
+    let results = await Promise.all(promises); 
+    results = results.filter(r => r.time < 9999).sort((a,b) => a.time - b.time); 
+    
+    if (results.length > 0) { 
+        let top3 = results.slice(0, 3); 
+        let continent = continents[top3[0].id] || 'Neznámý'; 
+        myTelemetry.loc = top3.map(x => `${x.id} (${Math.round(x.time)}ms)`).join(', ') + ` [${continent}]`; 
+    } else { 
+        myTelemetry.loc = "Neznámá (Blokováno/Privacy)"; 
+    } 
+}
+
+async function updateTelemetry() { 
+    const ua = navigator.userAgent; 
+    if (ua.includes("Windows NT 10.0")) myTelemetry.os = "Win 10/11"; 
+    else if (ua.includes("Windows NT 6.")) myTelemetry.os = "Win 7/8"; 
+    else if (ua.includes("Mac OS X")) myTelemetry.os = "macOS"; 
+    else if (ua.includes("Linux")) myTelemetry.os = "Linux"; 
+    else if (ua.includes("Android")) myTelemetry.os = "Android"; 
+    else if (ua.includes("iPhone") || ua.includes("iPad")) myTelemetry.os = "iOS"; 
+    else myTelemetry.os = "Jiné"; 
+    
+    if (ua.includes("Firefox/")) myTelemetry.browser = "Firefox"; 
+    else if (ua.includes("Edg/")) myTelemetry.browser = "Edge"; 
+    else if (ua.includes("Chrome/")) myTelemetry.browser = "Chrome"; 
+    else if (ua.includes("Safari/") && !ua.includes("Chrome")) myTelemetry.browser = "Safari"; 
+    else if (ua.includes("OPR/")) myTelemetry.browser = "Opera"; 
+    else myTelemetry.browser = "Jiný"; 
+    
+    myTelemetry.lang = navigator.languages ? navigator.languages.join(', ') : (navigator.language || '?'); 
+    const dpr = window.devicePixelRatio || 1; 
+    const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); 
+    
+    if (isMobile) { 
+        myTelemetry.dpi = Math.round(dpr * 150); 
+        myTelemetry.diag = '~6" (Mobil)'; 
+    } else { 
+        myTelemetry.dpi = Math.round(dpr * 96); 
+        const cssDiagonal = Math.sqrt(screen.width * screen.width + screen.height * screen.height); 
+        myTelemetry.diag = `~${(cssDiagonal / 96).toFixed(1)}"`; 
+    } 
+    
+    try { 
+        if (navigator.getBattery) { 
+            const b = await navigator.getBattery(); 
+            myTelemetry.bat = Math.round(b.level * 100) + "%" + (b.charging ? " ⚡" : ""); 
+        } else { 
+            myTelemetry.bat = "N/A (Blokováno)"; 
+        } 
+    } catch(e) { 
+        myTelemetry.bat = "N/A"; 
+    } 
+    
+    if (myTelemetry.perf === 'Měřím...') {
+        myTelemetry.perf = await estimateDevicePower();
+    } 
+}
+
+estimateLocation(); 
+updateTelemetry(); 
+setInterval(updateTelemetry, 60000); 
+
+setInterval(() => { 
+    const now = Date.now(); 
+    const delta = now - watchdogTick; 
+    if (delta < 2000) appSessionTime++; 
+    
+    const m = String(Math.floor(appSessionTime / 60)).padStart(2, '0'); 
+    const s = String(appSessionTime % 60).padStart(2, '0'); 
+    
+    if(DOM.statusTimer) DOM.statusTimer.innerText = `${m}:${s}`; 
+    
+    if (delta > 10000) { 
+        logDebug(`[WATCHDOG] Detekováno uspání tabu/systému. Resetuji síť...`, "error", myId); 
+        appSessionTime = 0; 
+        fullResetAndReconnect(); 
+    } 
+    watchdogTick = now; 
+}, 1000); 
+
+document.addEventListener('visibilitychange', () => { 
+    if (document.visibilityState === 'visible') { 
+        const delta = Date.now() - watchdogTick; 
+        if (delta > 10000) { 
+            logDebug(`[WATCHDOG] Návrat na tab po uspání. Vynucuji reset...`, "error", myId); 
+            appSessionTime = 0; 
+            fullResetAndReconnect(); 
+            watchdogTick = Date.now(); 
+        } 
+    } 
+});
+
+function parseIceUrl(url) { 
+    if (!url) return 'Local LAN'; 
+    try { 
+        let clean = url.split('?')[0]; 
+        clean = clean.split('@').pop(); 
+        clean = clean.replace('turn:', '').replace('turns:', '').replace('stun:', ''); 
+        return clean.split(':')[0]; 
+    } catch(e) { return url; } 
+}
+
+function escapeHTML(str) { 
+    if (!str) return ''; 
+    return String(str).replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); 
+}
+
+function formatBytes(bytes, decimals = 2) { 
+    if (bytes === 0) return '0 Bytes'; 
+    const k = 1024; 
+    const dm = decimals < 0 ? 0 : decimals; 
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']; 
+    const i = Math.floor(Math.log(bytes) / Math.log(k)); 
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i]; 
+}
+
+function buf2b64(buf) { 
+    let binary = ''; 
+    const bytes = new Uint8Array(buf); 
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]); 
+    return window.btoa(binary); 
+}
+
+function b642buf(b64) { 
+    const binary_string = window.atob(b64); 
+    const len = binary_string.length; 
+    const bytes = new Uint8Array(len); 
+    for (let i = 0; i < len; i++) bytes[i] = binary_string.charCodeAt(i); 
+    return bytes.buffer; 
+}
+
+function komprimovat(data) { 
+    const deflated = pako.deflate(JSON.stringify(data)); 
+    let binary = ''; 
+    for (let i = 0; i < deflated.length; i++) binary += String.fromCharCode(deflated[i]); 
+    return window.btoa(binary); 
+}
+
+function dekomprimovat(b64) { 
+    const str = window.atob(b64); 
+    const pole = new Uint8Array(str.length); 
+    for(let i=0; i<str.length; i++) pole[i] = str.charCodeAt(i); 
+    return JSON.parse(pako.inflate(pole, { to: 'string' })); 
+}
+
+let logBuffer = [];
+function flushLogs() {
+    if (logBuffer.length === 0) return;
+    const logsToSend = [...logBuffer];
+    logBuffer = [];
+    fetch(`${WORKER_URL}/log`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logs: logsToSend }), keepalive: true }).catch(e => {  });
+}
+setInterval(flushLogs, 5000);
+window.addEventListener('beforeunload', () => {
+    if (logBuffer.length > 0) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+});
+
+function logDebug(msg, type = 'info', sourceId = null) { 
+    const idStr = sourceId || (typeof myId !== 'undefined' ? myId : 'SYS');
+    if (DOM.debugLog) {
+        const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
+        DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
+        DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight; 
+    }
+    try {
+        let currentRole = "Spoke";
+        if (typeof isDnsHost !== 'undefined' && isDnsHost) currentRole = "Master";
+        else if (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) currentRole = "HTTP Relay";
+        const logData = { id: idStr, name: typeof myName !== 'undefined' && myName ? myName : 'Unknown', role: currentRole, type: type, message: msg, time: new Date().toISOString() };
+        const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
+        logBuffer.push({ message: [prefix, logData], type: type, time: Date.now() });
+        if (logBuffer.length >= 20) flushLogs();
+    } catch(e) { }
+}
+
+function updateDebugStats(stat, value) { 
+    const el = document.getElementById(`dbg-${stat}`);
+    if(el) el.innerText = value; 
+}
+
+function unlockChat() {
+    DOM.setupScreen.style.display = 'none'; 
+    DOM.chatInput.disabled = false; 
+    DOM.sendBtn.disabled = false; 
+    DOM.btnAttach.disabled = false; 
+    DOM.btnClearHistory.style.display = 'inline-block';
+    
+    let roleName = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)'; 
+    let statusClass = isDnsHost ? 'host' : 'online'; 
+    
+    if(isHttpRelayMode) { 
+        roleName = 'HTTP Relay (Spoke)'; 
+        statusClass = 'relay'; 
+    }
+    
+    DOM.statusDot.className = `status-dot ${statusClass}`; 
+    DOM.uiRole.innerText = roleName;
+
+    if (pendingAutoMsg) { 
+        logDebug(`[SYSTEM] Zjištěna zpráva v URL. Čekám na kompletní ustavení E2E klíčů (2 sekundy)...`, 'info', myId); 
+        const msgToSend = pendingAutoMsg; 
+        pendingAutoMsg = null; 
+        setTimeout(() => { 
+            DOM.chatInput.value = msgToSend; 
+            window.sendMsg(); 
+            window.history.replaceState({}, document.title, window.location.pathname); 
+        }, 2000); 
+    }
+}
+
+async function initCrypto() { 
+    myKeyPair = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveKey"]); 
+    const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
+    knownNodes[myId] = { name: myName, publicKeyJWK: myJwk, lastSeen: Date.now(), tele: myTelemetry }; 
+    return myJwk; 
+}
+
+async function deriveAesKey(peerId, peerJwk) { 
+    if(knownNodes[peerId] && knownNodes[peerId].derivedAesKey) return knownNodes[peerId].derivedAesKey; 
+    const importedPubKey = await crypto.subtle.importKey("jwk", peerJwk, { name: "ECDH", namedCurve: "P-256" }, true, []); 
+    const aesKey = await crypto.subtle.deriveKey( { name: "ECDH", public: importedPubKey }, myKeyPair.privateKey, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"] ); 
+    knownNodes[peerId] = { ...knownNodes[peerId], derivedAesKey: aesKey }; 
+    return aesKey; 
+}
+
+async function encryptE2E(plaintext, targetId) { 
+    const aesKey = await deriveAesKey(targetId, knownNodes[targetId].publicKeyJWK); 
+    const iv = crypto.getRandomValues(new Uint8Array(12)); 
+    const cipherBuf = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, aesKey, new TextEncoder().encode(plaintext)); 
+    return { iv: buf2b64(iv), cipher: buf2b64(cipherBuf) }; 
+}
+
+async function decryptE2E(ivB64, cipherB64, senderId) { 
+    try { 
+        if (!knownNodes[senderId] || !knownNodes[senderId].publicKeyJWK) return null; 
+        const aesKey = await deriveAesKey(senderId, knownNodes[senderId].publicKeyJWK); 
+        const plainBuf = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b642buf(ivB64) }, aesKey, b642buf(cipherB64)); 
+        return new TextDecoder().decode(plainBuf); 
+    } catch(e) { return null; } 
+}
+
+async function writeSignal(subdomena, data, retry = 2) { 
+    updateDebugStats('dns', `ZÁPIS: ${subdomena}`); 
+    while (retry > 0) { 
+        try { 
+            const res = await fetch(WORKER_URL, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subdomain: subdomena, content: komprimovat(data) }) }); 
+            const out = await res.json(); 
+            if(out.success) { updateDebugStats('dns', 'OK'); return true; } 
+        } catch (e) { } 
+        retry--; 
+        if(retry > 0) await new Promise(r => setTimeout(r, 800)); 
+    } 
+    return false; 
+}
+
+async function readSignal(subdomena) { 
+    updateDebugStats('dns', `ČTENÍ: ${subdomena}`); 
+    try { 
+        const res = await fetch(`${WORKER_URL}?key=${subdomena}&_t=${Date.now()}`); 
+        const json = await res.json(); 
+        if(json.success && json.content) { 
+            updateDebugStats('dns', 'OK'); 
+            const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
+            return dekomprimovat(cleanB64); 
+        } 
+    } catch(e) { } 
+    return null; 
+}
+
+function reRenderAllHistory() { 
+    DOM.chatArea.innerHTML = ''; 
+    chatHistory.forEach(msg => { 
+        renderMessage(msg.author, msg.text, msg.author === myName ? 'self' : 'other', msg.time, false, msg.file, false, msg.id); 
+    }); 
+    const div = document.createElement('div'); 
+    div.className = "history-divider"; 
+    div.innerHTML = `<span>Konec sjednocené historie</span>`; 
+    DOM.chatArea.appendChild(div); 
+    DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight; 
+}
+
+function loadHistory() { 
+    const saved = localStorage.getItem('chat_history'); 
+    if(saved) { 
+        try { 
+            chatHistory = JSON.parse(saved); 
+            chatHistory.sort((a,b) => a.time - b.time); 
+            reRenderAllHistory(); 
+        } catch(e) { clearLocalHistory(); } 
+    } 
+}
+
+function saveMessage(msgObj) { 
+    if(chatHistory.some(m => m.id === msgObj.id)) return false; 
+    chatHistory.push(msgObj); 
+    chatHistory.sort((a,b) => a.time - b.time); 
+    if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY); 
+    localStorage.setItem('chat_history', JSON.stringify(chatHistory)); 
+    return true; 
+}
+
+function clearLocalHistory() { 
+    chatHistory = []; 
+    localStorage.removeItem('chat_history'); 
+    reRenderAllHistory(); 
+}
+
+window.broadcastClearHistory = function() { 
+    if(confirm("Opravdu vymazat historii sítě?")) { 
+        clearLocalHistory(); 
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'clear-history', sender: myId }); 
+    } 
+};
+
+let syncTimeout = null;
+function mergeIncomingHistory(incomingArray) { 
+    let addedCount = 0; 
+    let mergedMap = new Map(); 
+    chatHistory.forEach(m => mergedMap.set(m.id, m)); 
+    
+    incomingArray.forEach(m => { 
+        if(!mergedMap.has(m.id)) { 
+            mergedMap.set(m.id, m); 
+            addedCount++; 
+        } else {
+            let existing = mergedMap.get(m.id);
+            if (existing.file && existing.file.dataUrl && m.file && !m.file.dataUrl) {
+            } else if (!existing.file && m.file) {
+                mergedMap.set(m.id, m);
+                addedCount++;
+            }
+        }
+    }); 
+    
+    if (addedCount > 0) { 
+        chatHistory = Array.from(mergedMap.values()).sort((a,b) => a.time - b.time); 
+        if(chatHistory.length > MAX_HISTORY) chatHistory = chatHistory.slice(-MAX_HISTORY); 
+        localStorage.setItem('chat_history', JSON.stringify(chatHistory)); 
+        clearTimeout(syncTimeout); 
+        syncTimeout = setTimeout(() => { reRenderAllHistory(); }, 300); 
+    } 
+}
+
+function renderMessage(author, text, type, timestamp = Date.now(), scroll = true, fileObj = null, rawHtml = false, msgId = null) { 
+    const div = document.createElement('div'); 
+    div.className = `msg msg-${type}`; 
+    const timeStr = new Date(timestamp).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute:'2-digit', second: type === 'system' ? '2-digit' : undefined }); 
+    const safeAuthor = escapeHTML(author); 
+    let contentHtml = rawHtml ? text : escapeHTML(text); 
+    
+    if (fileObj) { 
+        if (!fileObj.dataUrl) { 
+            let btnHtml = msgId ? `<button onclick="window.requestFile('${msgId}')" style="margin-top:5px; padding: 4px 8px; border-radius: 4px; border:none; background: var(--primary); color:white; cursor:pointer; font-size:0.75rem; font-weight:bold;">⬇️ Stáhnout soubor ze sítě</button>` : '';
+            contentHtml += `<div class="file-attachment" style="opacity: 0.9;">
+                <div style="display:flex; align-items:center;">
+                    <div class="file-icon">📁</div>
+                    <div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div>
+                </div>${btnHtml}
+            </div>`; 
+        } else { 
+            const isImage = fileObj.dataUrl.startsWith('data:image/'); 
+            if (isImage) { 
+                contentHtml += `<div style="margin-top: 5px;"><a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}"><img src="${fileObj.dataUrl}" alt="Obrázek" class="img-preview" onload="DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight"></a><div style="font-size: 0.65rem; color: #777; margin-top: 2px;">📄 ${escapeHTML(fileObj.name)} (${formatBytes(fileObj.size)})</div></div></div>`; 
+            } else { 
+                contentHtml += `<a href="${fileObj.dataUrl}" download="${escapeHTML(fileObj.name)}" class="file-attachment" style="flex-direction:row; align-items:center;"><div class="file-icon">📁</div><div><div class="file-name">${escapeHTML(fileObj.name)}</div><div class="file-size">${formatBytes(fileObj.size)}</div></div></a>`; 
+            } 
+        } 
+    } 
+    
+    if (type !== 'system') { 
+        div.innerHTML = `<div style="font-size:0.75rem; color:#777; margin-bottom:3px; display:flex; justify-content:space-between;"><b>${safeAuthor}</b> <span style="font-weight:normal; font-size:0.65rem; color:#aaa; margin-left:10px;">${timeStr}</span></div>${contentHtml}`; 
+    } else { 
+        div.innerHTML = `<span style="color:#aaa; font-size:0.75rem;">[${timeStr}]</span> ${contentHtml}`; 
+    } 
+    
+    DOM.chatArea.appendChild(div); 
+    if(scroll) DOM.chatArea.scrollTop = DOM.chatArea.scrollHeight; 
+}
+
+window.requestFile = function(fileId) {
+    logDebug(`[FILE] Žádám síť o poskytnutí souboru ${fileId}...`, 'file', myId);
+    routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-file', sender: myId, fileId: fileId });
+};
+
+async function sendVideoSignal(targetId, action, data) { 
+    if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
+        logDebug(`[VIDEO] Nelze spojit video přes HTTP Relay.`, 'error', myId); 
+        return; 
+    } 
+    const payload = JSON.stringify({ action, data }); 
+    const encrypted = await encryptE2E(payload, targetId); 
+    routeMessage({ id: generateMsgId(), ttl: 10, type: 'video-signal', sender: myId, target: targetId, payload: encrypted }); 
+}
+
+async function initVideoPc(peerId, isInitiator) { 
+    if (activeCall.pc) return activeCall.pc; 
+    logDebug(`[VIDEO] Inicializace WebRTC (Video) s ${peerId}`, 'webrtc', myId); 
+    const pc = new RTCPeerConnection(WEBRTC_CONFIG); 
+    activeCall.pc = pc; 
+    activeCall.peerId = peerId; 
+    
+    pc.oniceconnectionstatechange = () => { 
+        logDebug(`[VIDEO] ICE Stav: ${pc.iceConnectionState}`, 'webrtc', myId); 
+        if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') window.endVideoCall(false); 
+    }; 
+    
+    pc.onicecandidate = (e) => { 
+        if (e.candidate) sendVideoSignal(peerId, 'ice', e.candidate); 
+    }; 
+    
+    pc.ontrack = (e) => { 
+        if (DOM.remoteVideo.srcObject !== e.streams[0]) DOM.remoteVideo.srcObject = e.streams[0]; 
+    }; 
+    
+    try { 
+        logDebug(`[VIDEO] Žádám systém o práva pro kameru a mikrofon...`, 'webrtc', myId); 
+        activeCall.localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true }); 
+        logDebug(`[VIDEO] Práva na AV stream úspěšně udělena.`, 'success', myId); 
+        DOM.localVideo.srcObject = activeCall.localStream; 
+        activeCall.localStream.getTracks().forEach(track => pc.addTrack(track, activeCall.localStream)); 
+        DOM.videoOverlay.style.display = 'flex'; 
+        DOM.videoPeerName.innerText = `Hovor: ${knownNodes[peerId]?.name || peerId}`; 
+    } catch (e) { 
+        logDebug(`[VIDEO] Nelze získat přístup ke kameře/mikrofonu: ${e.message}`, 'error', myId); 
+        alert("Pro přijetí/vytvoření hovoru je nutné povolit kameru a mikrofon."); 
+        window.endVideoCall(); 
+        return null; 
+    } 
+    
+    if (isInitiator) { 
+        const offer = await pc.createOffer(); 
+        await pc.setLocalDescription(offer); 
+        await sendVideoSignal(peerId, 'offer', offer); 
+    } 
+    return pc; 
+}
+
+window.startVideoCall = async function(targetId) { 
+    if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
+        alert("S tímto uživatelem nelze zahájit videohovor (HTTP Relay)."); 
+        return; 
+    } 
+    if (activeCall.pc) { 
+        alert("Již máte probíhající hovor."); 
+        return; 
+    } 
+    logDebug(`[VIDEO] Vytáčím uživatele ${targetId}...`, 'info', myId); 
+    await initVideoPc(targetId, true); 
+};
+
+async function handleVideoSignal(senderId, action, data) { 
+    if (action === 'offer') { 
+        if (activeCall.pc && activeCall.peerId === senderId) { 
+            await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data)); 
+            const answer = await activeCall.pc.createAnswer(); 
+            await activeCall.pc.setLocalDescription(answer); 
+            sendVideoSignal(senderId, 'answer', answer); 
+        } else if (activeCall.pc) { 
+            sendVideoSignal(senderId, 'reject', 'busy'); 
+        } else { 
+            incomingCallData = { senderId, sdp: data }; 
+            DOM.incomingName.innerText = knownNodes[senderId]?.name || senderId; 
+            DOM.incomingModal.style.display = 'block'; 
+            logDebug(`[VIDEO] Příchozí hovor od ${knownNodes[senderId]?.name || senderId}.`, 'info', senderId); 
+        } 
+    } else if (action === 'answer') { 
+        if (activeCall.pc && activeCall.peerId === senderId) {
+            await activeCall.pc.setRemoteDescription(new RTCSessionDescription(data)); 
+        }
+    } else if (action === 'ice') { 
+        if (activeCall.pc && activeCall.peerId === senderId) { 
+            try { await activeCall.pc.addIceCandidate(new RTCIceCandidate(data)); } catch(e) {} 
+        } 
+    } else if (action === 'reject') { 
+        logDebug(`[VIDEO] Uzel ${senderId} odmítl hovor (${data}).`, 'error', senderId); 
+        alert(`Hovor byl odmítnut (${data}).`); 
+        window.endVideoCall(false); 
+    } else if (action === 'end') { 
+        logDebug(`[VIDEO] Uzel ${senderId} ukončil hovor.`, 'info', senderId); 
+        window.endVideoCall(false); 
+    } 
+}
+
+window.acceptCall = async function() { 
+    DOM.incomingModal.style.display = 'none'; 
+    if (!incomingCallData) return; 
+    
+    const senderId = incomingCallData.senderId; 
+    const offerData = incomingCallData.sdp; 
+    incomingCallData = null; 
+    
+    logDebug(`[VIDEO] Přijímám hovor...`, 'info', myId); 
+    const pc = await initVideoPc(senderId, false); 
+    
+    if (pc) { 
+        try { 
+            await pc.setRemoteDescription(new RTCSessionDescription(offerData)); 
+            const answer = await pc.createAnswer(); 
+            await pc.setLocalDescription(answer); 
+            sendVideoSignal(senderId, 'answer', answer); 
+            logDebug(`[VIDEO] Hovor spojen (Answer odeslán).`, 'success', myId); 
+        } catch (e) { 
+            logDebug(`[VIDEO] Neočekávaná chyba: ${e.message}`, 'error', myId); 
+            window.endVideoCall(true); 
+        } 
+    } else { 
+        sendVideoSignal(senderId, 'reject', 'no-media-permissions'); 
+    } 
+};
+
+window.rejectCall = function() { 
+    DOM.incomingModal.style.display = 'none'; 
+    if (incomingCallData) { 
+        sendVideoSignal(incomingCallData.senderId, 'reject', 'declined'); 
+        incomingCallData = null; 
+    } 
+};
+
+window.endVideoCall = function(notifyPeer = true) { 
+    let wasActive = false; 
+    if (notifyPeer && activeCall.peerId) sendVideoSignal(activeCall.peerId, 'end', null); 
+    
+    if (activeCall.pc) { activeCall.pc.close(); activeCall.pc = null; wasActive = true; } 
+    if (activeCall.localStream) { activeCall.localStream.getTracks().forEach(t => t.stop()); activeCall.localStream = null; wasActive = true; } 
+    if (activeCall.screenStream) { activeCall.screenStream.getTracks().forEach(t => t.stop()); activeCall.screenStream = null; wasActive = true; } 
+    
+    activeCall.peerId = null; 
+    activeCall.isAudioMuted = false; 
+    activeCall.isVideoMuted = false; 
+    activeCall.isScreenSharing = false; 
+    
+    DOM.remoteVideo.srcObject = null; 
+    DOM.localVideo.srcObject = null; 
+    DOM.videoOverlay.style.display = 'none'; 
+    DOM.btnVidMic.className = 'video-btn'; 
+    DOM.btnVidCam.className = 'video-btn'; 
+    DOM.btnVidShare.className = 'video-btn'; 
+    
+    if (wasActive) logDebug(`[VIDEO] Hovor ukončen.`, 'info', myId); 
+};
+
+window.toggleAudio = function() { 
+    if (!activeCall.localStream) return; 
+    activeCall.isAudioMuted = !activeCall.isAudioMuted; 
+    activeCall.localStream.getAudioTracks().forEach(t => t.enabled = !activeCall.isAudioMuted); 
+    DOM.btnVidMic.innerText = activeCall.isAudioMuted ? '🔇 Zapnout mik' : '🎤 Vypnout mik'; 
+    DOM.btnVidMic.className = activeCall.isAudioMuted ? 'video-btn active' : 'video-btn'; 
+};
+
+window.toggleVideo = function() { 
+    if (!activeCall.localStream) return; 
+    activeCall.isVideoMuted = !activeCall.isVideoMuted; 
+    activeCall.localStream.getVideoTracks().forEach(t => t.enabled = !activeCall.isVideoMuted); 
+    DOM.btnVidCam.innerText = activeCall.isVideoMuted ? '📸 Zapnout cam' : '📷 Vypnout cam'; 
+    DOM.btnVidCam.className = activeCall.isVideoMuted ? 'video-btn active' : 'video-btn'; 
+};
+
+window.toggleScreenShare = async function() { 
+    if (!activeCall.pc) return; 
+    const videoSender = activeCall.pc.getSenders().find(s => s.track.kind === 'video'); 
+    if (!videoSender) return; 
+    
+    if (!activeCall.isScreenSharing) { 
+        try { 
+            activeCall.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true }); 
+            const screenTrack = activeCall.screenStream.getVideoTracks()[0]; 
+            await videoSender.replaceTrack(screenTrack); 
+            DOM.localVideo.srcObject = activeCall.screenStream; 
+            activeCall.isScreenSharing = true; 
+            DOM.btnVidShare.className = 'video-btn active'; 
+            DOM.btnVidShare.innerText = '🖥️ Zastavit obs'; 
+            screenTrack.onended = () => { window.revertToCamera(videoSender, DOM.btnVidShare); }; 
+        } catch (e) { logDebug(`Sdílení zrušeno: ${e.message}`, 'error', myId); } 
+    } else { 
+        window.revertToCamera(videoSender, DOM.btnVidShare); 
+    } 
+};
+
+window.revertToCamera = async function(videoSender, btn) { 
+    if (activeCall.screenStream) { 
+        activeCall.screenStream.getTracks().forEach(t => t.stop()); 
+        activeCall.screenStream = null; 
+    } 
+    if (activeCall.localStream) { 
+        const camTrack = activeCall.localStream.getVideoTracks()[0]; 
+        if (camTrack) await videoSender.replaceTrack(camTrack); 
+        DOM.localVideo.srcObject = activeCall.localStream; 
+    } 
+    activeCall.isScreenSharing = false; 
+    if(btn) { 
+        btn.className = 'video-btn'; 
+        btn.innerText = '🖥️ Sdílet obs'; 
+    } 
+};
+
+window.triggerIceRestart = async function() { 
+    if (!activeCall.pc || !activeCall.peerId || isIceRestarting) return; 
+    isIceRestarting = true; 
+    setTimeout(() => isIceRestarting = false, 5000); 
+    logDebug(`[VIDEO] Spouštím ICE Restart...`, 'webrtc', myId); 
+    try { 
+        const offer = await activeCall.pc.createOffer({ iceRestart: true }); 
+        await activeCall.pc.setLocalDescription(offer); 
+        sendVideoSignal(activeCall.peerId, 'offer', offer); 
+    } catch(e) { 
+        logDebug(`[VIDEO] ICE Restart selhal: ${e.message}`, 'error', myId); 
+        isIceRestarting = false; 
+    } 
+};
+
+function sendSyncBatch(target) {
+    if(!syncState[target]) return;
+    const state = syncState[target];
+    const batchSize = 20;
+    
+    if (state.index >= chatHistory.length) {
+        logDebug(`[SYNC] Kompletní synchronizace pro ${target} dokončena.`, 'success', myId);
+        delete syncState[target];
+        activeSyncOperations.delete(target);
+        return;
+    }
+    
+    const batch = chatHistory.slice(state.index, state.index + batchSize);
+    const safeBatch = batch.map(m => {
+        if (m.file && m.file.dataUrl) return { ...m, file: { name: m.file.name, size: m.file.size, dataUrl: null } };
+        return m;
+    });
+    
+    encryptE2E(JSON.stringify(safeBatch), target).then(encrypted => {
+        routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-batch', sender: myId, target: target, payload: encrypted, batchIndex: state.index });
+        
+        state.timeout = setTimeout(() => {
+            state.retries = (state.retries || 0) + 1;
+            logDebug(`[SYNC] Timeout pro ACK od ${target} (Pokus ${state.retries}), opakuji...`, 'error', myId);
+            if(state.retries > 3) {
+                logDebug(`[SYNC] Zrušena synchronizace pro ${target} po 3 pokusech.`, 'error', myId);
+                delete syncState[target];
+                activeSyncOperations.delete(target);
+            } else {
+                sendSyncBatch(target);
+            }
+        }, 3000);
+    });
+}
+
+async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
+    const chunkSize = 16384;
+    const totalChunks = Math.ceil(base64Data.length / chunkSize);
+    for (let i = 0; i < totalChunks; i++) {
+        const chunkData = base64Data.substring(i * chunkSize, (i + 1) * chunkSize);
+        const encryptedChunk = await encryptE2E(JSON.stringify({ fileId: fileId, chunkIndex: i, totalChunks: totalChunks, meta: fileMeta, data: chunkData }), targetId);
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'file-chunk', sender: myId, target: targetId, payload: encryptedChunk });
+        await new Promise(r => setTimeout(r, 50)); 
+    }
+    logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
+}
+
+// NETWORK BROADCAST HOOKS
+window.broadcastGameSync = (data) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
+};
+
+window.broadcastGameShoot = (data) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-shoot', sender: myId, payload: JSON.stringify(data) });
+};
+
+window.broadcastEnemySync = (enemiesData) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
+};
+
+window.broadcastEnemyHit = (eId, dmg) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
+};
+
+window.broadcastMapSync = (mapData) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
+};
+
+window.broadcastPlayerHit = (targetId, shooterId, isFatal) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-hit', sender: myId, target: targetId, shooter: shooterId, fatal: isFatal });
+};
+
+window.broadcastLevelComplete = (nextLvlIdx) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 10, type: 'game-next', sender: myId, lvl: nextLvlIdx });
+};
+
+window.broadcastLootPickup = (lId) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'loot-pickup', sender: myId, lId: lId });
+};
+
+window.broadcastLootSync = (activeLootIds) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
+};
+
+function routeMessage(msgObj, sourceChannel = null) {
+    if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'enemy-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
+
+    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+        if (seenMessages.has(msgObj.id)) return; 
+        seenMessages.add(msgObj.id); 
+        if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
+    }
+    
+    processPayload(msgObj);
+    
+    msgObj.ttl -= 1; 
+    if (msgObj.ttl <= 0) return; 
+    
+    if (!msgObj.path) msgObj.path = []; 
+    msgObj.path.push(myId);
+
+    Object.values(channels).forEach(ch => { 
+        if (ch && ch.readyState === 'open' && ch !== sourceChannel) { 
+            try { 
+                const str = JSON.stringify(msgObj); 
+                if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
+                    logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId); 
+                }
+                ch.send(str); 
+            } catch(err) {} 
+        } 
+    });
+
+    if (isHttpRelayMode) { 
+        if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
+            addToHttpOutbox('hub', msgObj); 
+        }
+    } else if (isDnsHost) { 
+        knownHttpClients.forEach(clientId => { 
+            if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+                addToHttpOutbox(clientId, msgObj); 
+            } 
+        }); 
+    }
+}
+
+async function processPayload(msg) {
+    if (msg.sender && knownNodes[msg.sender]) {
+        knownNodes[msg.sender].lastSeen = Date.now();
+    }
+
+    if (msg.type === 'announce') {
+        const isNewNode = !knownNodes[msg.sender]; 
+        const isKeyChanged = knownNodes[msg.sender] && JSON.stringify(knownNodes[msg.sender].publicKeyJWK) !== JSON.stringify(msg.jwk);
+        
+        if (isNewNode || isKeyChanged) {
+            knownNodes[msg.sender] = { name: msg.name, publicKeyJWK: msg.jwk, lastSeen: Date.now(), tele: msg.tele || {} }; 
+            if (isKeyChanged) delete knownNodes[msg.sender].derivedAesKey;
+            
+            updateDebugStats('nodes', Object.keys(knownNodes).length); 
+            DOM.uiUserCount.innerText = Object.keys(knownNodes).length;
+            
+            if (isNewNode) { 
+                const safeName = escapeHTML(msg.name); 
+                const teleStr = formatTelemetry(msg.tele); 
+                renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do hry a sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true, null); 
+                logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce', msg.sender); 
+            }
+            
+            const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
+        } else if (msg.tele) { 
+            knownNodes[msg.sender].tele = msg.tele; 
+            knownNodes[msg.sender].lastSeen = Date.now(); 
+        }
+    } 
+    else if (msg.type === 'game-sync') {
+        if (msg.sender !== myId && typeof window.handleGameSync === 'function') {
+            try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){}
+        }
+    }
+    else if (msg.type === 'game-shoot') {
+        if (msg.sender !== myId && typeof window.handleGameShoot === 'function') {
+            try { window.handleGameShoot(msg.sender, JSON.parse(msg.payload)); } catch(e){}
+        }
+    }
+    else if (msg.type === 'enemy-sync') {
+        if (msg.sender !== myId && typeof window.handleEnemySync === 'function') {
+            try { window.handleEnemySync(JSON.parse(msg.payload)); } catch(e){}
+        }
+    }
+    else if (msg.type === 'map-sync') {
+        if (msg.sender !== myId && typeof window.handleMapSync === 'function') {
+            try { window.handleMapSync(JSON.parse(msg.payload)); } catch(e){}
+        }
+    }
+    else if (msg.type === 'game-hit') {
+        if (typeof window.handlePlayerHit === 'function') {
+            window.handlePlayerHit(msg.target, msg.shooter, msg.fatal);
+        }
+    }
+    else if (msg.type === 'enemy-hit') {
+        if (typeof window.handleEnemyHit === 'function') {
+            window.handleEnemyHit(msg.eId, msg.dmg);
+        }
+    }
+    else if (msg.type === 'game-next') {
+        if (typeof window.handleLevelComplete === 'function') {
+            window.handleLevelComplete(msg.lvl);
+        }
+    }
+    else if (msg.type === 'loot-pickup') {
+        if (typeof window.handleLootPickup === 'function') {
+            window.handleLootPickup(msg.lId);
+        }
+    }
+    else if (msg.type === 'loot-sync') {
+        if (msg.sender !== myId && typeof window.handleLootSync === 'function') {
+            try { window.handleLootSync(JSON.parse(msg.payload)); } catch(e){}
+        }
+    }
+    else if (msg.type === 'video-signal') { 
+        if (msg.target !== myId) return; 
+        const plainJson = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender); 
+        if (plainJson) { 
+            const signal = JSON.parse(plainJson); 
+            handleVideoSignal(msg.sender, signal.action, signal.data); 
+        } 
+    }
+    else if (msg.type === 'request-history') {
+        if (activeSyncOperations.has(msg.sender)) {
+            logDebug(`[SYNC] Ignoruji duplicitní žádost od ${msg.sender}.`, 'info', myId);
+            return;
+        }
+        
+        logDebug(`[SYNC] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal historii zpráv.`, 'sync', msg.sender);
+        
+        if (isDnsHost && chatHistory.length > 0 && knownNodes[msg.sender]) {
+            activeSyncOperations.add(msg.sender);
+            syncState[msg.sender] = { index: 0, retries: 0 };
+            sendSyncBatch(msg.sender);
+        }
+    }
+    else if (msg.type === 'sync-batch') { 
+        if (msg.target !== myId) return; 
+        const plaintextHistory = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender); 
+        if (plaintextHistory) { 
+            try { 
+                mergeIncomingHistory(JSON.parse(plaintextHistory)); 
+                logDebug(`[SYNC] Přijata dávka historie od ${knownNodes[msg.sender]?.name || msg.sender}. Odesílám ACK.`, 'sync', myId); 
+                routeMessage({ id: generateMsgId(), ttl: 5, type: 'sync-ack', sender: myId, target: msg.sender, batchIndex: msg.batchIndex });
+            } catch(e) {} 
+        } 
+    }
+    else if (msg.type === 'sync-ack') {
+         if (msg.target !== myId) return;
+         if (syncState[msg.sender] && syncState[msg.sender].index === msg.batchIndex) {
+              clearTimeout(syncState[msg.sender].timeout);
+              syncState[msg.sender].index += 20;
+              syncState[msg.sender].retries = 0;
+              sendSyncBatch(msg.sender);
+         }
+    }
+    else if (msg.type === 'request-file') {
+         const requestedMsg = chatHistory.find(m => m.id === msg.fileId);
+         if (requestedMsg && requestedMsg.file && requestedMsg.file.dataUrl) {
+             logDebug(`[FILE] Uzel ${knownNodes[msg.sender]?.name || msg.sender} si vyžádal soubor, začínám odesílat bloky.`, 'file', msg.sender);
+             const base64Data = requestedMsg.file.dataUrl.split(',')[1];
+             const fileMeta = { name: requestedMsg.file.name, size: requestedMsg.file.size, type: requestedMsg.file.dataUrl.split(';')[0].split(':')[1] || 'application/octet-stream' };
+             sendFileChunks(msg.fileId, base64Data, fileMeta, msg.sender);
+         }
+    }
+    else if (msg.type === 'clear-history') { 
+        logDebug(`Uzel [${knownNodes[msg.sender]?.name || msg.sender}] nařídil smazání historie sítě.`, 'error', msg.sender); 
+        clearLocalHistory(); 
+    }
+    else if (msg.type === 'file-chunk') {
+        if (msg.target !== myId) return; 
+        const plainChunk = await decryptE2E(msg.payload.iv, msg.payload.cipher, msg.sender);
+        if (plainChunk) {
+            const chunkData = JSON.parse(plainChunk); 
+            const fileId = chunkData.fileId;
+            
+            if (!fileBuffers[fileId]) { 
+                fileBuffers[fileId] = { chunks: [], receivedSet: new Set(), total: chunkData.totalChunks, meta: chunkData.meta }; 
+                logDebug(`[FILE IN] Stahuji bloky: ${chunkData.meta.name} (${formatBytes(chunkData.meta.size)})`, 'file', myId); 
+            }
+            
+            if (!fileBuffers[fileId].receivedSet.has(chunkData.chunkIndex)) {
+                fileBuffers[fileId].chunks[chunkData.chunkIndex] = chunkData.data; 
+                fileBuffers[fileId].receivedSet.add(chunkData.chunkIndex);
+                
+                if (fileBuffers[fileId].receivedSet.size === fileBuffers[fileId].total) {
+                    logDebug(`[FILE IN] Soubor kompletně stažen!`, 'success', myId); 
+                    const finalDataUrl = `data:${fileBuffers[fileId].meta.type};base64,${fileBuffers[fileId].chunks.join('')}`; 
+                    const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý'; 
+                    const fileObj = { name: fileBuffers[fileId].meta.name, size: fileBuffers[fileId].meta.size, dataUrl: finalDataUrl }; 
+                    
+                    const msgInHistory = chatHistory.find(m => m.id === fileId);
+                    if (msgInHistory) {
+                        msgInHistory.file = fileObj;
+                        localStorage.setItem('chat_history', JSON.stringify(chatHistory));
+                        reRenderAllHistory();
+                    } else {
+                        const timeNow = Date.now();
+                        const msgObjForStorage = { id: fileId, author: authorName, text: "Odeslán soubor.", time: timeNow, file: fileObj };
+                        if(saveMessage(msgObjForStorage)) {
+                            renderMessage(authorName, "Odeslán soubor.", 'other', timeNow, true, fileObj, false, fileId); 
+                        }
+                    }
+                    delete fileBuffers[fileId];
+                }
+            }
+        }
+    }
+    else if (msg.type === 'chat') {
+        if (msg.payloads[myId]) {
+            const plainJson = await decryptE2E(msg.payloads[myId].iv, msg.payloads[myId].cipher, msg.sender);
+            if (plainJson) {
+                const secretData = JSON.parse(plainJson); 
+                const authorName = knownNodes[msg.sender] ? knownNodes[msg.sender].name : 'Neznámý';
+                
+                if(saveMessage({ id: msg.id, author: authorName, text: secretData.text, time: secretData.time })) {
+                    renderMessage(authorName, secretData.text, 'other', secretData.time, true, null, false, msg.id);
+                }
+            }
+        }
+    } 
+    else if (msg.type === 'topo-sync') {
+        networkGraph = msg.graph;
+        if (!isDnsHost) { 
+            const now = Date.now(); 
+            if (msg.graph.root && knownNodes[msg.graph.root]) {
+                knownNodes[msg.graph.root].lastSeen = now; 
+            }
+            (msg.graph.edges || []).forEach(edge => { 
+                const targetId = edge.id || edge; 
+                if (knownNodes[targetId]) { 
+                    knownNodes[targetId].lastSeen = now; 
+                } 
+            }); 
+        } 
+        drawTopology();
+    }
+    else if (msg.type === 'node-left') { 
+        if (knownNodes[msg.target]) { 
+            logDebug(`Uzel ${knownNodes[msg.target].name} opustil síť a hru.`, 'error', myId); 
+            delete knownNodes[msg.target]; 
+            if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(msg.target);
+            updateDebugStats('nodes', Object.keys(knownNodes).length); 
+            DOM.uiUserCount.innerText = Object.keys(knownNodes).length; 
+        } 
+    }
+}
+
+function drawTopology() {
+    if (!DOM.topoCanvas) return; 
+    const ctx = DOM.topoCanvas.getContext('2d'); 
+    const w = DOM.topoCanvas.offsetWidth || DOM.topoCanvas.width; 
+    const h = DOM.topoCanvas.offsetHeight || DOM.topoCanvas.height; 
+    
+    DOM.topoCanvas.width = w; 
+    DOM.topoCanvas.height = h; 
+    ctx.clearRect(0, 0, w, h); 
+    drawnEdges = []; 
+    
+    if (!networkGraph || !networkGraph.root) return;
+
+    const rootX = w / 2; 
+    const rootY = 30; 
+    
+    ctx.beginPath(); 
+    ctx.arc(rootX, rootY, 12, 0, Math.PI * 2); 
+    ctx.fillStyle = (networkGraph.root === myId) ? '#0078FF' : '#555'; 
+    ctx.fill(); 
+    ctx.fillStyle = '#fff'; 
+    ctx.textAlign = 'center'; 
+    ctx.font = 'bold 10px sans-serif'; 
+    
+    const rootName = knownNodes[networkGraph.root] ? knownNodes[networkGraph.root].name : networkGraph.root; 
+    ctx.fillText(rootName.substring(0, 6), rootX, rootY + 25);
+
+    const edges = networkGraph.edges || []; 
+    const count = edges.length; 
+    if (count === 0) return; 
+    const spacing = w / (count + 1);
+
+    edges.forEach((edge, i) => {
+        const nodeX = spacing * (i + 1); 
+        const nodeY = h - 40; 
+        
+        ctx.beginPath(); 
+        ctx.moveTo(rootX, rootY); 
+        ctx.lineTo(nodeX, nodeY); 
+        ctx.strokeStyle = edge.isRelay ? (edge.protocol === 'http' ? '#9b59b6' : '#feca57') : '#2ed573'; 
+        ctx.lineWidth = 2; 
+        ctx.stroke(); 
+        
+        drawnEdges.push({ id: edge.id, x1: rootX, y1: rootY, x2: nodeX, y2: nodeY, stats: edge });
+        
+        ctx.beginPath(); 
+        ctx.arc(nodeX, nodeY, 10, 0, Math.PI * 2); 
+        ctx.fillStyle = (edge.id === myId) ? '#0078FF' : '#555'; 
+        ctx.fill(); 
+        ctx.fillStyle = '#aaa'; 
+        
+        const nodeName = knownNodes[edge.id] ? knownNodes[edge.id].name : edge.id; 
+        ctx.fillText(nodeName.substring(0, 6), nodeX, nodeY + 25);
+    });
+}
+
+window.sendMsg = async function() { 
+    const text = DOM.chatInput.value.trim(); 
+    if (!text) return; 
+    
+    const timeNow = Date.now(); 
+    let encryptedPayloads = {}; 
+    
+    for (const peerId of Object.keys(knownNodes)) { 
+        if (peerId !== myId) {
+            encryptedPayloads[peerId] = await encryptE2E(JSON.stringify({ text: text, time: timeNow }), peerId); 
+        }
+    } 
+    
+    const msgId = generateMsgId(); 
+    const msgObj = { id: msgId, ttl: 10, type: 'chat', sender: myId, payloads: encryptedPayloads }; 
+    
+    saveMessage({ id: msgId, author: myName, text: text, time: timeNow }); 
+    renderMessage('Ty', text, 'self', timeNow, true, null, false, msgId); 
+    routeMessage(msgObj); 
+    DOM.chatInput.value = ''; 
+};
+
+window.handleFileUpload = async function(event) { 
+    const file = event.target.files[0]; 
+    if (!file) return; 
+    
+    if (file.size > 5 * 1024 * 1024) { 
+        alert("Soubor je příliš velký. Max 5 MB."); 
+        return; 
+    } 
+    
+    logDebug(`[FILE] Načítám soubor ${file.name}...`, 'file', myId); 
+    const reader = new FileReader(); 
+    
+    reader.onload = async (e) => { 
+        const result = e.target.result; 
+        const base64Data = result.split(',')[1]; 
+        const fileId = "FILE_" + generateMsgId(); 
+        const timeNow = Date.now(); 
+        const fileMeta = { name: file.name, size: file.size, type: file.type }; 
+        const fileObj = { name: file.name, size: file.size, dataUrl: result }; 
+        
+        saveMessage({ id: fileId, author: myName, text: "Odeslán soubor.", time: timeNow, file: fileObj }); 
+        renderMessage('Ty', "Odeslán soubor.", 'self', timeNow, true, fileObj, false, fileId); 
+        
+        for (const peerId of Object.keys(knownNodes)) { 
+            if (peerId !== myId) { 
+                sendFileChunks(fileId, base64Data, fileMeta, peerId);
+            } 
+        } 
+    }; 
+    
+    reader.readAsDataURL(file); 
+    event.target.value = ''; 
+};
+
+function cleanupConnection(targetId, switchToHttp = false) {
+    if(channels[targetId]) { 
+        channels[targetId].onclose = null; 
+        channels[targetId].onerror = null; 
+        channels[targetId].onmessage = null; 
+        channels[targetId].close(); 
+        delete channels[targetId]; 
+    }
+    
+    if(connections[targetId]) { 
+        connections[targetId].oniceconnectionstatechange = null; 
+        connections[targetId].ondatachannel = null; 
+        connections[targetId].onicegatheringstatechange = null; 
+        clearInterval(connections[targetId]._statsDump); 
+        connections[targetId].close(); 
+        delete connections[targetId]; 
+    }
+    
+    updateDebugStats('peers', Object.keys(channels).length); 
+    delete peerStats[targetId];
+
+    if (isDnsHost && targetId !== 'hub') {
+        if(knownNodes[targetId]) { 
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'node-left', sender: myId, target: targetId }); 
+            delete knownNodes[targetId]; 
+            if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(targetId);
+        }
+    } else if (!isDnsHost && targetId === 'hub' && !isHttpRelayMode) {
+        if (joinInterval) clearInterval(joinInterval); 
+        
+        if (switchToHttp) {
+            startHttpRelayMode();
+        } else {
+            checkIsolation();
+        }
+    }
+}
+
+function waitForIce(pc, callback) {
+    if (pc.iceGatheringState === 'complete') { 
+        callback(); 
+        return; 
+    } 
+    
+    let isDone = false; 
+    let candidateTimer = null;
+    
+    const finish = () => { 
+        if (isDone) return; 
+        isDone = true; 
+        clearTimeout(candidateTimer); 
+        pc.onicecandidate = null; 
+        callback(); 
+    };
+    
+    pc.onicecandidate = (e) => { 
+        if (e.candidate) { 
+            logDebug(`[ICE] Kandidát: ${e.candidate.type} | Proto: ${e.candidate.protocol} | Port: ${e.candidate.port}`, 'webrtc', myId); 
+            clearTimeout(candidateTimer); 
+            candidateTimer = setTimeout(finish, 1500); 
+        } else {
+            finish();
+        }
+    }; 
+    
+    setTimeout(finish, 10000); 
+}
+
+async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) {
+    if (connections[targetId]) return; 
+    
+    logDebug(`Zakládám linku pro: ${targetId}`, 'webrtc', myId); 
+    const pc = new RTCPeerConnection(WEBRTC_CONFIG); 
+    connections[targetId] = pc;
+    
+    pc.onicegatheringstatechange = () => logDebug(`[WebRTC] ICE Gathering: ${pc.iceGatheringState}`, 'info', myId); 
+    pc.onsignalingstatechange = () => logDebug(`[WebRTC] Signaling: ${pc.signalingState}`, 'info', myId); 
+    pc.onconnectionstatechange = () => logDebug(`[WebRTC] Connection: ${pc.connectionState}`, 'info', myId);
+
+    pc.oniceconnectionstatechange = () => {
+        const state = pc.iceConnectionState; 
+        const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57'); 
+        logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}; font-weight:bold">${state}</span>`, 'info', myId);
+        
+        if (state === 'disconnected' || state === 'failed') {
+            if (targetId === 'hub' && !isDnsHost && !isHttpRelayMode) {
+                logDebug(`[API] WebRTC síť blokuje spojení (${state}). Přecházím na HTTP Relay!`, "log-relay", myId);
+                cleanupConnection(targetId, true);
+            } else { 
+                cleanupConnection(targetId); 
+            }
+        }
+    };
+
+    pc._statsDump = setInterval(async () => { 
+        if(pc.iceConnectionState !== 'checking') return; 
+        try { 
+            const stats = await pc.getStats(); 
+            let activePairs = []; 
+            stats.forEach(r => { 
+                if(r.type === 'candidate-pair') { 
+                    const local = stats.get(r.localCandidateId); 
+                    const remote = stats.get(r.remoteCandidateId); 
+                    activePairs.push({ state: r.state, nom: r.nominated, b: r.bytesSent + r.bytesReceived, rtt: r.currentRoundTripTime, lType: local?.candidateType, rType: remote?.candidateType, pro: local?.protocol }); 
+                } 
+            }); 
+            
+            if(activePairs.length > 0) { 
+                let infoStr = activePairs.map(p => `[${p.lType}->${p.rType} ${p.pro}] S:${p.state} N:${p.nom}`).join(' | '); 
+                logDebug(`[ICE DUMP] ${infoStr}`, 'log-ice', myId); 
+            } 
+        } catch(e){} 
+    }, 4000);
+
+    if (isInitiator) {
+        const ch = pc.createDataChannel('chat'); 
+        bindDataChannel(ch, targetId); 
+        const offer = await pc.createOffer(); 
+        await pc.setLocalDescription(offer);
+        
+        waitForIce(pc, async () => { 
+            if (!pc || pc.signalingState === 'closed' || pc.gatheringDone) return; 
+            pc.gatheringDone = true; 
+            
+            if (useDns && sid) { 
+                pc.offerSid = sid; 
+                logDebug(`[API OUT] Odesílám Offer...`, 'info', myId); 
+                
+                const ok = await writeSignal(`offer-${myId}`, { sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, sid: sid, ts: Date.now() }); 
+                
+                if (ok) { 
+                    let qArr = await readSignal('queue') || []; 
+                    if(!qArr.includes(myId)) { 
+                        qArr.push(myId); 
+                        await writeSignal('queue', qArr); 
+                    } 
+                } 
+            } 
+        });
+    } else { 
+        pc.ondatachannel = (e) => bindDataChannel(e.channel, targetId); 
+    }
+}
+
+function bindDataChannel(channel, targetId) {
+    const setupChannel = async () => { 
+        channels[targetId] = channel; 
+        updateDebugStats('peers', Object.keys(channels).length); 
+        unlockChat(); 
+        logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId); 
+        
+        setTimeout(async () => { 
+            const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
+            
+            if (!isDnsHost) {
+                setTimeout(() => { 
+                    if (Date.now() - lastSyncRequestTime > 30000) {
+                        lastSyncRequestTime = Date.now();
+                        routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+                    }
+                }, 3000);
+            }
+        }, 1000); 
+        
+        const pingInterval = setInterval(() => { 
+            if(channel.readyState === 'open') {
+                channel.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now(), tele: myTelemetry }));
+            } else {
+                clearInterval(pingInterval);
+            }
+        }, 10000); 
+    };
+    
+    if (channel.readyState === 'open') {
+        setupChannel(); 
+    } else {
+        channel.onopen = setupChannel; 
+    }
+    
+    channel.onclose = () => cleanupConnection(targetId);
+    
+    channel.onmessage = async (e) => { 
+        try { 
+            const msgObj = JSON.parse(e.data); 
+            
+            if (msgObj.type === '_ping') { 
+                if (!knownNodes[msgObj.sender]) { 
+                    channel.send(JSON.stringify({ type: 'request-announce', sender: myId })); 
+                    return; 
+                } 
+                if (msgObj.tele) knownNodes[msgObj.sender].tele = msgObj.tele; 
+                channel.send(JSON.stringify({ type: '_pong', sender: myId, t: msgObj.t, tele: myTelemetry })); 
+                knownNodes[msgObj.sender].lastSeen = Date.now(); 
+                return; 
+            } 
+            
+            if (msgObj.type === '_pong') { 
+                if (knownNodes[msgObj.sender]) { 
+                    knownNodes[msgObj.sender].ping = Date.now() - msgObj.t; 
+                    knownNodes[msgObj.sender].lastSeen = Date.now(); 
+                    if (msgObj.tele) knownNodes[msgObj.sender].tele = msgObj.tele; 
+                } 
+                return; 
+            } 
+            
+            if (msgObj.type === 'request-announce') { 
+                if (myKeyPair) { 
+                    const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
+                    routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
+                } 
+                return; 
+            } 
+            
+            routeMessage(msgObj, channel); 
+        } catch (err) { } 
+    };
+}
+
+setInterval(async () => {
+    const allConnections = { ...connections }; 
+    if (activeCall.pc && activeCall.peerId) {
+        allConnections[`video_${activeCall.peerId}`] = activeCall.pc;
+    }
+    
+    for (const [peerId, pc] of Object.entries(allConnections)) {
+        if (!pc) continue;
+        
+        if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+            if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
+            
+            if (Date.now() - pc.checkingStartTime > 25000) {
+                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error', myId);
+                
+                if (peerId === 'hub' && !isDnsHost && !isHttpRelayMode) {
+                    logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay", myId);
+                    cleanupConnection(peerId, true);
+                } else {
+                    if (peerId === 'hub') blacklistedHubTimeout = Date.now() + 30000;
+                    cleanupConnection(peerId);
+                }
+                continue;
+            }
+        } else { 
+            pc.checkingStartTime = null; 
+        }
+
+        if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') continue;
+        
+        try {
+            const stats = await pc.getStats(); 
+            if (!peerStats[peerId]) peerStats[peerId] = { rtt: 0, bitrate: 0, isRelay: false, protocol: 'udp', server: 'Local LAN', lastBytes: 0, lastTime: Date.now() }; 
+            let activePair = null; 
+            let currentBytes = 0;
+            
+            stats.forEach(report => { 
+                if (report.type === 'transport' && report.selectedCandidatePairId) activePair = stats.get(report.selectedCandidatePairId); 
+                if (report.type === 'data-channel' || report.type === 'outbound-rtp' || report.type === 'inbound-rtp') currentBytes += (report.bytesSent || 0) + (report.bytesReceived || 0); 
+            });
+            
+            if (!activePair) { 
+                stats.forEach(r => { 
+                    if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) activePair = r; 
+                }); 
+            }
+            
+            if (activePair) {
+                let rtt = (activePair.currentRoundTripTime !== undefined) ? (activePair.currentRoundTripTime * 1000).toFixed(0) : 0; 
+                const localCand = stats.get(activePair.localCandidateId); 
+                const remoteCand = stats.get(activePair.remoteCandidateId); 
+                let isRelay = false; 
+                let protocol = 'udp'; 
+                let server = 'Local LAN';
+                
+                if (localCand && remoteCand) { 
+                    if (localCand.candidateType === 'relay') { 
+                        isRelay = true; 
+                        protocol = localCand.relayProtocol || localCand.protocol || 'udp'; 
+                        server = parseIceUrl(localCand.url || localCand.address); 
+                    } else if (remoteCand.candidateType === 'relay') { 
+                        isRelay = true; 
+                        protocol = remoteCand.relayProtocol || remoteCand.protocol || 'udp'; 
+                        server = parseIceUrl(remoteCand.url || remoteCand.address); 
+                    } else if (localCand.candidateType === 'srflx' || remoteCand.candidateType === 'srflx') { 
+                        isRelay = false; 
+                        protocol = localCand.protocol || 'udp'; 
+                        server = parseIceUrl(localCand.url || remoteCand.url); 
+                    } 
+                }
+                
+                const now = Date.now(); 
+                const dt = (now - peerStats[peerId].lastTime) / 1000; 
+                let bitrate = 0; 
+                if (dt > 0 && peerStats[peerId].lastBytes > 0) {
+                    bitrate = ((currentBytes - peerStats[peerId].lastBytes) * 8 / dt / 1000).toFixed(1);
+                }
+                
+                peerStats[peerId] = { rtt: rtt, isRelay: isRelay, protocol: protocol, server: server, bitrate: Math.max(0, bitrate), lastBytes: currentBytes, lastTime: now };
+            }
+        } catch (e) {}
+    }
+}, 2000);
+
+setInterval(() => { 
+    if (isDnsHost && networkGraph.root === myId) { 
+        let edges = []; 
+        Object.keys(knownNodes).forEach(peerId => { 
+            if (peerId !== myId) { 
+                const s = peerStats[peerId] || {}; 
+                let isHttp = knownHttpClients.has(peerId); 
+                edges.push({ id: peerId, ping: s.rtt || knownNodes[peerId].ping || 0, rtt: isHttp ? 0 : (s.rtt || 0), bitrate: s.bitrate || 0, isRelay: isHttp ? true : (s.isRelay || false), protocol: isHttp ? 'http' : (s.protocol || 'udp') }); 
+            } 
+        }); 
+        networkGraph.edges = edges; 
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph }); 
+        drawTopology(); 
+    } 
+}, 5000);
+
+setInterval(() => {
+    if(!DOM.netHealthList) return; 
+    
+    let html = '<table><tr><th>Uzel</th><th>Role</th><th>Linka</th><th>RTT</th><th>Bitrate</th><th>Status</th></tr>'; 
+    const now = Date.now(); 
+    const activeIds = Object.keys(knownNodes).sort();
+    
+    activeIds.forEach(id => {
+        const node = knownNodes[id]; 
+        const isMe = id === myId; 
+        const isMaster = (networkGraph.root === id); 
+        const isHttpTarget = knownHttpClients.has(id) || (isMe && isHttpRelayMode); 
+        const lastSeenDiff = now - (node.lastSeen || now);
+        
+        if (!isMe && lastSeenDiff > 45000) { 
+            if (isDnsHost) {
+                cleanupConnection(id); 
+            } else if (isMaster && !isHttpRelayMode) {
+                cleanupConnection('hub'); 
+            } else if (lastSeenDiff > 60000) { 
+                logDebug(`[WATCHDOG] Uzel ${id} neodpovídá (>60s), mažu data a zavírám linku.`, 'error', myId); 
+                if(isHttpTarget) knownHttpClients.delete(id); 
+                cleanupConnection(id); 
+                delete knownNodes[id]; 
+                if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(id);
+                DOM.uiUserCount.innerText = Object.keys(knownNodes).length; 
+            } 
+        }
+
+        const role = isMaster ? 'Master (Hub)' : (isHttpTarget ? 'HTTP Spoke' : 'Spoke'); 
+        let status = '<span style="color:#2ed573">Aktivní</span>'; 
+        if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>'; 
+        else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
+        
+        let displayLink = isMe ? '-' : '<span style="color:#777">Nepřímý</span>'; 
+        let displayRtt = isMe ? '-' : '?'; 
+        let displayBitrate = isMe ? '-' : '0 kbps';
+        
+        if (!isMe) {
+            if (isHttpTarget || (isMaster && isHttpRelayMode)) { 
+                displayLink = `<span style="color:#9b59b6; font-weight:bold;">Relay (HTTP)</span><br><span style="font-size:0.6rem; color:#888">API Fallback</span>`; 
+                displayRtt = (node.ping ? `~${node.ping} ms` : '?'); 
+            } else {
+                let activeConnection = isMaster ? connections['hub'] : connections[id]; 
+                let pStats = isMaster ? peerStats['hub'] : peerStats[id];
+                
+                if (activeConnection && pStats) { 
+                    let protoStr = (pStats.protocol || 'UDP').toUpperCase(); 
+                    let serverStr = pStats.server || 'Local LAN'; 
+                    if(serverStr.length > 15) serverStr = serverStr.substr(0,12) + '...'; 
+                    
+                    displayLink = pStats.isRelay ? `<span style="color:#feca57">TURN (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>` : `<span style="color:#2ed573">Direct (${protoStr})</span><br><span style="font-size:0.6rem; color:#888">${serverStr}</span>`; 
+                    displayRtt = pStats.rtt > 0 ? `${pStats.rtt} ms` : '?'; 
+                    displayBitrate = `${pStats.bitrate} kbps`; 
+                } else { 
+                    const edgeData = (networkGraph.edges || []).find(e => (e.id || e) === id); 
+                    if (edgeData) { 
+                        if(edgeData.protocol === 'http') {
+                            displayLink = `<span style="color:#9b59b6; font-weight:bold;">Relay (HTTP) via Master</span>`; 
+                        } else {
+                            displayLink = edgeData.isRelay ? `<span style="color:#feca57">TURN (${edgeData.protocol.toUpperCase()}) via Master</span>` : `<span style="color:#2ed573">Direct (${edgeData.protocol.toUpperCase()}) via Master</span>`; 
+                        }
+                        displayRtt = edgeData.rtt > 0 ? `~${edgeData.rtt} ms` : (node.ping ? `~${node.ping} ms` : '?'); 
+                        displayBitrate = `${edgeData.bitrate} kbps`; 
+                    } 
+                }
+            }
+        }
+        
+        if(knownNodes[id]) { 
+            let callBtn = (!isMe && !isHttpTarget && !isHttpRelayMode) ? `<button class="btn-call" onclick="window.startVideoCall('${id}')" title="Videohovor">📞</button>` : `<button class="btn-call" disabled title="Video není přes HTTP Relay dostupné.">📞</button>`; 
+            if(isMe) callBtn = ''; 
+            let teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">${formatTelemetry(isMe ? myTelemetry : node.tele)}</div>`; 
+            html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`; 
+        }
+    }); 
+    
+    html += '</table>'; 
+    DOM.netHealthList.innerHTML = html;
+}, 1000);
+
+async function fullResetAndReconnect() {
+    if (isResetting) return; 
+    isResetting = true; 
+    appSessionTime = 0; 
+    currentSessionId = null; 
+    
+    logDebug("Provádím kompletní reset...", "info", myId); 
+    window.endVideoCall(true);
+    
+    if (joinInterval) clearInterval(joinInterval); 
+    if (dnsInterval) clearInterval(dnsInterval); 
+    if (httpRelayInterval) clearInterval(httpRelayInterval);
+    
+    Object.values(channels).forEach(ch => { ch.onclose = null; if(ch.readyState==='open') ch.close(); }); 
+    Object.values(connections).forEach(pc => { pc.oniceconnectionstatechange = null; clearInterval(pc._statsDump); pc.close(); });
+    
+    connections = {}; 
+    channels = {}; 
+    knownNodes = {}; 
+    networkGraph = { root: null, edges: [] }; 
+    processingOffers.clear(); 
+    peerStats = {}; 
+    isDnsHost = false; 
+    isHttpRelayMode = false; 
+    window.isHttpRelayMode = false;
+    knownHttpClients.clear(); 
+    httpOutbox = {}; 
+    drawnEdges = []; 
+    activeSyncOperations.clear();
+    syncState = {};
+    drawTopology();
+    
+    await initCrypto(); 
+    isResetting = false; 
+    
+    const hostAlive = await readSignal('host-alive'); 
+    const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout; 
+    
+    if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
+        joinViaDns(); 
+    } else {
+        startDnsHostLoop();
+    }
+}
+
+async function checkIsolation() {
+    if (isCheckingIsolation || isResetting) return; 
+    isCheckingIsolation = true; 
+    
+    if (joinInterval) clearInterval(joinInterval); 
+    DOM.uiRole.innerText = 'Izolován';
+    
+    const hostAlive = await readSignal('host-alive'); 
+    const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
+    
+    if (hostAlive && hostAlive.id !== myId && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) { 
+        setTimeout(() => { isCheckingIsolation = false; fullResetAndReconnect(); }, 1500); 
+        return; 
+    }
+    
+    const now = Date.now(); 
+    let aliveIds = Object.keys(knownNodes).filter(id => (now - knownNodes[id].lastSeen) < 45000); 
+    
+    if (!aliveIds.includes(myId)) aliveIds.push(myId); 
+    aliveIds.sort();
+    
+    if (aliveIds[0] === myId) { 
+        logDebug(`👑 Jsem nejvyšší autorita. Přebírám Master roli!`, "webrtc", myId); 
+        isCheckingIsolation = false; 
+        startDnsHostLoop(); 
+    } else { 
+        const jitter = Math.floor(Math.random() * 3000) + 2000; 
+        setTimeout(async () => { 
+            isCheckingIsolation = false; 
+            fullResetAndReconnect(); 
+        }, jitter); 
+    }
+}
+
+window.initSystem = async function() {
+    DOM.joinBtn.disabled = true; 
+    DOM.uiRole.innerText = "Kontroluji API..."; 
+    appSessionTime = 0; 
+    
+    myName = DOM.username.value.trim() || 'Anonym_' + myId; 
+    localStorage.setItem('chat_nickname', myName); 
+    DOM.uiMyName.innerText = escapeHTML(myName); 
+    
+    DOM.setupScreen.style.display = 'none'; 
+    loadHistory(); 
+    await initCrypto();
+    
+    const hostAlive = await readSignal('host-alive'); 
+    const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
+    
+    if (typeof window.startGameKaboom === "function") window.startGameKaboom();
+
+    if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
+        joinViaDns(); 
+    } else {
+        startDnsHostLoop();
+    }
+};
+
+async function startDnsHostLoop() {
+    isDnsHost = true; 
+    networkGraph.root = myId; 
+    unlockChat(); 
+    
+    await writeSignal('queue', []); 
+    await writeSignal('queue-http', []); 
+    await writeSignal('host-alive', { id: myId, timestamp: Date.now() }); 
+    
+    if (dnsInterval) clearInterval(dnsInterval);
+    
+    dnsInterval = setInterval(async () => {
+        await writeSignal('host-alive', { id: myId, timestamp: Date.now() });
+        
+        const aliveCheck = await readSignal('host-alive'); 
+        if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) { 
+            if (myId > aliveCheck.id) { 
+                logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error", myId); 
+                blacklistedHubId = null; 
+                fullResetAndReconnect(); 
+                return; 
+            } 
+        }
+        
+        const queueArr = await readSignal('queue') || [];
+        if (queueArr.length > 0) {
+            const guestId = queueArr[0]; 
+            await writeSignal('queue', queueArr.filter(id => id !== guestId));
+            
+            const offerPayload = await readSignal(`offer-${guestId}`);
+            if (offerPayload && !offerPayload.consumed && !(offerPayload.ts && (Date.now() - offerPayload.ts > 30000))) {
+                const offerSid = offerPayload.sid ? offerPayload.sid : null;
+                
+                if (!processingOffers.has(offerSid)) {
+                    processingOffers.add(offerSid); 
+                    setTimeout(() => processingOffers.delete(offerSid), 30000); 
+                    
+                    if (connections[guestId]) cleanupConnection(guestId);
+                    const offerData = offerPayload.sdp ? offerPayload.sdp : offerPayload;
+                    
+                    if(offerData && offerData.sdp && offerData.type) {
+                        await createP2PNode(guestId, false);
+                        try { 
+                            const pc = connections[guestId]; 
+                            if(!pc) throw new Error("PC neexistuje"); 
+                            
+                            await pc.setRemoteDescription(new RTCSessionDescription({ type: String(offerData.type).toLowerCase().trim(), sdp: String(offerData.sdp) })); 
+                            await writeSignal(`offer-${guestId}`, { consumed: true, ts: 0 }); 
+                            await pc.setLocalDescription(await pc.createAnswer()); 
+                            
+                            waitForIce(pc, async () => { 
+                                if (!pc || pc.signalingState === 'closed' || pc.answerDone) return; 
+                                pc.answerDone = true; 
+                                await writeSignal(`answer-${guestId}`, { sdp: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, sid: offerSid, ts: Date.now() }); 
+                            }); 
+                        } catch(e) { 
+                            logDebug(`Chyba aplikace Offeru: ${e.message}`, 'error', myId); 
+                            cleanupConnection(guestId); 
+                        }
+                    }
+                }
+            }
+        }
+        
+        const httpQueue = await readSignal('queue-http') || [];
+        if(httpQueue.length > 0) { 
+            httpQueue.forEach(clientId => { 
+                if(!knownHttpClients.has(clientId)) { 
+                    knownHttpClients.add(clientId); 
+                    logDebug(`[HTTP RELAY] Uzel ${clientId} připojen přes API fallback.`, 'log-relay', myId); 
+                } 
+            }); 
+            await writeSignal('queue-http', []); 
+        }
+        
+        knownHttpClients.forEach(async (clientId) => {
+            const incomingArr = await readSignal(`relay-up-${clientId}`);
+            if(incomingArr && Array.isArray(incomingArr)) { 
+                incomingArr.forEach(msg => { 
+                    if(msg.type === '_ping') { 
+                        knownNodes[clientId].lastSeen = Date.now(); 
+                        if(msg.tele) knownNodes[clientId].tele = msg.tele; 
+                        addToHttpOutbox(clientId, { type: '_pong', sender: myId, t: msg.t, tele: myTelemetry }); 
+                    } else {
+                        routeMessage(msg, 'http'); 
+                    }
+                }); 
+            }
+            
+            if(httpOutbox[clientId] && httpOutbox[clientId].length > 0) { 
+                await writeSignal(`relay-down-${clientId}`, httpOutbox[clientId]); 
+            }
+        });
+    }, 2000);
+}
+
+async function joinViaDns() {
+    DOM.uiRole.innerText = "Spojuji se (WebRTC)..."; 
+    currentSessionId = generateMsgId(); 
+    writeSignal(`offer-${myId}`, { consumed: true, ts: 0 }); 
+    await createP2PNode('hub', true, true, currentSessionId); 
+    
+    if (joinInterval) clearInterval(joinInterval); 
+    let pokusy = 0; 
+    globalKnownHubId = null; 
+    
+    joinInterval = setInterval(async () => {
+        pokusy++;
+        if (pokusy > 6) { 
+            clearInterval(joinInterval); 
+            logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
+            cleanupConnection('hub', true); 
+            return; 
+        }
+        
+        if (!globalKnownHubId) { 
+            const alive = await readSignal('host-alive'); 
+            if (alive && alive.id) globalKnownHubId = alive.id; 
+        }
+        
+        if (pokusy % 2 === 0) { 
+            let qArr = await readSignal('queue') || []; 
+            if(!qArr.includes(myId)) { 
+                qArr.push(myId); 
+                await writeSignal('queue', qArr); 
+            } 
+        }
+        
+        const answerPayload = await readSignal(`answer-${myId}`);
+        if (answerPayload && !answerPayload.consumed && connections['hub']) {
+            if (answerPayload.ts && (Date.now() - answerPayload.ts > 30000)) return;
+            
+            const answerSid = answerPayload.sid ? answerPayload.sid : null; 
+            if (answerSid !== currentSessionId) return; 
+            
+            const answerData = answerPayload.sdp ? answerPayload.sdp : answerPayload;
+            if (answerData && answerData.sdp && answerData.type) {
+                if (connections['hub'].signalingState !== 'have-local-offer') return; 
+                clearInterval(joinInterval);
+                
+                try { 
+                    await connections['hub'].setRemoteDescription(new RTCSessionDescription({ type: String(answerData.type).toLowerCase().trim(), sdp: String(answerData.sdp) })); 
+                    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 }); 
+                } catch(e) { 
+                    logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error', myId); 
+                }
+            }
+        }
+    }, 3000);
+}
+
+function startHttpRelayMode() {
+    isHttpRelayMode = true; 
+    window.isHttpRelayMode = true;
+    unlockChat(); 
+    if (typeof window.triggerHttpBlock === 'function') window.triggerHttpBlock();
+    
+    setTimeout(async () => { 
+        const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
+        routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
+        
+        setTimeout(() => { 
+            if (Date.now() - lastSyncRequestTime > 30000) {
+                lastSyncRequestTime = Date.now();
+                routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
+            }
+        }, 3000); 
+    }, 1000); 
+    
+    if (httpRelayInterval) clearInterval(httpRelayInterval); 
+    
+    let joinSent = false; 
+    let lastHttpPong = Date.now();
+    
+    httpRelayInterval = setInterval(async () => {
+        if(!joinSent) { 
+            let qArr = await readSignal('queue-http') || []; 
+            if(!qArr.includes(myId)) { 
+                qArr.push(myId); 
+                await writeSignal('queue-http', qArr); 
+            } 
+            joinSent = true; 
+        }
+        
+        addToHttpOutbox('hub', { type: '_ping', sender: myId, t: Date.now(), tele: myTelemetry });
+        
+        if(httpOutbox['hub'] && httpOutbox['hub'].length > 0) { 
+            await writeSignal(`relay-up-${myId}`, httpOutbox['hub']); 
+        }
+        
+        const incomingArr = await readSignal(`relay-down-${myId}`);
+        if(incomingArr && Array.isArray(incomingArr) && incomingArr.length > 0) {
+            lastHttpPong = Date.now();
+            incomingArr.forEach(msg => { 
+                if(msg.type === '_pong') { 
+                    if(knownNodes[msg.sender]) { 
+                        knownNodes[msg.sender].ping = Date.now() - msg.t; 
+                        knownNodes[msg.sender].lastSeen = Date.now(); 
+                    } 
+                } else {
+                    routeMessage(msg, 'http'); 
+                }
+            }); 
+        }
+
+        if (Date.now() - lastHttpPong > 25000) {
+            logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error', myId);
+            clearInterval(httpRelayInterval);
+            httpOutbox = {};
+            blacklistedHubId = globalKnownHubId || 'hub';
+            blacklistedHubTimeout = Date.now() + 60000;
+            isHttpRelayMode = false;
+            window.isHttpRelayMode = false;
+            checkIsolation();
+        }
+    }, 3000);
+}
