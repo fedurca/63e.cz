@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v21 - newsync & tall-levels</title>
+    <title>P2P v21 - newsync & tall-levels FIXED</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -869,9 +869,7 @@
             const json = await res.json(); 
             if(json.success && json.content) { 
                 updateDebugStats('dns', 'OK'); 
-                const cleanB64 = json.content.replace(/["\s
-
-\]/g, ''); 
+                const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
                 return dekomprimovat(cleanB64); 
             } 
         } catch(e) { } 
@@ -2857,12 +2855,10 @@
         
         loop(0.5, () => {
             playerStats[localId] = { name: myName || localId, hp: hp, score: score };
-            let txt = "HRÁČI A STATY:
-";
+            let txt = "HRÁČI A STATY:\n";
             for (let id in playerStats) {
                 let st = playerStats[id];
-                txt += `${st.name.substring(0,10)} | HP:${st.hp} Sc:${st.score}
-`;
+                txt += `${st.name.substring(0,10)} | HP:${st.hp} Sc:${st.score}\n`;
             }
             statsLabel.text = txt;
         });
@@ -3209,26 +3205,12 @@
             if (debugVisible && Math.floor(time()*60)%10 === 0) {
                 const remoteIdsStr = get("remote_player").map(rp => rp.id).join(', ');
                 const enemyDbg = get("enemy").map(e => `${e.eId.split('_').pop()}:[${Math.round(e.pos.x)},${Math.round(e.pos.y)}]`).join(' ');
-                const dbgTxt = `${TEXTS.debugTitle}
-${TEXTS.debugLevel(lvlIdx+1)}
-${TEXTS.debugHP(hp, maxHp)}
-` +
-                               `${TEXTS.debugAmmo(ammo)}
-${TEXTS.debugScore(score)}
-${TEXTS.debugPos(player.pos.x, player.pos.y)}
-` +
-                               `${TEXTS.debugVel(player.cVel)}
-${TEXTS.debugGround(player.isGrounded())}
-` +
-                               `${TEXTS.debugStun(player.stun)}
-${TEXTS.debugGravity(lvl.g)}
-` +
-                               `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}
-${TEXTS.debugCoins(get("coin").length)}
-` +
-                               `${TEXTS.debugFPS(Math.round(1/dt()))}
-${TEXTS.debugTime(time())}
-` +
+                const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
+                               `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
+                               `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
+                               `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
+                               `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(get("coin").length)}\n` +
+                               `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
                                `Peers: ${remoteIdsStr}`;
                 document.getElementById("debug-content").innerText = dbgTxt;
             }
