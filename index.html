@@ -6,7 +6,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
-    <title>P2P v21 - newsync</title>
+    <title>P2P v21 - newsync & tall-levels</title>
     
     <script src="./pako.min.js"></script>
     <script>
@@ -39,6 +39,32 @@
         #debug-panel-game { display: none; position: absolute; top: 8px; right: 8px; width: 260px; max-height: 90%; background: rgba(0,0,0,0.88); border: 1px solid #0f0; color: #0f0; padding: 10px; z-index: 10000; font: 11px monospace; white-space: pre-wrap; overflow-y: auto; border-radius: 6px; user-select: text; }
         #debug-panel-game button { display: block; width: 100%; margin-bottom: 8px; padding: 6px; background: #0f0; color: #000; border: none; cursor: pointer; font-weight: bold; border-radius: 3px; font-size: 11px; }
         #debug-toggle { position: absolute; top: 8px; right: 8px; z-index: 10001; background: rgba(0,0,0,0.7); color: #0f0; border: 1px solid #0f0; width: 34px; height: 34px; font-size: 18px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+        
+        /* MOBILNÍ FULLSCREEN TLAČÍTKO V LEVÉM HORNÍM ROHU */
+        #fullscreen-toggle { position: absolute; top: 8px; left: 8px; z-index: 10001; background: rgba(0,0,0,0.7); color: #fff; border: 1px solid #fff; width: 38px; height: 34px; font-size: 14px; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
+
+        /* DOTYKOVÉ OVLÁDÁNÍ - HTML NATIVNÍ OVERLAY PRO PERFEKTNÍ MULTITOUCH */
+        #mobile-controls {
+            display: none;
+            position: absolute; bottom: 24px; left: 0; width: 100%; height: 90px;
+            justify-content: space-between; padding: 0 24px;
+            z-index: 50; pointer-events: none;
+        }
+        @media (hover: none) and (pointer: coarse) {
+            #mobile-controls { display: flex; }
+        }
+        .ctrl-group { display: flex; gap: 20px; pointer-events: auto; }
+        .ctrl-btn {
+            width: 80px; height: 80px; border-radius: 50%;
+            background: rgba(0,0,0,0.5); color: rgba(255,255,255,0.9);
+            border: 2px solid rgba(255,255,255,0.4); font-size: 32px;
+            display: flex; justify-content: center; align-items: center;
+            touch-action: none; -webkit-tap-highlight-color: transparent; outline: none;
+            user-select: none; -webkit-user-select: none;
+        }
+        .ctrl-btn:active { background: rgba(255,255,255,0.3); }
+        .btn-shoot { background: rgba(231, 76, 60, 0.4); border-color: rgba(231, 76, 60, 0.7); }
+        .btn-shoot:active { background: rgba(231, 76, 60, 0.7); }
 
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
@@ -144,6 +170,19 @@
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     
+    <button id="fullscreen-toggle" title="Přepnout Fullscreen">📺</button>
+    
+    <div id="mobile-controls">
+        <div class="ctrl-group">
+            <button id="btn-left" class="ctrl-btn">◀</button>
+            <button id="btn-right" class="ctrl-btn">▶</button>
+        </div>
+        <div class="ctrl-group">
+            <button id="btn-shoot" class="ctrl-btn btn-shoot">🔫</button>
+            <button id="btn-jump" class="ctrl-btn">▲</button>
+        </div>
+    </div>
+    
     <div id="crash-screen">
         <h1 id="crash-title">❌ CHYBA HRY</h1>
         <p id="err-desc"></p>
@@ -241,6 +280,41 @@
 </div>
 
 <script>
+    // Globální stav dotyků pro simulaci chůze
+    window.ctrlState = { left: false, right: false };
+
+    document.addEventListener("DOMContentLoaded", () => {
+        const bindBtn = (id, downCb, upCb) => {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            const down = (e) => { e.preventDefault(); e.stopPropagation(); downCb(); };
+            const up = (e) => { e.preventDefault(); e.stopPropagation(); upCb(); };
+            btn.addEventListener('touchstart', down, {passive: false});
+            btn.addEventListener('touchend', up, {passive: false});
+            btn.addEventListener('touchcancel', up, {passive: false});
+            btn.addEventListener('mousedown', down);
+            btn.addEventListener('mouseup', up);
+            btn.addEventListener('mouseleave', up);
+        };
+        bindBtn('btn-left', () => window.ctrlState.left = true, () => window.ctrlState.left = false);
+        bindBtn('btn-right', () => window.ctrlState.right = true, () => window.ctrlState.right = false);
+        bindBtn('btn-jump', () => { if(window.doJump) window.doJump(); }, () => {});
+        bindBtn('btn-shoot', () => { if(window.doShoot) window.doShoot(); }, () => {});
+        
+        // FULLSCREEN PODPORA PRO MOBILY
+        document.getElementById('fullscreen-toggle').addEventListener('click', () => {
+            if (typeof window.initAudioContextGlobal === 'function') window.initAudioContextGlobal();
+            const docEl = document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                const requestFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
+                if(requestFS) requestFS.call(docEl).catch(err => console.log(err));
+            } else {
+                const exitFS = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
+                if(exitFS) exitFS.call(document);
+            }
+        });
+    });
+
     const DOM = {
         app: document.getElementById('app'),
         chatToggleBtn: document.getElementById('chat-toggle-btn'),
@@ -795,7 +869,9 @@
             const json = await res.json(); 
             if(json.success && json.content) { 
                 updateDebugStats('dns', 'OK'); 
-                const cleanB64 = json.content.replace(/["\s\n\r\\]/g, ''); 
+                const cleanB64 = json.content.replace(/["\s
+
+\]/g, ''); 
                 return dekomprimovat(cleanB64); 
             } 
         } catch(e) { } 
@@ -2329,24 +2405,23 @@
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     }
+    window.initAudioContextGlobal = initAudio;
 
     function playSound(freq, type, duration, vol = 0.1) {
         if (!audioCtx) return;
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        
-        osc.type = type; 
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(freq / 2, audioCtx.currentTime + duration);
-        
-        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-        
-        osc.connect(gain); 
-        gain.connect(audioCtx.destination);
-        
-        osc.start(); 
-        osc.stop(audioCtx.currentTime + duration);
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type; 
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(freq / 2, audioCtx.currentTime + duration);
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            osc.connect(gain); 
+            gain.connect(audioCtx.destination);
+            osc.start(); 
+            osc.stop(audioCtx.currentTime + duration);
+        } catch(e){}
     }
 
     function vibrate(pattern) {
@@ -2510,186 +2585,119 @@
     loadSprite("cloud", `data:image/svg+xml;utf8,<svg width="120" height="60" xmlns="http://www.w3.org/2000/svg"><ellipse cx="40" cy="35" rx="30" ry="20" fill="white" opacity="0.15"/><ellipse cx="70" cy="25" rx="35" ry="22" fill="white" opacity="0.15"/><ellipse cx="55" cy="40" rx="25" ry="15" fill="white" opacity="0.12"/></svg>`);
     loadSprite("mount", `data:image/svg+xml;utf8,<svg width="300" height="200" xmlns="http://www.w3.org/2000/svg"><polygon points="0,200 80,40 160,200" fill="white" opacity="0.08"/><polygon points="100,200 220,20 300,200" fill="white" opacity="0.06"/></svg>`);
 
+    /* PŘEPRACOVANÉ MAPY - 4 PATRA, VĚTŠÍ ROZMĚRY, DOPLNĚNÉ PLOŠINY PRO SNADNÝ VÝSKOK K CÍLI */
     const mapSuffix = [
-        "                            ", "                            ", "                     F      ", "                    ====    ", 
-        "                            ", "               U            ", "                            ", "               V            ", 
-        "                            ", "               D            ", "====    L   H   R           ", "                            ", 
+        "                            ", "                            ", "                            ", "                            ", 
+        "                            ", "                            ", "                            ", "                            ", 
+        "                            ", "                            ", "                            ", "                            ", 
         "                            ", "                            "  
     ];
 
-    const RAW_LVL = [
-        { 
-            bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100], 
-            core: [
-                "",
-                "                       $$$ P   +",
-                "             3         1      1",
-                "                                               3                    P              ==",
-                "         $$  2        B     1$$  P        B        ==            $$     1   P     B   1  ==",
-                "       ======  11      ======     =========     1        ==         ======  11      ======     ==",
-                "            1    ===        1  1   !    ^^   1            ==                 ===        3    ==",
-                "             3         P            !   ===                ==            P                  ==",
-                "             3         3             !1  1  1        2      ==         1  3    1    2              ==",
-                "         1      ======            !             1      ==      ======                       ==",
-                "======  ^^  =======  ===  ======  ================================  ^^  =======  ===  ==========",
-                "", "", ""
-            ]
-        },
-        { 
-            bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0], 
-            core: [
-                "",
-                "                 1        B                2      +  P",
-                "             2          $$$                    1",
-                "                                             P                    B                    ==",
-                "         +       3   3        B   W        $$      P      ==         +       3     P      1   W    ==",
-                "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
-                "               3   1        1      W   1  3        ^^      ==                 3          1      W    ==",
-                "            ^^        2      =====   W =====       ===      ==            ^^             =====   W    ==",
-                "======  ====    ====  2         W         1          == ======  ====    ====    2        W   ==",
-                "                 ======          ==============================================================",
-                "", "", "", ""
-            ]
-        },
-        { 
-            bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true, 
-            core: [
-                "",
-                "                               1                            1      2",
-                "                  B            $$$      1      +",
-                "             P      1         ===            ==   3          ==          2",
-                "                  1       1              ==              ==  P",
-                "                 1      B    ===   ===   1   ==   1          == ===         1",
-                "       ======   ===   ===            1    ===   ====      ==  !",
-                "          ^^    2         3     ^^        !        ^^        ==  !        3",
-                "======  ====      2    =====  ====        !          1        == !",
-                "====================================================================================================",
-                "", "", "", ""
-            ]
-        },
-        { 
-            bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true, 
-            core: [
-                "", "", "",
-                "             B                1          $$ ==        2            P",
-                "       ===            +            ===   ==== ==            3               B",
-                "                 ===      ===               !         ======        ==",
-                "            W    3    P            1         !  =====                ==",
-                "       ===  W ^^          1   2    =====     !         1          ==",
-                "======      ======================================================================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255], 
-            core: [
-                "", "", "",
-                "             3                2          $$ ==",
-                "       ===            B            ===   ==== ==            1              P",
-                "          W      ===      ===               !    B        ======        ==",
-                "          W          P             1         !  =====                ==",
-                "          W ^^         3        =====       !         2          ==",
-                "======  ====    ====    ====    ====    ====    ====    ==========================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0], 
-            core: [
-                "", "", "",
-                "                               1          ==  1       ==             P",
-                "       ===          3      ==========        == ======  ==       3",
-                "          W      ======        P        === !            ==",
-                "          W            1       B             !            ==",
-                "          W ^^                               !            ==",
-                "======  ====    2                    1               ==========================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255], 
-            core: [
-                "", "", "",
-                "                                         $$ ==   +      ==",
-                "       ======         B       3          ====   ===     ==               P",
-                "          W               1          1       !   ^^      ==        B",
-                "          W  ^^            =====      =====  !  ===      ==",
-                "======  ====   ====            2            !            ==",
-                "====================================================================================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true, 
-            core: [
-                "", "", "",
-                "                         2               $$ ==   P      ==",
-                "       ======         1                  ====   ===     ==               P",
-                "          W      B         1          3      !   ^^      ==",
-                "          W  ^^            =====      =====  !  ===      ==",
-                "======  ====   ====        1               !            ==",
-                "             ======                       =======================================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true, 
-            core: [
-                "", "", "",
-                "                 B       3           2      ==  P       ==",
-                "       ======   ===   ===                $$ == ===      ==             P",
-                "          W                 1            ==== !         ==",
-                "          W               === ====   3         !  ^^      ==",
-                "======                       1       ====== !  ===      ==",
-                "====================================================================================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0], 
-            core: [
-                "", "", "",
-                "                 $$     P                ==   +        ==",
-                "       ======   ===    ===        1        ====   ===      ==              B",
-                "          W             2      1            !   ^^      ==        ======",
-                "          W  ^^         =====  =====        !    ===      ==             P",
-                "======  ====    ====            1         !             ==",
-                "====================================================================================================",
-                "", "", "", "", ""
-            ]
-        },
-        { 
-            bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150], 
-            core: [
-                "", "", "", "",
-                "         +       1       2        W        $$      P      ==         +       1               W    ==",
-                "       ======   ===                W      ====    ===     ==       ======   ===                W    ==",
-                "                 3          1      W   1         ^^      ==                3          1      W    ==",
-                "            ^^             =====   W =====       ===      ==            ^^             =====   W    ==",
-                "======  ====    ====            W         P             == ======  ====    ====            W   ==",
-                "====================================================================================================",
-                "", "", "", ""
-            ]
-        },
-        { 
-            bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true, 
-            core: [
-                "", "", "",
-                "                 B                   $$ ==            3    X    3",
-                "       ======   ===        1  1        ==== ==      P      =========================================",
-                "          W          W        1   1      !   ===",
-                "          W  ^^      W  ^^   === ===     !    1            ==            P",
-                "======  ====      ====                !                ==",
-                "====================================================================================================",
-                "", "", "", "", ""
-            ]
-        }
+    const TALL_MAP_1 = [
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "                                                                           $      +                        F            ",
+        "                                                                       ========  ====  =======  ======   ======         ",
+        "                                                                                                       ====             ",
+        "                                      B                                                              ====               ",
+        "                  1           ==================         3        ==                               ====                 ",
+        "             =========   ==                               =====                                   ====                  ",
+        "                                                                                                 ====                   ",
+        "                                                                                                ====                    ",
+        "         3                         +                 2                         $    P          ====                     ",
+        "   =============         =================       ==========       ======      ====  ====  ========                      ",
+        "                                                                                               ==                       ",
+        "                                                                                                  ==                    ",
+        "                                                                                                     ==                 ",
+        "                                B                             1                      +                 ==               ",
+        "              $    P                        3           =============        ==================       ==                ",
+        "            =============         ==================                                                 ==                 ",
+        "       ==                                                                                           ==                  ",
+        "  ==                                                                                               ==                   ",
+        "                                                                                                  ==                    ",
+        "                                1                   2                                       $   P==                     ",
+        "             1            =============       =============         3           ====================                    ",
+        "       =============                                              ======                                                ",
+        "========================================================================================================================"
     ];
 
-    const LVL = RAW_LVL.map(l => ({ 
-        ...l, 
-        m: l.core.map((row, i) => row.padEnd(92, " ") + mapSuffix[i]) 
-    }));
+    const TALL_MAP_2 = [
+        "                                                                                                                        ",
+        "             F                                                                                                          ",
+        "         =========                                                                                                      ",
+        "                ====                                                                                                    ",
+        "                  ====                                                                                                  ",
+        "                    ====                                   B                                                            ",
+        "                      ====                           =============        3             1                               ",
+        "                        ====                   ==                      =======       =======       ========             ",
+        "                          ====             ==                                                                           ",
+        "                            ====       ==                                                                               ",
+        "                              ==== ==                                                                                   ",
+        "                                                                                                                        ",
+        "                                                                              +                                         ",
+        "             3           1                           B                  =============         2                         ",
+        "         ========     ========     ========     ========     ========                               ========            ",
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "   ==                                                                                                                   ",
+        "      ==                                                                                                                ",
+        "         ==                                                                                                             ",
+        "            ==                                                                                                          ",
+        "               ====             2                        1                          3                                   ",
+        "                   ====   1                =============           =============              =============                     ",
+        "                     ==================                                                                                 ",
+        "========================================================================================================================"
+    ];
+
+    const TALL_MAP_BOSS = [
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "                                                                                         F                              ",
+        "                                                                                     =========                          ",
+        "                                              +       +                             ====                                ",
+        "                                           ======= =======                         ====                                 ",
+        "                                        ==                 ==                     ====                                  ",
+        "                                     ==                       ==                 ====                                   ",
+        "                                  ==                             ==             ====                                    ",
+        "                                                                               ====                                     ",
+        "                            3                                          3      ====                                      ",
+        "                      =============                              =========== ====                                       ",
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "                  2                           X   X                            2                                        ",
+        "            =============               =================                =============                                  ",
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "        1                                                                                      1                        ",
+        "  =============                                                                          =============                  ",
+        "                                                                                                                        ",
+        "                                                                                                                        ",
+        "                        3                                              3                                                ",
+        "                  =============                                  =============                                          ",
+        "========================================================================================================================"
+    ];
+
+    const BASE_THEMES = [
+        { bg:[80,150,200], th:[100,180,60], tt:[50,205,50], g:1800, f:15, ec:[100,200,100] },
+        { bg:[210,160,80], th:[200,140,40], tt:[255,200,80], g:1700, f:14, ec:[255,150,0] },
+        { bg:[30,30,60], th:[60,60,90], tt:[100,100,140], g:1600, f:13, ec:[180,180,220], isD:true },
+        { bg:[40,30,30], th:[80,50,40], tt:[140,90,70], g:1900, f:14, ec:[200,100,50], isD:true },
+        { bg:[140,200,230], th:[180,220,240], tt:[220,240,255], g:1500, f:8, ec:[100,200,255] },
+        { bg:[60,20,10], th:[120,40,20], tt:[200,80,30], g:1750, f:12, ec:[255,80,0] },
+        { bg:[150,180,220], th:[200,220,255], tt:[255,255,255], g:800, f:4, ec:[100,150,255] },
+        { bg:[15,25,15], th:[40,70,35], tt:[70,110,55], g:1850, f:14, ec:[200,50,200], isD:true },
+        { bg:[5,0,20], th:[40,30,80], tt:[80,60,140], g:600, f:5, ec:[0,255,0], isSpc:true },
+        { bg:[180,160,80], th:[220,200,40], tt:[255,240,100], g:1900, f:14, ec:[255,215,0] },
+        { bg:[255,200,220], th:[255,150,180], tt:[255,220,240], g:1700, f:14, ec:[255,100,150] },
+        { bg:[10,0,30], th:[120,20,120], tt:[200,100,200], g:1700, f:14, ec:[255,0,255], isBoss:true }
+    ];
+
+    const LVL = BASE_THEMES.map((l, i) => {
+        let coreMap = (i % 2 === 0) ? TALL_MAP_1 : TALL_MAP_2;
+        if (l.isBoss) coreMap = TALL_MAP_BOSS;
+        return { ...l, m: coreMap };
+    });
 
     const debugPanel = document.getElementById("debug-panel-game");
     let debugVisible = false;
@@ -2743,7 +2751,6 @@
         setGravity(lvl.g);
 
         let maxHp = Math.max(6, hp);
-        let canDbl = false; 
         let playerDead = false; 
         let screenShake = 0; 
         let wasGrounded = true; 
@@ -2796,43 +2803,11 @@
                 "!": () => [sprite("spike"), color(150,150,150), area(), anchor("center"), "fake", "solid"],
                 "W": () => [sprite("block"), color(lvl.tt[0],lvl.tt[1],lvl.tt[2]), area(), body({isStatic:true}), anchor("center"), "breakable", "solid"],
                 "X": () => [sprite("e_bnc"), color(255,50,50), scale(3.0), area(), body(), anchor("center"), "enemy", "danger", "boss", { hp:25, maxHp:25, type:"bnc", speed:150, stunTimer:0 }],
-                
-                "H": () => [rect(120, 20), color(100, 200, 255), area(), body({isStatic:true}), anchor("center"), "ground", "solid", "moving_h", { vx: 120 }],
-                "L": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: 1 }, opacity(0)],
-                "R": () => [rect(40,40), area(), anchor("center"), "bound_h", { dir: -1 }, opacity(0)],
-                "V": () => [rect(80, 20), color(255, 200, 100), area(), body({isStatic:true}), anchor("center"), "ground", "solid", "moving_v", { vy: 120 }],
-                "U": () => [rect(40,40), area(), anchor("center"), "bound_v", { dir: 1 }, opacity(0)],
-                "D": () => [rect(40,40), area(), anchor("center"), "bound_v", { dir: -1 }, opacity(0)]
             }
         });
 
         let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; e.use(e.eId); });
-        let hIdx = 0; get("moving_h").forEach(m => { m.mId = `h_${lvlIdx}_${hIdx++}`; m.use(m.mId); });
-        let vIdx = 0; get("moving_v").forEach(m => { m.mId = `v_${lvlIdx}_${vIdx++}`; m.use(m.mId); });
         get("loot").forEach(l => l.use(l.lId));
-
-        onUpdate("moving_h", (p) => { 
-            if(getIsHost()) { 
-                p.move(p.vx, 0); 
-            } else if (p.targetPos) {
-                p.pos.x = lerp(p.pos.x, p.targetPos.x, 15 * dt());
-                p.pos.y = lerp(p.pos.y, p.targetPos.y, 15 * dt());
-            }
-        }); 
-        onCollide("moving_h", "bound_h", (p, b) => { if(getIsHost()) p.vx = Math.abs(p.vx) * b.dir; });
-        
-        onUpdate("moving_v", (p) => { 
-            if(getIsHost()) {
-                p.move(0, p.vy); 
-            } else if (p.targetPos) {
-                p.pos.x = lerp(p.pos.x, p.targetPos.x, 15 * dt());
-                p.pos.y = lerp(p.pos.y, p.targetPos.y, 15 * dt());
-            }
-        }); 
-        onCollide("moving_v", "bound_v", (p, b) => { if(getIsHost()) p.vy = Math.abs(p.vy) * b.dir; });
-        
-        onCollideUpdate("player", "moving_h", (p, m, col) => { if (col && col.isBottom()) p.pos.x += m.vx * dt(); });
-        onCollideUpdate("player", "moving_v", (p, m, col) => { if (col && col.isBottom() && m.vy > 0) p.pos.y += m.vy * dt(); });
 
         function spawnDust(p) { 
             for(let i=0; i<6; i++) add([ rect(4,4), pos(p.x + rand(-10,10), p.y), color(200,200,200), move(vec2(rand(-1,1), rand(-0.1,-1)), rand(20,60)), opacity(0.8), lifespan(0.3, {fade: 0.3}), z(50) ]); 
@@ -2850,7 +2825,7 @@
         const playerColor = getPlayerColor(localId, true);
         
         const player = add([ 
-            sprite("player"), pos(80, 200), color(playerColor), 
+            sprite("player"), pos(80, MAP_H - 120), color(playerColor), 
             area({ width: 20, height: 38 }), body(), anchor("center"), 
             "player", { stun: false, cVel: 0 } 
         ]);
@@ -2882,37 +2857,14 @@
         
         loop(0.5, () => {
             playerStats[localId] = { name: myName || localId, hp: hp, score: score };
-            let txt = "HRÁČI A STATY:\n";
+            let txt = "HRÁČI A STATY:
+";
             for (let id in playerStats) {
                 let st = playerStats[id];
-                txt += `${st.name.substring(0,10)} | HP:${st.hp} Sc:${st.score}\n`;
+                txt += `${st.name.substring(0,10)} | HP:${st.hp} Sc:${st.score}
+`;
             }
             statsLabel.text = txt;
-        });
-
-        loop(10, () => {
-            const players = 1 + get("remote_player").length;
-            const enemies = get("enemy").length;
-            const loot = get("loot").length;
-            const pStr = player.exists() ? `X:${Math.round(player.pos.x)} Y:${Math.round(player.pos.y)}` : "Mrtvý";
-            const role = getIsHost() ? "Master" : "Spoke";
-            logDebug(`[HERNÍ TELEMETRIE] Role: ${role} | Hráčů: ${players} | Zlounů: ${enemies} | Lootu: ${loot} | Moje poz: ${pStr}`, "info", myId);
-        });
-        
-        let scoreClickCount = 0;
-        let lastScoreClickTime = 0;
-        onClick("score_label", () => {
-            const t = time();
-            if (t - lastScoreClickTime > 0.4) scoreClickCount = 0; 
-            scoreClickCount++;
-            lastScoreClickTime = t;
-
-            if (!isFullscreen()) {
-                toggleFullscreen(true);
-            } else if (scoreClickCount >= 2) {
-                toggleFullscreen(false);
-                scoreClickCount = 0;
-            }
         });
 
         ui.add([sprite("pistol"), pos(200,22), scale(1.4)]);
@@ -2921,16 +2873,17 @@
         const lvlIndicator = ui.add([
             text(`Level ${lvlIdx+1}/${LVL.length}`, {size:20}), pos(width()/2, 20), anchor("center"), area(), "lvl_indicator"
         ]);
-        
-        let lastLvlClick = 0;
-        onClick("lvl_indicator", () => {
-            if (time() - lastLvlClick < 0.5) toggleTilt();
-            lastLvlClick = time();
-        });
+
+        // PROGRESBAR TROJSKOKU (10 SEKUND NABÍJENÍ)
+        let tripleCharge = 0;
+        let jumps = 0;
+
+        const chargeBg = ui.add([rect(150, 10, {radius: 5}), pos(width()/2, 50), color(50,50,50), anchor("center")]);
+        const chargeFg = ui.add([rect(0, 10, {radius: 5}), pos(width()/2 - 75, 50), color(0,255,255), anchor("left")]);
+        const chargeTxt = ui.add([text("TROJSKOK", {size: 10}), pos(width()/2, 50), anchor("center"), color(255,255,255)]);
 
         const updateHP = () => {
             destroyAll("ui_hp");
-            destroyAll("cheat_zone"); 
             
             for (let i=0; i<maxHp; i++) {
                 const heartPos = vec2(width() - 40 - i*35, 20);
@@ -2939,33 +2892,9 @@
                 if (i < hp) {
                     ui.add([sprite("heart"), pos(heartPos), "ui_hp"]);
                 }
-
-                if (i === maxHp - 2) {
-                    ui.add([
-                        rect(30, 30), pos(heartPos.x - 5, heartPos.y - 5),
-                        opacity(0), area(), fixed(), z(105), "cheat_zone"
-                    ]);
-                }
             }
         };
         updateHP();
-
-        let cheatClicks = 0;
-        let lastCheatTime = 0;
-        onClick("cheat_zone", () => {
-            if (time() - lastCheatTime > 2) cheatClicks = 0; 
-            cheatClicks++;
-            lastCheatTime = time();
-            
-            if (cheatClicks >= 3) {
-                cheatClicks = 0;
-                if (typeof window.broadcastLevelComplete === 'function') {
-                    window.broadcastLevelComplete(lvlIdx + 1 < LVL.length ? lvlIdx + 1 : 9999);
-                }
-                if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
-                else go("victory", score);
-            }
-        });
 
         let bossBarBg, bossBarFg, bossText;
         if (lvl.isBoss) {
@@ -2984,28 +2913,6 @@
             });
         }
 
-        const uiC = add([fixed(), z(99)]);
-        const mkBtn = (p, dir) => { 
-            uiC.add([rect(90,90,{radius:10}), pos(p), color(0,0,0), opacity(0.35)]); 
-            let pts = [];
-            if (dir === "L") pts = [vec2(20,20), vec2(-20,0), vec2(20,-20)];
-            if (dir === "R") pts = [vec2(-20,20), vec2(20,0), vec2(-20,-20)];
-            if (dir === "U") pts = [vec2(-20,20), vec2(0,-20), vec2(20,20)];
-            uiC.add([polygon(pts), pos(p.x+45, p.y+45), color(255,255,255), opacity(0.8)]);
-        };
-        mkBtn(vec2(20, height()-110), "L"); 
-        mkBtn(vec2(130, height()-110), "R"); 
-        mkBtn(vec2(width()-110, height()-110), "U");
-        uiC.add([rect(90,90,{radius:45}), pos(width()-220, height()-110), color(200,50,50), opacity(0.5)]);
-        uiC.add([sprite("pistol"), pos(width()-195, height()-95), scale(1.5)]);
-
-        const zones = { 
-            left: p => p && p.x < 125 && p.y > height()-150, 
-            right: p => p && p.x >= 125 && p.x < 250 && p.y > height()-150, 
-            shoot: p => p && p.x > width()-250 && p.x <= width()-125 && p.y > height()-150, 
-            jump: p => p && p.x > width()-125 && p.y > height()-150 
-        };
-
         const SPEED = 320; 
         const JUMP_FORCE = lvl.g < 1000 ? 420 : 680;
 
@@ -3019,12 +2926,20 @@
         const doJump = () => { 
             if (!player.exists() || player.stun || playerDead) return; 
             jumpBuffer = 0.15; 
-            if (coyoteTime <= 0 && canDbl) { 
-                performJump(JUMP_FORCE * 0.85); 
-                canDbl = false; 
-                jumpBuffer = 0; 
-                playSound(600, 'sine', 0.2, 0.05); 
-            } 
+            if (coyoteTime > 0 || jumps === 0) {
+                performJump(JUMP_FORCE);
+                jumps = 1; coyoteTime = 0; jumpBuffer = 0;
+                playSound(400, 'sine', 0.2, 0.05);
+            } else if (jumps === 1) {
+                performJump(JUMP_FORCE * 0.85);
+                jumps = 2; jumpBuffer = 0;
+                playSound(600, 'sine', 0.2, 0.05);
+            } else if (jumps === 2 && tripleCharge >= 10) {
+                performJump(JUMP_FORCE * 1.15);
+                jumps = 3; jumpBuffer = 0; tripleCharge = 0;
+                playSound(800, 'square', 0.2, 0.1);
+                addToast("TROJSKOK BOOST!");
+            }
         };
         
         const doShoot = () => { 
@@ -3042,30 +2957,9 @@
             }
         };
 
-        const activeTouches = {};
-        function updateTouch(a, b) {
-            let id, p;
-            if (typeof a === 'object' && a !== null) { p = a; id = b?.id ?? 0; } 
-            else { id = a; p = b; } 
-            activeTouches[id] = p;
-            return p;
-        }
+        window.doJump = doJump;
+        window.doShoot = doShoot;
 
-        onTouchStart((a, b) => { 
-            const p = updateTouch(a, b);
-            if (zones.jump(p)) doJump(); 
-            if (zones.shoot(p)) doShoot(); 
-            initAudio(); 
-        });
-        onTouchMove((a, b) => { updateTouch(a, b); });
-        onTouchEnd((a, b) => { 
-            let id = (typeof a === 'object' && a !== null) ? (b?.id ?? 0) : a;
-            delete activeTouches[id]; 
-        });
-        
-        const getMouse = () => { try { return mousePos("screen") || mousePos(); } catch(e){ return mousePos(); } };
-        onMousePress(() => { const m = getMouse(); if (zones.jump(m)) doJump(); if (zones.shoot(m)) doShoot(); });
-        
         onKeyPress("up", doJump); 
         onKeyPress("space", doShoot); 
         onKeyPress("w", doJump);
@@ -3153,18 +3047,6 @@
             });
         };
 
-        window.handleMapSync = (mapData) => {
-            if (getIsHost()) return;
-            mapData.forEach(md => {
-                const m = get(md.id)[0];
-                if (m) {
-                    m.targetPos = vec2(md.x, md.y);
-                    if (md.vx !== undefined) m.vx = md.vx;
-                    if (md.vy !== undefined) m.vy = md.vy;
-                }
-            });
-        };
-
         window.handlePlayerHit = (targetId) => {
             if (targetId !== localId) {
                 let rp = get(targetId)[0];
@@ -3203,10 +3085,21 @@
 
         let lastSyncTime = 0;
         let lastMapSyncTime = 0;
-        let camTarget = vec2(400,240);
+        let camTarget = vec2(player.pos.x, player.pos.y);
         
         onUpdate(() => {
             if (!player.exists() || playerDead) return;
+
+            // UPDATE NABÍJENÍ TROJSKOKU
+            if (tripleCharge < 10) {
+                tripleCharge += dt();
+                if (tripleCharge >= 10) {
+                    tripleCharge = 10;
+                    playSound(1000, 'sine', 0.1, 0.05);
+                }
+            }
+            chargeFg.width = (tripleCharge / 10) * 150;
+            chargeFg.color = tripleCharge >= 10 ? rgb(0,255,0) : rgb(0,255,255);
 
             let syncRate = (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) ? 0.2 : 0.05;
             if (time() - lastSyncTime > syncRate) {
@@ -3231,11 +3124,6 @@
                     id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: e.flipX || false
                 }));
                 if (typeof window.broadcastEnemySync === 'function') window.broadcastEnemySync(enemiesData);
-
-                const mapData = [];
-                get("moving_h").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vx: m.vx }));
-                get("moving_v").forEach(m => mapData.push({ id: m.mId, x: m.pos.x, y: m.pos.y, vy: m.vy }));
-                if (typeof window.broadcastMapSync === 'function' && mapData.length > 0) window.broadcastMapSync(mapData);
                 
                 const lootData = get("loot").map(l => l.lId);
                 if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
@@ -3245,7 +3133,7 @@
             if (player.vel.y > 800) player.vel.y = 800;
 
             if (player.isGrounded()) { 
-                coyoteTime = 0.15; canDbl = true; 
+                coyoteTime = 0.15; jumps = 0; 
             } else { 
                 coyoteTime -= dt(); 
             }
@@ -3254,7 +3142,7 @@
                 jumpBuffer -= dt(); 
                 if (coyoteTime > 0) { 
                     performJump(JUMP_FORCE); 
-                    jumpBuffer = 0; coyoteTime = 0; 
+                    jumpBuffer = 0; coyoteTime = 0; jumps = 1;
                     playSound(400, 'sine', 0.2, 0.05); 
                 } 
             }
@@ -3270,18 +3158,10 @@
                 if (player.curAnim() !== "jump") player.play("jump");
             } else {
                 let dir = (useTilt && tiltAccel !== 0) ? tiltAccel : 0;
-                let touchDir = 0;
-                for (const id in activeTouches) { 
-                    const p = activeTouches[id];
-                    if (zones.left(p)) touchDir = -1; 
-                    if (zones.right(p)) touchDir = 1; 
-                }
-                if (touchDir !== 0) dir = touchDir;
-                if (touchDir === 0 && Object.keys(activeTouches).length === 0 && isMouseDown()) { 
-                    const m = getMouse(); if (zones.left(m)) dir = -1; if (zones.right(m)) dir = 1; 
-                }
-                if (isKeyDown("left")||isKeyDown("a")) dir = -1; 
-                if (isKeyDown("right")||isKeyDown("d")) dir = 1;
+                
+                // MULTITOUCH HTML OVLÁDÁNÍ + KLÁVESNICE
+                if (window.ctrlState.left || isKeyDown("left") || isKeyDown("a")) dir = -1;
+                if (window.ctrlState.right || isKeyDown("right") || isKeyDown("d")) dir = 1;
 
                 player.cVel = lerp(player.cVel, dir * SPEED, dt() * lvl.f); 
                 player.move(player.cVel, 0);
@@ -3314,26 +3194,41 @@
                 playerDead = true; go("lose", lvlIdx, score); 
             }
 
-            const tx = Math.max(400, Math.min(player.pos.x, MAP_W-400)); 
-            const ty = Math.max(240, Math.min(player.pos.y, MAP_H-240));
-            
-            camTarget = vec2(lerp(camTarget.x, tx, 0.08), lerp(camTarget.y, ty, 0.08));
+            // DOKONALÉ CENTROVÁNÍ KAMERY DO VŠECH SMĚRŮ PRO 4 PATRA
+            camTarget = vec2(lerp(camTarget.x, player.pos.x, 0.08), lerp(camTarget.y, player.pos.y, 0.08));
             screenShake = lerp(screenShake, 0, 0.1); 
             camPos(camTarget.x + rand(-screenShake, screenShake), camTarget.y + rand(-screenShake, screenShake));
             
             const cx = camPos().x; 
+            const cy = camPos().y; 
             bgFar.pos.x = -((cx-400)*0.15) % 800; 
+            bgFar.pos.y = -((cy-240)*0.15); 
             bgNear.pos.x = -((cx-400)*0.35) % 800;
+            bgNear.pos.y = -((cy-240)*0.35);
 
             if (debugVisible && Math.floor(time()*60)%10 === 0) {
                 const remoteIdsStr = get("remote_player").map(rp => rp.id).join(', ');
                 const enemyDbg = get("enemy").map(e => `${e.eId.split('_').pop()}:[${Math.round(e.pos.x)},${Math.round(e.pos.y)}]`).join(' ');
-                const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
-                               `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
-                               `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
-                               `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
-                               `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(get("coin").length)}\n` +
-                               `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
+                const dbgTxt = `${TEXTS.debugTitle}
+${TEXTS.debugLevel(lvlIdx+1)}
+${TEXTS.debugHP(hp, maxHp)}
+` +
+                               `${TEXTS.debugAmmo(ammo)}
+${TEXTS.debugScore(score)}
+${TEXTS.debugPos(player.pos.x, player.pos.y)}
+` +
+                               `${TEXTS.debugVel(player.cVel)}
+${TEXTS.debugGround(player.isGrounded())}
+` +
+                               `${TEXTS.debugStun(player.stun)}
+${TEXTS.debugGravity(lvl.g)}
+` +
+                               `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}
+${TEXTS.debugCoins(get("coin").length)}
+` +
+                               `${TEXTS.debugFPS(Math.round(1/dt()))}
+${TEXTS.debugTime(time())}
+` +
                                `Peers: ${remoteIdsStr}`;
                 document.getElementById("debug-content").innerText = dbgTxt;
             }
@@ -3402,7 +3297,7 @@
                 hp--; updateHP(); 
                 if(hp <= 0){ 
                     vibrate(200);
-                    hp = 6; player.pos.x = 80; player.pos.y = 200; player.cVel = 0; updateHP(); 
+                    hp = 6; player.pos.x = 80; player.pos.y = MAP_H - 120; player.cVel = 0; updateHP(); 
                     spawnKillSplash(player.pos); addToast("Zabil tě protihráč! Respawn."); 
                 } else {
                     p.stun = true; p.cVel = (p.pos.x < b.pos.x ? -1 : 1) * 400; p.jump(JUMP_FORCE * 0.7); p.color = rgb(255, 50, 50);
@@ -3446,7 +3341,7 @@
             hp--; updateHP(); 
             if(hp<=0){ 
                 vibrate(200);
-                hp=6; player.pos.x=80; player.pos.y=200; player.cVel=0; updateHP(); 
+                hp=6; player.pos.x=80; player.pos.y=MAP_H - 120; player.cVel=0; updateHP(); 
                 spawnKillSplash(player.pos); addToast("Zemřel jsi! Respawn."); 
             } else {
                 p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
@@ -3481,7 +3376,6 @@
             if(!playerDead){ 
                 playerDead=true; 
                 if(typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(lvlIdx + 1);
-                
                 if (lvlIdx + 1 < LVL.length) go("game", lvlIdx + 1, hp, ammo, score);
                 else go("victory", score); 
             } 
