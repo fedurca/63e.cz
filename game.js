@@ -37,6 +37,7 @@ window.addEventListener('click', initAudio);
 window.addEventListener('keydown', initAudio); 
 window.addEventListener('touchstart', initAudio);
 
+// OPRAVA: Přímé vrácení rgb() objektu namísto textového řetězce (eliminuje nutnost parseColor)
 function getPlayerColor(nodeId) {
     let hash = 0;
     for (let i = 0; i < nodeId.length; i++) hash = nodeId.charCodeAt(i) + ((hash << 5) - hash);
@@ -45,14 +46,7 @@ function getPlayerColor(nodeId) {
         { r: 80, g: 180, b: 255 }, { r: 255, g: 180, b: 80 }, { r: 220, g: 80, b: 255 }, { r: 80, g: 255, b: 255 }
     ];
     const c = colors[Math.abs(hash) % colors.length];
-    return `rgb(${c.r},${c.g},${c.b})`;
-}
-
-// Pomocná fce pro Kaboom color parser
-function parseColor(rgbStr) {
-    const vals = rgbStr.match(/\d+/g);
-    if(vals && vals.length === 3) return rgb(parseInt(vals[0]), parseInt(vals[1]), parseInt(vals[2]));
-    return rgb(255,255,255);
+    return rgb(c.r, c.g, c.b);
 }
 
 let useTilt = false; 
@@ -178,11 +172,6 @@ window.triggerHttpBlock = () => {
     addToast("Připojeno přes HTTP Relay - mohou nastat lagy!");
 };
 
-window.startGameKaboom = () => {
-    initAudio();
-    go("game", 0, 6, 25, 0);
-};
-
 scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     initAudio();
     const LVL = window.LVL;
@@ -265,7 +254,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     function doShake(intensity) { screenShake = Math.max(screenShake, intensity); }
 
     const localId = typeof window.chat_myId !== 'undefined' ? window.chat_myId : 'local';
-    const playerColor = parseColor(getPlayerColor(localId)); 
+    const playerColor = getPlayerColor(localId); 
     
     const player = add([ 
         sprite("player"), pos(80, MAP_H - 120), color(playerColor), 
@@ -407,7 +396,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
 
     window.handleGameSync = (senderId, data) => {
         if (data.lvl !== lvlIdx) return;
-        if (!window.chat_knownNodes[senderId] && senderId !== localId) return;
+        if (!window.chat_knownNodes || (!window.chat_knownNodes[senderId] && senderId !== localId)) return;
 
         playerStats[senderId] = { name: data.name || senderId, hp: data.hp || 0, score: data.score || 0, kills: data.kills || 0, deaths: data.deaths || 0 };
         
@@ -416,7 +405,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             rp = add([
                 sprite("player"),
                 pos(data.x, data.y),
-                color(parseColor(getPlayerColor(senderId))),
+                color(getPlayerColor(senderId)),
                 area({ width: 20, height: 38 }),
                 anchor("center"),
                 "remote_player",
@@ -505,7 +494,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             let rp = get(targetId)[0];
             if (rp) {
                 rp.color = rgb(255,50,50);
-                wait(0.3, () => { if(rp.exists()) rp.color = parseColor(getPlayerColor(targetId)); });
+                wait(0.3, () => { if(rp.exists()) rp.color = getPlayerColor(targetId); });
             }
         }
     };
@@ -613,8 +602,9 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         } else {
             let dir = (useTilt && tiltAccel !== 0) ? tiltAccel : 0;
             
-            if (window.ctrlState.left || isKeyDown("left") || isKeyDown("a")) dir = -1;
-            if (window.ctrlState.right || isKeyDown("right") || isKeyDown("d")) dir = 1;
+            // OPRAVA PRO NEDIFINOVANÝ STAV (např. při chybě loadingu)
+            if ((window.ctrlState && window.ctrlState.left) || isKeyDown("left") || isKeyDown("a")) dir = -1;
+            if ((window.ctrlState && window.ctrlState.right) || isKeyDown("right") || isKeyDown("d")) dir = 1;
 
             player.cVel = lerp(player.cVel, dir * SPEED, dt() * lvl.f); 
             player.move(player.cVel, 0);
@@ -748,7 +738,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                 p.stun = true; p.cVel = (p.pos.x < b.pos.x ? -1 : 1) * 400; p.jump(JUMP_FORCE * 0.7); p.color = rgb(255, 50, 50);
                 vibrate([50, 50, 50]);
                 playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
-                wait(0.5, () => { if(p.exists()){ p.stun = false; p.color = parseColor(getPlayerColor(localId)); } });
+                wait(0.5, () => { if(p.exists()){ p.stun = false; p.color = getPlayerColor(localId); } });
                 
                 if (typeof window.broadcastPlayerHit === 'function') window.broadcastPlayerHit(localId, b.owner, false);
             }
@@ -778,7 +768,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         p.stun=true; p.cVel=(p.pos.x<e.pos.x?-1:1)*420; p.jump(lvl.g<1000?300:500); p.color=rgb(180,180,180);
         vibrate([50, 50, 50]);
         playSound(200, 'sawtooth', 0.2, 0.1); doShake(6); 
-        wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=parseColor(getPlayerColor(localId)); } });
+        wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
     });
     
     onCollide("player","danger",(p,d)=>{
@@ -793,7 +783,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             p.stun=true; p.cVel=(p.pos.x<d.pos.x?-1:1)*400; p.jump(JUMP_FORCE*0.7); p.color=rgb(255,50,50);
             vibrate([50, 50, 50]);
             playSound(150, 'sawtooth', 0.3, 0.1); doShake(10); 
-            wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=parseColor(getPlayerColor(localId)); } });
+            wait(0.5,()=>{ if(p.exists()){ p.stun=false; p.color=getPlayerColor(localId); } });
         }
     });
     
@@ -855,7 +845,7 @@ scene("victory", (sc) => {
     add([rect(width(),40), color(50,200,50), pos(0,height()-40), area(), body({isStatic:true}), anchor("botleft")]);
     
     const localId = typeof window.chat_myId !== 'undefined' ? window.chat_myId : 'local';
-    const pCol = parseColor(getPlayerColor(localId));
+    const pCol = getPlayerColor(localId);
     add([sprite("player"), pos(400,height()-40), scale(1.4), color(pCol), anchor("bot")]).play("idle");
     
     window.LVL.forEach((l,i)=>{ 
@@ -874,3 +864,17 @@ scene("victory", (sc) => {
     
     onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
 });
+
+// START HRY (ZDE BYLA OPRAVENA RACE-CONDITION PRO SPLIT-CODE)
+window.startGameKaboom = () => {
+    if (window.gameStarted) return;
+    window.gameStarted = true;
+    initAudio();
+    go("game", 0, 6, 25, 0);
+};
+
+// Spuštění, pokud už uživatel odklikl menu před načtením modulu Kaboom.js
+const setupScreen = document.getElementById('setup-screen');
+if (setupScreen && setupScreen.style.display === 'none') {
+    window.startGameKaboom();
+}
