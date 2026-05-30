@@ -3,30 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLE GATT Skenner v2</title>
+    <title>BLE Pasivní Skenner (Experimentální)</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 20px auto;
             padding: 0 20px;
-            background-color: #f4f4f9;
-            color: #333;
+            background-color: #121212;
+            color: #e0e0e0;
         }
-        h1 { color: #0056b3; }
+        h1 { color: #4db8ff; }
         .controls {
             display: flex;
-            flex-wrap: wrap;
             gap: 10px;
             margin-bottom: 20px;
-        }
-        input[type="text"] {
-            padding: 10px;
-            font-size: 14px;
-            width: 100%;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            margin-bottom: 10px;
+            flex-wrap: wrap;
         }
         button {
             padding: 10px 20px;
@@ -34,193 +26,209 @@
             cursor: pointer;
             border: none;
             border-radius: 5px;
-            background-color: #0056b3;
+            background-color: #0078d4;
             color: white;
             transition: background-color 0.3s;
+            font-weight: bold;
         }
-        button:hover { background-color: #004494; }
-        button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        #copyBtn { background-color: #28a745; }
-        #copyBtn:hover { background-color: #218838; }
+        button:hover { background-color: #005a9e; }
+        button:disabled { background-color: #555; color: #888; cursor: not-allowed; }
         
+        #stopBtn { background-color: #d13438; }
+        #stopBtn:hover { background-color: #a80000; }
+        #clearBtn { background-color: #444; }
+        
+        .warning-box {
+            background-color: #fff4ce;
+            border-left: 6px solid #f2c811;
+            color: #333;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            display: none; /* Skryto ve výchozím stavu */
+        }
+        .warning-box code {
+            background-color: #ffe680;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            user-select: all;
+        }
+
         .debug-window {
-            background-color: #1e1e1e;
-            color: #00ff00;
+            background-color: #000;
+            color: #00ffcc;
             padding: 15px;
             border-radius: 5px;
-            height: 400px;
+            height: 500px;
             overflow-y: auto;
-            font-family: 'Courier New', Courier, monospace;
+            font-family: 'Consolas', 'Courier New', monospace;
             white-space: pre-wrap;
-            box-shadow: inset 0 0 10px #000;
+            box-shadow: inset 0 0 10px rgba(255,255,255,0.1);
+            border: 1px solid #333;
         }
-        .info {
-            background-color: #fff3cd;
-            border-left: 5px solid #ffeeba;
-            padding: 10px;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
+        
+        .log-time { color: #888; }
+        .log-name { color: #fff; font-weight: bold; }
+        .log-rssi { color: #ff5c5c; }
+        .log-data { color: #aaa; font-size: 0.9em; }
     </style>
 </head>
 <body>
 
-    <h1>Bluetooth Low Energy (GATT) Skenner v2</h1>
+    <h1>Pasivní BLE Skenner (Advertisement Sniffer)</h1>
     
-    <div class="info">
-        Prohlížeč ukáže jen ty služby, o které explicitně požádáte. Standardní služby (baterie, info) se zkouší automaticky. Pokud znáte specifické 128-bit UUID svého zařízení, zadejte ho níže.
+    <div id="flagWarning" class="warning-box">
+        <h3>⚠️ API není dostupné! Vaše akce je vyžadována:</h3>
+        <p>Váš prohlížeč nepodporuje nebo má vypnuté experimentální skenování (<code>requestLEScan</code>).</p>
+        <ol>
+            <li>Zkopírujte tento text: <code>chrome://flags/#enable-experimental-web-platform-features</code></li>
+            <li>Vložte ho do adresního řádku nového panelu a stiskněte Enter.</li>
+            <li>Přepněte zvýrazněnou volbu na <b>Enabled</b>.</li>
+            <li>Klikněte na tlačítko <b>Relaunch</b> dole (prohlížeč se restartuje).</li>
+            <li>Vraťte se na tuto stránku. (Musí běžet na HTTPS nebo localhost!)</li>
+        </ol>
     </div>
-
-    <input type="text" id="customUuid" placeholder="Volitelné: Vlastní UUID služby (např. 0000ffe0-0000-1000-8000-00805f9b34fb), lze oddělit čárkou">
 
     <div class="controls">
-        <button id="scanBtn">🔍 Skenovat a připojit</button>
-        <button id="copyBtn">📋 Zkopírovat výpis</button>
-        <button id="clearBtn" style="background-color: #dc3545;">🗑️ Vymazat okno</button>
+        <button id="scanBtn" disabled>▶ Spustit odposlech okolí</button>
+        <button id="stopBtn" disabled>⏹ Zastavit</button>
+        <button id="clearBtn">🗑️ Vymazat okno</button>
     </div>
 
-    <div id="debugOutput" class="debug-window">Čekám na spuštění skenování...
+    <div id="debugOutput" class="debug-window">Ověřuji kompatibilitu prohlížeče...
 </div>
 
     <script>
         const scanBtn = document.getElementById('scanBtn');
-        const copyBtn = document.getElementById('copyBtn');
+        const stopBtn = document.getElementById('stopBtn');
         const clearBtn = document.getElementById('clearBtn');
         const debugOutput = document.getElementById('debugOutput');
-        const customUuidInput = document.getElementById('customUuid');
+        const flagWarning = document.getElementById('flagWarning');
 
-        let currentDevice = null; // Globální reference na připojené zařízení
+        let activeScan = null;
 
-        function log(message) {
-            const time = new Date().toLocaleTimeString();
-            debugOutput.textContent += `[${time}] ${message}\n`;
-            debugOutput.scrollTop = debugOutput.scrollHeight;
+        // Kontrola, zda je experimentální API dostupné
+        const isScanSupported = navigator.bluetooth && 'requestLEScan' in navigator.bluetooth;
+
+        if (isScanSupported) {
+            log("✅ Web Bluetooth Scanning API je detekováno a připraveno.", "#00ff00");
+            scanBtn.disabled = false;
+        } else {
+            flagWarning.style.display = 'block';
+            log("❌ API requestLEScan nenalezeno. Řiďte se žlutým návodem nahoře.", "#ff3333");
         }
 
+        function log(message, color = null) {
+            const time = new Date().toLocaleTimeString('cs-CZ', {hour12: false, hour: "numeric", minute: "numeric", second: "numeric", fractionalSecondDigits: 2});
+            
+            const span = document.createElement('span');
+            if (color) span.style.color = color;
+            span.innerHTML = `<span class="log-time">[${time}]</span> ${message}\n`;
+            
+            debugOutput.appendChild(span);
+            
+            // Automatický scroll dolů pouze pokud nejsme posunuti nahoru (zlepšuje čitelnost)
+            if (debugOutput.scrollHeight - debugOutput.scrollTop < debugOutput.clientHeight + 100) {
+                debugOutput.scrollTop = debugOutput.scrollHeight;
+            }
+        }
+
+        // Vymazání logu
         clearBtn.addEventListener('click', () => {
-            debugOutput.textContent = '';
-            log("Okno vymazáno.");
+            debugOutput.innerHTML = '';
         });
 
-        copyBtn.addEventListener('click', async () => {
-            try {
-                await navigator.clipboard.writeText(debugOutput.textContent);
-                alert("Výpis zkopírován do schránky!");
-            } catch (err) {
-                alert("Nepodařilo se zkopírovat text.");
+        // Pomocná funkce pro převod DataView na Hex string
+        function bufferToHex(dataView) {
+            if (!dataView) return "N/A";
+            let hex = [];
+            for (let i = 0; i < dataView.byteLength; i++) {
+                hex.push(('00' + dataView.getUint8(i).toString(16)).slice(-2).toUpperCase());
             }
-        });
+            return hex.join(' ');
+        }
 
-        function getSupportedProperties(characteristic) {
-            let supportedProperties = [];
-            for (const p in characteristic.properties) {
-                if (characteristic.properties[p] === true) {
-                    supportedProperties.push(p.toUpperCase());
+        // Zpracování každého zachyceného paketu
+        function onAdvertisementReceived(event) {
+            const name = event.device.name || event.name || "Neznámé zařízení";
+            const id = event.device.id;
+            const rssi = event.rssi; // Síla signálu
+            const txPower = event.txPower !== null ? `${event.txPower} dBm` : "N/A";
+
+            // Sběr dat výrobce (Manufacturer Data)
+            let mfgDataStr = "";
+            if (event.manufacturerData && event.manufacturerData.size > 0) {
+                let mfgItems = [];
+                for (let [companyId, dataView] of event.manufacturerData.entries()) {
+                    mfgItems.push(`Společnost: 0x${companyId.toString(16).padStart(4, '0')} -> [${bufferToHex(dataView)}]`);
                 }
+                mfgDataStr = mfgItems.join(', ');
             }
-            return '[' + supportedProperties.join(', ') + ']';
+
+            // Sběr dat o vysílaných službách (Service Data)
+            let srvDataStr = "";
+            if (event.serviceData && event.serviceData.size > 0) {
+                let srvItems = [];
+                for (let [serviceUUID, dataView] of event.serviceData.entries()) {
+                    srvItems.push(`UUID: ${serviceUUID} -> [${bufferToHex(dataView)}]`);
+                }
+                srvDataStr = srvItems.join(', ');
+            }
+
+            // Zformátování výpisu
+            let output = `<span class="log-rssi">📶 ${rssi} dBm</span> | <span class="log-name">${name}</span> | ID: ${id}`;
+            
+            let extraInfo = [];
+            if (txPower !== "N/A") extraInfo.push(`TX Power: ${txPower}`);
+            if (mfgDataStr) extraInfo.push(`MfgData: ${mfgDataStr}`);
+            if (srvDataStr) extraInfo.push(`SrvData: ${srvDataStr}`);
+            
+            if (extraInfo.length > 0) {
+                output += `<br>   <span class="log-data">↳ ${extraInfo.join(' | ')}</span>`;
+            }
+
+            log(output);
         }
 
-        // Handler pro případ, že se zařízení samo odpojí (typické pro Smart zámky, když nedostanou Auth kód)
-        function onDisconnected(event) {
-            const device = event.target;
-            log(`\n⚠️ UPOZORNĚNÍ: Zařízení "${device.name}" neočekávaně ukončilo spojení (Disconnected).`);
-        }
-
+        // Spuštění skenování
         scanBtn.addEventListener('click', async () => {
             log("-----------------------------------------");
-            log("Spouštím vyhledávání zařízení...");
+            log("Žádám o oprávnění ke skenování...");
             
             try {
-                // Základní standardní služby
-                let optionalServices = [
-                    'battery_service', 
-                    'device_information', 
-                    'heart_rate', 
-                    'environmental_sensing',
-                    'health_thermometer',
-                    'tx_power'
-                ];
-
-                // Přidání vlastních UUID od uživatele
-                const customUuids = customUuidInput.value.trim();
-                if (customUuids) {
-                    const uuids = customUuids.split(',').map(u => u.trim().toLowerCase());
-                    optionalServices = optionalServices.concat(uuids);
-                    log(`Přidáno vlastních UUID k žádosti: ${uuids.join(', ')}`);
-                }
-
-                const device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: optionalServices
+                // Vyžaduje potvrzení v nativním malém okně (často jen "Povolit skenování")
+                activeScan = await navigator.bluetooth.requestLEScan({
+                    acceptAllAdvertisements: true
                 });
 
-                currentDevice = device;
-                log(`Nalezeno zařízení: ${device.name || 'Neznámý název'}`);
-                log(`ID zařízení: ${device.id}`);
+                log("🟢 Skenování spuštěno! Poslouchám éter...");
                 
-                // Přidáme posluchač pro nečekané odpojení
-                device.addEventListener('gattserverdisconnected', onDisconnected);
-
-                log("Připojuji se ke GATT serveru...");
-                const server = await device.gatt.connect();
-                log("GATT Server úspěšně připojen!");
-
-                log("Načítám primární služby...");
-                const services = await server.getPrimaryServices();
-
-                if (services.length === 0) {
-                    log("Nenalezeny žádné služby (Zařízení používá nezmámá/custom UUID, o která jsme nepožádali).");
-                } else {
-                    for (const service of services) {
-                        log(`\nSlužba (UUID): ${service.uuid}`);
-                        
-                        try {
-                            const characteristics = await service.getCharacteristics();
-                            for (const char of characteristics) {
-                                log(`  ↳ Charakteristika: ${char.uuid}`);
-                                log(`    Vlastnosti: ${getSupportedProperties(char)}`);
-                                
-                                if (char.properties.read) {
-                                    try {
-                                        const value = await char.readValue();
-                                        let hex = [];
-                                        for (let i = 0; i < value.byteLength; i++) {
-                                            hex.push('0x' + ('00' + value.getUint8(i).toString(16)).slice(-2));
-                                        }
-                                        log(`    Aktuální hodnota: [${hex.join(', ')}]`);
-                                    } catch (readError) {
-                                        log(`    Nelze přečíst hodnotu: ${readError.message}`);
-                                    }
-                                }
-                            }
-                        } catch (charError) {
-                            log(`  ↳ Nelze načíst charakteristiky: ${charError.message}`);
-                        }
-                    }
-                }
-
-                if (device.gatt.connected) {
-                    device.gatt.disconnect();
-                    log("\nZpracování dokončeno, zařízení odpojeno naším skriptem.");
-                }
+                // Připojíme posluchač událostí
+                navigator.bluetooth.addEventListener('advertisementreceived', onAdvertisementReceived);
+                
+                scanBtn.disabled = true;
+                stopBtn.disabled = false;
 
             } catch (error) {
-                log(`\nCHYBA: ${error.message}`);
+                log(`🔴 CHYBA: ${error.message}`, "#ff3333");
+                if (error.name === 'NotSupportedError') {
+                    log("Prohlížeč tuto funkci zablokoval, ujistěte se, že máte povolený flag.");
+                }
+            }
+        });
+
+        // Zastavení skenování
+        stopBtn.addEventListener('click', () => {
+            if (activeScan) {
+                activeScan.stop();
+                navigator.bluetooth.removeEventListener('advertisementreceived', onAdvertisementReceived);
+                activeScan = null;
                 
-                // Správná filtrace chyb
-                if (error.name === 'NotFoundError') {
-                    log("-> Uživatel zrušil nativní okno, nebo nebylo vybráno žádné zařízení.");
-                } else if (error.name === 'SecurityError') {
-                    log("-> Bezpečnostní blokace: Prohlížeč odmítl komunikaci s tímto zařízením.");
-                } else if (error.name === 'NetworkError') {
-                    log("-> Problém se spojením: Zařízení je možná mimo dosah nebo odmítlo spojení.");
-                }
-            } finally {
-                // Odstranění listeneru pro čistotu
-                if (currentDevice) {
-                    currentDevice.removeEventListener('gattserverdisconnected', onDisconnected);
-                }
+                log("🛑 Skenování zastaveno.", "#ffcc00");
+                
+                scanBtn.disabled = false;
+                stopBtn.disabled = true;
             }
         });
     </script>
