@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLE GATT Skenner</title>
+    <title>BLE GATT Skenner v2</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -16,8 +16,17 @@
         h1 { color: #0056b3; }
         .controls {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
             margin-bottom: 20px;
+        }
+        input[type="text"] {
+            padding: 10px;
+            font-size: 14px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 10px;
         }
         button {
             padding: 10px 20px;
@@ -56,16 +65,16 @@
 </head>
 <body>
 
-    <h1>Bluetooth Low Energy (GATT) Skenner</h1>
+    <h1>Bluetooth Low Energy (GATT) Skenner v2</h1>
     
     <div class="info">
-        <strong>Důležité:</strong> 
-        1. Stránka musí běžet na <b>HTTPS</b> nebo <b>localhost</b>.<br>
-        2. Prohlížeč vám vrátí pouze služby, které jsou explicitně vyjmenovány v kódu (přidal jsem nejběžnější standardní služby jako baterie, info o zařízení, tep atd.).
+        Prohlížeč ukáže jen ty služby, o které explicitně požádáte. Standardní služby (baterie, info) se zkouší automaticky. Pokud znáte specifické 128-bit UUID svého zařízení, zadejte ho níže.
     </div>
 
+    <input type="text" id="customUuid" placeholder="Volitelné: Vlastní UUID služby (např. 0000ffe0-0000-1000-8000-00805f9b34fb), lze oddělit čárkou">
+
     <div class="controls">
-        <button id="scanBtn">🔍 Skenovat a připojit zařízení</button>
+        <button id="scanBtn">🔍 Skenovat a připojit</button>
         <button id="copyBtn">📋 Zkopírovat výpis</button>
         <button id="clearBtn" style="background-color: #dc3545;">🗑️ Vymazat okno</button>
     </div>
@@ -78,31 +87,30 @@
         const copyBtn = document.getElementById('copyBtn');
         const clearBtn = document.getElementById('clearBtn');
         const debugOutput = document.getElementById('debugOutput');
+        const customUuidInput = document.getElementById('customUuid');
 
-        // Funkce pro zápis do debug okna
+        let currentDevice = null; // Globální reference na připojené zařízení
+
         function log(message) {
             const time = new Date().toLocaleTimeString();
             debugOutput.textContent += `[${time}] ${message}\n`;
-            debugOutput.scrollTop = debugOutput.scrollHeight; // Automatický scroll dolů
+            debugOutput.scrollTop = debugOutput.scrollHeight;
         }
 
-        // Vymazání okna
         clearBtn.addEventListener('click', () => {
             debugOutput.textContent = '';
             log("Okno vymazáno.");
         });
 
-        // Kopírování do schránky
         copyBtn.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(debugOutput.textContent);
                 alert("Výpis zkopírován do schránky!");
             } catch (err) {
-                alert("Nepodařilo se zkopírovat text: " + err);
+                alert("Nepodařilo se zkopírovat text.");
             }
         });
 
-        // Pomocná funkce pro zjištění vlastností charakteristiky
         function getSupportedProperties(characteristic) {
             let supportedProperties = [];
             for (const p in characteristic.properties) {
@@ -113,14 +121,19 @@
             return '[' + supportedProperties.join(', ') + ']';
         }
 
-        // Hlavní funkce pro skenování a připojení
+        // Handler pro případ, že se zařízení samo odpojí (typické pro Smart zámky, když nedostanou Auth kód)
+        function onDisconnected(event) {
+            const device = event.target;
+            log(`\n⚠️ UPOZORNĚNÍ: Zařízení "${device.name}" neočekávaně ukončilo spojení (Disconnected).`);
+        }
+
         scanBtn.addEventListener('click', async () => {
             log("-----------------------------------------");
             log("Spouštím vyhledávání zařízení...");
             
             try {
-                // Seznam služeb, o které žádáme (nelze přečíst služby, o které si neřekneme)
-                const commonServices = [
+                // Základní standardní služby
+                let optionalServices = [
                     'battery_service', 
                     'device_information', 
                     'heart_rate', 
@@ -129,14 +142,26 @@
                     'tx_power'
                 ];
 
+                // Přidání vlastních UUID od uživatele
+                const customUuids = customUuidInput.value.trim();
+                if (customUuids) {
+                    const uuids = customUuids.split(',').map(u => u.trim().toLowerCase());
+                    optionalServices = optionalServices.concat(uuids);
+                    log(`Přidáno vlastních UUID k žádosti: ${uuids.join(', ')}`);
+                }
+
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: commonServices
+                    optionalServices: optionalServices
                 });
 
+                currentDevice = device;
                 log(`Nalezeno zařízení: ${device.name || 'Neznámý název'}`);
                 log(`ID zařízení: ${device.id}`);
                 
+                // Přidáme posluchač pro nečekané odpojení
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+
                 log("Připojuji se ke GATT serveru...");
                 const server = await device.gatt.connect();
                 log("GATT Server úspěšně připojen!");
@@ -145,7 +170,7 @@
                 const services = await server.getPrimaryServices();
 
                 if (services.length === 0) {
-                    log("Nenalezeny žádné známé/povolené služby.");
+                    log("Nenalezeny žádné služby (Zařízení používá nezmámá/custom UUID, o která jsme nepožádali).");
                 } else {
                     for (const service of services) {
                         log(`\nSlužba (UUID): ${service.uuid}`);
@@ -156,11 +181,9 @@
                                 log(`  ↳ Charakteristika: ${char.uuid}`);
                                 log(`    Vlastnosti: ${getSupportedProperties(char)}`);
                                 
-                                // Pokus o přečtení hodnoty, pokud to charakteristika umožňuje
                                 if (char.properties.read) {
                                     try {
                                         const value = await char.readValue();
-                                        // Převedení DataView na pole bajtů (hex)
                                         let hex = [];
                                         for (let i = 0; i < value.byteLength; i++) {
                                             hex.push('0x' + ('00' + value.getUint8(i).toString(16)).slice(-2));
@@ -177,15 +200,26 @@
                     }
                 }
 
-                // Odpojíme zařízení po dokončení zjišťování
-                device.gatt.disconnect();
-                log("\nZpracování dokončeno, zařízení odpojeno.");
+                if (device.gatt.connected) {
+                    device.gatt.disconnect();
+                    log("\nZpracování dokončeno, zařízení odpojeno naším skriptem.");
+                }
 
             } catch (error) {
                 log(`\nCHYBA: ${error.message}`);
-                // Běžná chyba, pokud uživatel zruší vyskakovací okno
+                
+                // Správná filtrace chyb
                 if (error.name === 'NotFoundError') {
-                    log("Uživatel zrušil výběr nebo nebylo nalezeno žádné zařízení.");
+                    log("-> Uživatel zrušil nativní okno, nebo nebylo vybráno žádné zařízení.");
+                } else if (error.name === 'SecurityError') {
+                    log("-> Bezpečnostní blokace: Prohlížeč odmítl komunikaci s tímto zařízením.");
+                } else if (error.name === 'NetworkError') {
+                    log("-> Problém se spojením: Zařízení je možná mimo dosah nebo odmítlo spojení.");
+                }
+            } finally {
+                // Odstranění listeneru pro čistotu
+                if (currentDevice) {
+                    currentDevice.removeEventListener('gattserverdisconnected', onDisconnected);
                 }
             }
         });
