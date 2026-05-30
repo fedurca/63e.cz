@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE GATT Skenner</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        h1 { color: #0056b3; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            background-color: #0056b3;
+            color: white;
+            transition: background-color 0.3s;
+        }
+        button:hover { background-color: #004494; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        #copyBtn { background-color: #28a745; }
+        #copyBtn:hover { background-color: #218838; }
+        
+        .debug-window {
+            background-color: #1e1e1e;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;
+            box-shadow: inset 0 0 10px #000;
+        }
+        .info {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffeeba;
+            padding: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Bluetooth Low Energy (GATT) Skenner</h1>
+    
+    <div class="info">
+        <strong>Důležité:</strong> 
+        1. Stránka musí běžet na <b>HTTPS</b> nebo <b>localhost</b>.<br>
+        2. Prohlížeč vám vrátí pouze služby, které jsou explicitně vyjmenovány v kódu (přidal jsem nejběžnější standardní služby jako baterie, info o zařízení, tep atd.).
+    </div>
+
+    <div class="controls">
+        <button id="scanBtn">🔍 Skenovat a připojit zařízení</button>
+        <button id="copyBtn">📋 Zkopírovat výpis</button>
+        <button id="clearBtn" style="background-color: #dc3545;">🗑️ Vymazat okno</button>
+    </div>
+
+    <div id="debugOutput" class="debug-window">Čekám na spuštění skenování...
+</div>
+
+    <script>
+        const scanBtn = document.getElementById('scanBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const debugOutput = document.getElementById('debugOutput');
+
+        // Funkce pro zápis do debug okna
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            debugOutput.textContent += `[${time}] ${message}\n`;
+            debugOutput.scrollTop = debugOutput.scrollHeight; // Automatický scroll dolů
+        }
+
+        // Vymazání okna
+        clearBtn.addEventListener('click', () => {
+            debugOutput.textContent = '';
+            log("Okno vymazáno.");
+        });
+
+        // Kopírování do schránky
+        copyBtn.addEventListener('click', async () => {
+            try {
+                await navigator.clipboard.writeText(debugOutput.textContent);
+                alert("Výpis zkopírován do schránky!");
+            } catch (err) {
+                alert("Nepodařilo se zkopírovat text: " + err);
+            }
+        });
+
+        // Pomocná funkce pro zjištění vlastností charakteristiky
+        function getSupportedProperties(characteristic) {
+            let supportedProperties = [];
+            for (const p in characteristic.properties) {
+                if (characteristic.properties[p] === true) {
+                    supportedProperties.push(p.toUpperCase());
+                }
+            }
+            return '[' + supportedProperties.join(', ') + ']';
+        }
+
+        // Hlavní funkce pro skenování a připojení
+        scanBtn.addEventListener('click', async () => {
+            log("-----------------------------------------");
+            log("Spouštím vyhledávání zařízení...");
+            
+            try {
+                // Seznam služeb, o které žádáme (nelze přečíst služby, o které si neřekneme)
+                const commonServices = [
+                    'battery_service', 
+                    'device_information', 
+                    'heart_rate', 
+                    'environmental_sensing',
+                    'health_thermometer',
+                    'tx_power'
+                ];
+
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: commonServices
+                });
+
+                log(`Nalezeno zařízení: ${device.name || 'Neznámý název'}`);
+                log(`ID zařízení: ${device.id}`);
+                
+                log("Připojuji se ke GATT serveru...");
+                const server = await device.gatt.connect();
+                log("GATT Server úspěšně připojen!");
+
+                log("Načítám primární služby...");
+                const services = await server.getPrimaryServices();
+
+                if (services.length === 0) {
+                    log("Nenalezeny žádné známé/povolené služby.");
+                } else {
+                    for (const service of services) {
+                        log(`\nSlužba (UUID): ${service.uuid}`);
+                        
+                        try {
+                            const characteristics = await service.getCharacteristics();
+                            for (const char of characteristics) {
+                                log(`  ↳ Charakteristika: ${char.uuid}`);
+                                log(`    Vlastnosti: ${getSupportedProperties(char)}`);
+                                
+                                // Pokus o přečtení hodnoty, pokud to charakteristika umožňuje
+                                if (char.properties.read) {
+                                    try {
+                                        const value = await char.readValue();
+                                        // Převedení DataView na pole bajtů (hex)
+                                        let hex = [];
+                                        for (let i = 0; i < value.byteLength; i++) {
+                                            hex.push('0x' + ('00' + value.getUint8(i).toString(16)).slice(-2));
+                                        }
+                                        log(`    Aktuální hodnota: [${hex.join(', ')}]`);
+                                    } catch (readError) {
+                                        log(`    Nelze přečíst hodnotu: ${readError.message}`);
+                                    }
+                                }
+                            }
+                        } catch (charError) {
+                            log(`  ↳ Nelze načíst charakteristiky: ${charError.message}`);
+                        }
+                    }
+                }
+
+                // Odpojíme zařízení po dokončení zjišťování
+                device.gatt.disconnect();
+                log("\nZpracování dokončeno, zařízení odpojeno.");
+
+            } catch (error) {
+                log(`\nCHYBA: ${error.message}`);
+                // Běžná chyba, pokud uživatel zruší vyskakovací okno
+                if (error.name === 'NotFoundError') {
+                    log("Uživatel zrušil výběr nebo nebylo nalezeno žádné zařízení.");
+                }
+            }
+        });
+    </script>
+</body>
+</html>
