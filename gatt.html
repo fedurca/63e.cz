@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BLE Pasivní Skenner (Experimentální)</title>
+    <title>BLE Pasivní Skenner v3</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -19,6 +19,7 @@
             gap: 10px;
             margin-bottom: 20px;
             flex-wrap: wrap;
+            align-items: center;
         }
         button {
             padding: 10px 20px;
@@ -45,15 +46,23 @@
             padding: 15px;
             margin-bottom: 20px;
             border-radius: 4px;
-            display: none; /* Skryto ve výchozím stavu */
+            display: none;
         }
-        .warning-box code {
+        
+        /* Styl pro klikatelné zkopírování */
+        .copy-flag {
+            display: inline-block;
             background-color: #ffe680;
-            padding: 2px 6px;
-            border-radius: 3px;
+            padding: 5px 10px;
+            border-radius: 5px;
             font-weight: bold;
-            user-select: all;
+            font-family: monospace;
+            cursor: pointer;
+            border: 1px dashed #d4a000;
+            transition: background-color 0.2s;
         }
+        .copy-flag:hover { background-color: #ffdf4d; }
+        .copy-flag:active { background-color: #e6c200; }
 
         .debug-window {
             background-color: #000;
@@ -72,21 +81,44 @@
         .log-name { color: #fff; font-weight: bold; }
         .log-rssi { color: #ff5c5c; }
         .log-data { color: #aaa; font-size: 0.9em; }
+
+        /* Pulzující indikátor skenování */
+        .status-indicator {
+            display: none;
+            align-items: center;
+            color: #4db8ff;
+            font-weight: bold;
+        }
+        .dot {
+            width: 10px; height: 10px;
+            background-color: #4db8ff;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(77, 184, 255, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(77, 184, 255, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(77, 184, 255, 0); }
+        }
     </style>
 </head>
 <body>
 
-    <h1>Pasivní BLE Skenner (Advertisement Sniffer)</h1>
+    <h1>Pasivní BLE Skenner v3</h1>
     
     <div id="flagWarning" class="warning-box">
-        <h3>⚠️ API není dostupné! Vaše akce je vyžadována:</h3>
-        <p>Váš prohlížeč nepodporuje nebo má vypnuté experimentální skenování (<code>requestLEScan</code>).</p>
+        <h3>⚠️ Experimentální API je vypnuté!</h3>
+        <p>Prohlížeče zakazují automatické otevírání systémových nastavení. Musíte to udělat ručně:</p>
         <ol>
-            <li>Zkopírujte tento text: <code>chrome://flags/#enable-experimental-web-platform-features</code></li>
-            <li>Vložte ho do adresního řádku nového panelu a stiskněte Enter.</li>
-            <li>Přepněte zvýrazněnou volbu na <b>Enabled</b>.</li>
-            <li>Klikněte na tlačítko <b>Relaunch</b> dole (prohlížeč se restartuje).</li>
-            <li>Vraťte se na tuto stránku. (Musí běžet na HTTPS nebo localhost!)</li>
+            <li>Klikněte na tento text pro zkopírování do schránky:<br><br>
+                <span class="copy-flag" id="flagCode" title="Klikněte pro zkopírování">chrome://flags/#enable-experimental-web-platform-features</span>
+                <span id="copyConfirm" style="color: green; font-weight: bold; margin-left: 10px; display: none;">✔ Zkopírováno!</span>
+            </li>
+            <br>
+            <li>Otevřete <b>nový panel</b> v prohlížeči (Ctrl+T).</li>
+            <li>Vložte zkopírovaný text (Ctrl+V) do adresního řádku nahoře a dejte Enter.</li>
+            <li>Přepněte zvýrazněnou volbu na <b>Enabled</b> a klikněte na <b>Relaunch</b>.</li>
         </ol>
     </div>
 
@@ -94,6 +126,7 @@
         <button id="scanBtn" disabled>▶ Spustit odposlech okolí</button>
         <button id="stopBtn" disabled>⏹ Zastavit</button>
         <button id="clearBtn">🗑️ Vymazat okno</button>
+        <div id="statusIndicator" class="status-indicator"><div class="dot"></div> Skenování aktivní</div>
     </div>
 
     <div id="debugOutput" class="debug-window">Ověřuji kompatibilitu prohlížeče...
@@ -105,41 +138,47 @@
         const clearBtn = document.getElementById('clearBtn');
         const debugOutput = document.getElementById('debugOutput');
         const flagWarning = document.getElementById('flagWarning');
+        const statusIndicator = document.getElementById('statusIndicator');
 
         let activeScan = null;
 
-        // Kontrola, zda je experimentální API dostupné
+        // Kopírování flagu do schránky
+        document.getElementById('flagCode').addEventListener('click', async (e) => {
+            try {
+                await navigator.clipboard.writeText(e.target.innerText);
+                const confirm = document.getElementById('copyConfirm');
+                confirm.style.display = 'inline';
+                setTimeout(() => confirm.style.display = 'none', 2000);
+            } catch (err) {
+                alert("Kopírování selhalo, označte text ručně.");
+            }
+        });
+
+        // Kontrola, zda je API dostupné
         const isScanSupported = navigator.bluetooth && 'requestLEScan' in navigator.bluetooth;
 
         if (isScanSupported) {
-            log("✅ Web Bluetooth Scanning API je detekováno a připraveno.", "#00ff00");
+            log("✅ API je detekováno. Připraveno ke skenování.", "#00ff00");
             scanBtn.disabled = false;
         } else {
             flagWarning.style.display = 'block';
-            log("❌ API requestLEScan nenalezeno. Řiďte se žlutým návodem nahoře.", "#ff3333");
+            log("❌ API requestLEScan nenalezeno. Postupujte podle návodu nahoře.", "#ff3333");
         }
 
         function log(message, color = null) {
-            const time = new Date().toLocaleTimeString('cs-CZ', {hour12: false, hour: "numeric", minute: "numeric", second: "numeric", fractionalSecondDigits: 2});
-            
+            const time = new Date().toLocaleTimeString('cs-CZ', {hour12: false, hour: "numeric", minute: "numeric", second: "numeric"});
             const span = document.createElement('span');
             if (color) span.style.color = color;
             span.innerHTML = `<span class="log-time">[${time}]</span> ${message}\n`;
             
             debugOutput.appendChild(span);
-            
-            // Automatický scroll dolů pouze pokud nejsme posunuti nahoru (zlepšuje čitelnost)
-            if (debugOutput.scrollHeight - debugOutput.scrollTop < debugOutput.clientHeight + 100) {
+            if (debugOutput.scrollHeight - debugOutput.scrollTop < debugOutput.clientHeight + 150) {
                 debugOutput.scrollTop = debugOutput.scrollHeight;
             }
         }
 
-        // Vymazání logu
-        clearBtn.addEventListener('click', () => {
-            debugOutput.innerHTML = '';
-        });
+        clearBtn.addEventListener('click', () => { debugOutput.innerHTML = ''; });
 
-        // Pomocná funkce pro převod DataView na Hex string
         function bufferToHex(dataView) {
             if (!dataView) return "N/A";
             let hex = [];
@@ -149,41 +188,30 @@
             return hex.join(' ');
         }
 
-        // Zpracování každého zachyceného paketu
         function onAdvertisementReceived(event) {
             const name = event.device.name || event.name || "Neznámé zařízení";
             const id = event.device.id;
-            const rssi = event.rssi; // Síla signálu
-            const txPower = event.txPower !== null ? `${event.txPower} dBm` : "N/A";
-
-            // Sběr dat výrobce (Manufacturer Data)
-            let mfgDataStr = "";
+            const rssi = event.rssi;
+            
+            let extraInfo = [];
+            
             if (event.manufacturerData && event.manufacturerData.size > 0) {
                 let mfgItems = [];
                 for (let [companyId, dataView] of event.manufacturerData.entries()) {
-                    mfgItems.push(`Společnost: 0x${companyId.toString(16).padStart(4, '0')} -> [${bufferToHex(dataView)}]`);
+                    mfgItems.push(`CoID: 0x${companyId.toString(16).padStart(4, '0')} [${bufferToHex(dataView)}]`);
                 }
-                mfgDataStr = mfgItems.join(', ');
+                extraInfo.push(`MfgData: ${mfgItems.join(', ')}`);
             }
 
-            // Sběr dat o vysílaných službách (Service Data)
-            let srvDataStr = "";
             if (event.serviceData && event.serviceData.size > 0) {
                 let srvItems = [];
                 for (let [serviceUUID, dataView] of event.serviceData.entries()) {
-                    srvItems.push(`UUID: ${serviceUUID} -> [${bufferToHex(dataView)}]`);
+                    srvItems.push(`${serviceUUID} [${bufferToHex(dataView)}]`);
                 }
-                srvDataStr = srvItems.join(', ');
+                extraInfo.push(`SrvData: ${srvItems.join(', ')}`);
             }
 
-            // Zformátování výpisu
             let output = `<span class="log-rssi">📶 ${rssi} dBm</span> | <span class="log-name">${name}</span> | ID: ${id}`;
-            
-            let extraInfo = [];
-            if (txPower !== "N/A") extraInfo.push(`TX Power: ${txPower}`);
-            if (mfgDataStr) extraInfo.push(`MfgData: ${mfgDataStr}`);
-            if (srvDataStr) extraInfo.push(`SrvData: ${srvDataStr}`);
-            
             if (extraInfo.length > 0) {
                 output += `<br>   <span class="log-data">↳ ${extraInfo.join(' | ')}</span>`;
             }
@@ -191,34 +219,33 @@
             log(output);
         }
 
-        // Spuštění skenování
         scanBtn.addEventListener('click', async () => {
             log("-----------------------------------------");
-            log("Žádám o oprávnění ke skenování...");
+            log("Žádám prohlížeč o okno s povolením...");
             
             try {
-                // Vyžaduje potvrzení v nativním malém okně (často jen "Povolit skenování")
+                // ZDE JE HLAVNÍ OPRAVA: keepRepeatedDevices: true
+                // Zabráníme tomu, aby prohlížeč zařízení ignoroval poté, co ho uvidí poprvé.
                 activeScan = await navigator.bluetooth.requestLEScan({
-                    acceptAllAdvertisements: true
+                    acceptAllAdvertisements: true,
+                    keepRepeatedDevices: true
                 });
 
-                log("🟢 Skenování spuštěno! Poslouchám éter...");
-                
-                // Připojíme posluchač událostí
+                log("🟢 Oprávnění uděleno! Naslouchám éteru...");
                 navigator.bluetooth.addEventListener('advertisementreceived', onAdvertisementReceived);
                 
                 scanBtn.disabled = true;
                 stopBtn.disabled = false;
+                statusIndicator.style.display = 'flex'; // Zobrazíme pulzující tečku
 
             } catch (error) {
                 log(`🔴 CHYBA: ${error.message}`, "#ff3333");
-                if (error.name === 'NotSupportedError') {
-                    log("Prohlížeč tuto funkci zablokoval, ujistěte se, že máte povolený flag.");
+                if (error.name === 'NotFoundError') {
+                    log("Prohlížeč nenalezl žádné Bluetooth rádio, nebo OS blokuje přístup k poloze/Bluetooth.", "#ffcc00");
                 }
             }
         });
 
-        // Zastavení skenování
         stopBtn.addEventListener('click', () => {
             if (activeScan) {
                 activeScan.stop();
@@ -229,6 +256,7 @@
                 
                 scanBtn.disabled = false;
                 stopBtn.disabled = true;
+                statusIndicator.style.display = 'none'; // Skryjeme pulzující tečku
             }
         });
     </script>
