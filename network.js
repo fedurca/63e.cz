@@ -525,7 +525,7 @@ function sessionLog(cat, level, msg, data) {
         if (sessionLogEntries.length > SESSION_LOG_MAX) {
             sessionLogEntries.splice(0, sessionLogEntries.length - SESSION_LOG_MAX);
         }
-        if (level !== 'trace' && (level === 'warn' || level === 'error' || cat === 'host' || cat === 'relay' || cat === 'combat')) {
+        if (level !== 'trace' && (level === 'warn' || level === 'error' || cat === 'host' || cat === 'relay' || cat === 'combat' || cat === 'enemy' || cat === 'peer')) {
             const prefix = `[${cat}/${level}]`;
             if (DOM.debugLog) {
                 const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
@@ -1173,7 +1173,7 @@ async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
     logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
 }
 
-const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync']);
+const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync', 'game-need-sync']);
 const GAME_TTL = 5;
 
 // NETWORK BROADCAST HOOKS
@@ -1227,6 +1227,12 @@ window.broadcastLootPickup = (lId) => {
 window.broadcastLootSync = (activeLootIds) => {
     if (Object.keys(knownNodes).length === 0) return;
     routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
+};
+
+window.requestEnemySync = () => {
+    if (isDnsHost) return;
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-need-sync', sender: myId });
+    sessionLog('enemy', 'info', 'requestEnemySync sent');
 };
 
 function routeMessage(msgObj, sourceChannel = null) {
@@ -1308,6 +1314,11 @@ async function processPayload(msg) {
                 const teleStr = formatTelemetry(msg.tele); 
                 renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do hry a sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true, null); 
                 logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce', msg.sender); 
+                if (isDnsHost && typeof window.handleGameNeedSync === 'function') {
+                    setTimeout(() => {
+                        try { window.handleGameNeedSync(msg.sender); } catch (e) {}
+                    }, 400);
+                }
             }
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
@@ -1333,6 +1344,12 @@ async function processPayload(msg) {
         if (msg.sender !== myId && typeof window.handleEnemySync === 'function') {
             sessionLogCounters.enemySyncIn++;
             try { window.handleEnemySync(JSON.parse(msg.payload), msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleEnemySync failed', { err: String(e) }); }
+        }
+    }
+    else if (msg.type === 'game-need-sync') {
+        if (msg.sender !== myId && isDnsHost && typeof window.handleGameNeedSync === 'function') {
+            sessionLog('enemy', 'info', 'Host received game-need-sync', { from: msg.sender });
+            try { window.handleGameNeedSync(msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleGameNeedSync failed', { err: String(e) }); }
         }
     }
     else if (msg.type === 'map-sync') {
@@ -1757,16 +1774,50 @@ async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) 
     }
 }
 
+function exitHttpRelayForP2P(reason) {
+    if (!isHttpRelayMode && !window.gameNetBlocked) return;
+    if (httpRelayInterval) {
+        clearInterval(httpRelayInterval);
+        httpRelayInterval = null;
+    }
+    isHttpRelayMode = false;
+    window.isHttpRelayMode = false;
+    window.gameNetBlocked = false;
+    httpOutbox = {};
+    sessionLog('relay', 'info', 'Left HTTP Relay — P2P ready', { reason: reason || 'p2p' });
+    logDebug(`[P2P] HTTP Relay vypnut (${reason || 'p2p'}). Herní sync znovu aktivní.`, 'success', myId);
+    if (typeof window.onGameNetReady === 'function') {
+        try { window.onGameNetReady(reason || 'p2p'); } catch (e) {}
+    }
+}
+window.chat_hasOpenHub = () => !!(channels['hub'] && channels['hub'].readyState === 'open');
+window.chat_exitHttpRelayForP2P = exitHttpRelayForP2P;
+
 function bindDataChannel(channel, targetId) {
     const setupChannel = async () => { 
         channels[targetId] = channel; 
         updateDebugStats('peers', Object.keys(channels).length); 
         unlockChat(); 
-        logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId); 
+        logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId);
+        sessionLog('peer', 'info', 'Data channel open', { targetId, wasHttp: isHttpRelayMode });
+
+        if (targetId === 'hub' || isDnsHost) {
+            exitHttpRelayForP2P('datachannel:' + targetId);
+            if (joinInterval) {
+                clearInterval(joinInterval);
+                joinInterval = null;
+            }
+        }
         
         setTimeout(async () => { 
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
+
+            // Ask host for immediate enemy/loot snapshot (late join / post-HTTP recovery)
+            if (!isDnsHost && targetId === 'hub') {
+                routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-need-sync', sender: myId });
+                sessionLog('enemy', 'info', 'Requested game-need-sync from hub');
+            }
             
             if (!isDnsHost) {
                 setTimeout(() => { 
@@ -2246,7 +2297,7 @@ async function joinViaDns() {
     
     joinInterval = setInterval(async () => {
         pokusy++;
-        if (pokusy > 6) { 
+        if (pokusy > 12) { 
             clearInterval(joinInterval); 
             logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
             cleanupConnection('hub', true); 

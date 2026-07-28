@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=20260728-syncfix";
+import { LVL } from "./maps.js?v=20260728-enemy25";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,12 +62,13 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-window.__GAME_BUILD = "p2p-v24-syncfix-20260728";
+window.__GAME_BUILD = "p2p-v25-enemy-resync-20260728";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 window.gameNetBlocked = false;
 window.__lastEnemySyncMs = 0;
 window.__lastGameSyncMs = 0;
 window.__currentLvlIdx = 0;
+window.__forceEnemyFullResync = false;
 
 function slog(cat, level, msg, data) {
     if (typeof window.sessionLog === 'function') window.sessionLog(cat, level, msg, data);
@@ -86,10 +87,20 @@ let audioCtx = null;
 
 const getIsHost = () => typeof window.chat_isHost === 'function' ? window.chat_isHost() : true;
 
-/** Run local enemy AI when we are Master, or solo / pre-connect (no peers yet). */
+function hasLiveP2P() {
+    if (typeof window.chat_hasOpenHub === 'function' && window.chat_hasOpenHub()) return true;
+    if (getIsHost()) {
+        const nodes = window.chat_knownNodes || {};
+        return Object.keys(nodes).some(id => id !== window.chat_myId);
+    }
+    return false;
+}
+
+/** Run local enemy AI when Master, or solo / no live P2P yet. Never while waiting on host sync over P2P. */
 function shouldRunEnemyAI() {
     if (getIsHost()) return true;
-    if (window.gameNetBlocked) return true; // HTTP: no sync will arrive — keep local sim
+    if (hasLiveP2P()) return false;
+    if (window.gameNetBlocked) return true; // HTTP-only: sync will not arrive
     const nodes = window.chat_knownNodes || {};
     const myId = window.chat_myId;
     const peers = Object.keys(nodes).filter(id => id !== myId);
@@ -99,13 +110,22 @@ function shouldRunEnemyAI() {
 function updateNetBlockBanner() {
     const el = document.getElementById('net-block-banner');
     if (!el) return;
-    if (window.gameNetBlocked || (typeof window.isHttpRelayMode !== 'undefined' && window.isHttpRelayMode)) {
+    const http = window.gameNetBlocked || (typeof window.isHttpRelayMode !== 'undefined' && window.isHttpRelayMode);
+    if (http && !hasLiveP2P()) {
         el.classList.add('visible');
         el.textContent = 'HTTP Relay: herní sync (hráči/enemy/střelba) nefunguje. Čekám na WebRTC P2P…';
     } else {
         el.classList.remove('visible');
     }
 }
+
+window.onGameNetReady = (reason) => {
+    window.__forceEnemyFullResync = true;
+    window.gameNetBlocked = false;
+    updateNetBlockBanner();
+    slog('enemy', 'warn', 'P2P ready — next enemy-sync will full-resync', { reason });
+    addToast("P2P OK — synchronizuji nepřátele…");
+};
 
 function initAudio() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -411,7 +431,15 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     });
 
-    let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; e.use(e.eId); });
+    let eIdx = 0;
+    get("enemy").forEach(e => {
+        // Deterministic ID from spawn tile position (stable across clients)
+        const px = Math.round((e.pos && e.pos.x) || 0);
+        const py = Math.round((e.pos && e.pos.y) || 0);
+        e.eId = `e_${lvlIdx}_${px}_${py}`;
+        e.spawnIdx = eIdx++;
+        try { e.use(e.eId); } catch (err) {}
+    });
     get("loot").forEach(l => l.use(l.lId));
 
     function spawnDust(p) { 
@@ -667,40 +695,94 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     };
 
+    let enemyFullSynced = false;
+    let lastEnemySyncLogAt = 0;
+
+    const findEnemyBySyncId = (id) => {
+        if (!id) return null;
+        try {
+            const byTag = get(id);
+            if (byTag && byTag[0] && byTag[0].is && byTag[0].is("enemy")) return byTag[0];
+        } catch (e) {}
+        const all = get("enemy");
+        for (const e of all) {
+            if (e.eId === id) return e;
+        }
+        return null;
+    };
+
     const recreateEnemyFromSync = (ed) => {
-        const type = ed.type || 'nrm';
-        const spriteName = ed.isBoss ? 'e_bnc' : ({ nrm: 'e_nrm', jmp: 'e_jmp', bnc: 'e_bnc', fly: 'e_fly' }[type] || 'e_nrm');
-        const scaleVal = ed.isBoss ? 3.0 : (type === 'bnc' ? 1.7 : 1.4);
-        const props = {
-            eId: ed.id,
-            hp: ed.hp != null ? ed.hp : 2,
-            type,
-            speed: type === 'bnc' ? 120 : (type === 'jmp' ? 100 : (type === 'fly' ? 70 : 80)),
-            stunTimer: 0,
-            dir: 1,
-            baseY: type === 'fly' ? ed.y : null,
-            jTmr: rand(1, 3),
-            targetPos: vec2(ed.x, ed.y)
-        };
-        const comps = [
-            sprite(spriteName),
-            pos(ed.x, ed.y),
-            color(ed.isBoss ? 255 : ec[0], ed.isBoss ? 50 : ec[1], ed.isBoss ? 50 : ec[2]),
-            scale(scaleVal),
-            area(),
-            anchor("center"),
-            "enemy",
-            props
-        ];
-        if (type !== 'fly') comps.splice(5, 0, body());
-        if (type === 'bnc' && !ed.isBoss) comps.push("pusher");
-        else comps.push("danger");
-        if (ed.isBoss) comps.push("boss", "danger");
-        const en = add(comps);
-        en.use(ed.id);
-        en.flipX = !!ed.flipX;
-        slog('enemy', 'info', 'Recreated missing enemy from sync', { id: ed.id, type });
-        return en;
+        try {
+            const type = ed.type || 'nrm';
+            const spriteName = ed.isBoss ? 'e_bnc' : ({ nrm: 'e_nrm', jmp: 'e_jmp', bnc: 'e_bnc', fly: 'e_fly' }[type] || 'e_nrm');
+            const scaleVal = ed.isBoss ? 3.0 : (type === 'bnc' ? 1.7 : 1.4);
+            const props = {
+                eId: ed.id,
+                hp: ed.hp != null ? ed.hp : 2,
+                type,
+                speed: type === 'bnc' ? 120 : (type === 'jmp' ? 100 : (type === 'fly' ? 70 : 80)),
+                stunTimer: 0,
+                dir: ed.dir != null ? ed.dir : 1,
+                baseY: type === 'fly' ? ed.y : null,
+                jTmr: rand(1, 3),
+                targetPos: vec2(ed.x, ed.y)
+            };
+            const comps = [
+                sprite(spriteName),
+                pos(ed.x, ed.y),
+                color(ed.isBoss ? rgb(255, 50, 50) : rgb(ec[0], ec[1], ec[2])),
+                scale(scaleVal),
+                area(),
+                anchor("center"),
+                "enemy",
+                props
+            ];
+            if (type !== 'fly') comps.splice(5, 0, body());
+            if (type === 'bnc' && !ed.isBoss) comps.push("pusher");
+            else comps.push("danger");
+            if (ed.isBoss) comps.push("boss", "danger");
+            const en = add(comps);
+            en.eId = ed.id;
+            try { en.use(ed.id); } catch (err) {}
+            en.flipX = !!ed.flipX;
+            if (type === 'fly') en.baseY = ed.y;
+            slog('enemy', 'info', 'Recreated enemy from sync', { id: ed.id, type, x: ed.x, y: ed.y });
+            return en;
+        } catch (err) {
+            slog('enemy', 'error', 'recreateEnemyFromSync failed', { id: ed && ed.id, err: String(err) });
+            return null;
+        }
+    };
+
+    const applyEnemySnapshot = (enemiesData, fullReplace) => {
+        if (fullReplace) {
+            get("enemy").forEach(e => { try { destroy(e); } catch (err) {} });
+            enemiesData.forEach(ed => recreateEnemyFromSync(ed));
+            enemyFullSynced = true;
+            window.__forceEnemyFullResync = false;
+            slog('enemy', 'warn', 'Full enemy resync applied', { count: enemiesData.length });
+            addToast(`Enemy sync: ${enemiesData.length}`);
+            return;
+        }
+        const masterIds = new Set(enemiesData.map(ed => ed.id));
+        get("enemy").forEach(e => {
+            if (!masterIds.has(e.eId)) {
+                try { destroy(e); } catch (err) {}
+            }
+        });
+        enemiesData.forEach(ed => {
+            let en = findEnemyBySyncId(ed.id);
+            if (!en) en = recreateEnemyFromSync(ed);
+            if (!en) return;
+            en.targetPos = vec2(ed.x, ed.y);
+            if (!en.pos || en.pos.dist(en.targetPos) > 150) en.pos = vec2(ed.x, ed.y);
+            if (en.hp > ed.hp) en.stunTimer = 0.2;
+            en.hp = Math.min(en.hp, ed.hp);
+            en.flipX = !!ed.flipX;
+            if (en.type === 'fly') {
+                en.baseY = ed.y;
+            }
+        });
     };
 
     window.handleEnemySync = (payload, senderId) => {
@@ -718,25 +800,44 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             if (maybeLockstepLevel(senderId || null, syncLvl, true)) return;
             return;
         }
-        if (!Array.isArray(enemiesData)) return;
+        if (!Array.isArray(enemiesData)) {
+            slog('enemy', 'error', 'enemy-sync payload not array', { payloadType: typeof payload });
+            return;
+        }
 
-        const masterIds = new Set(enemiesData.map(ed => ed.id));
-        get("enemy").forEach(e => {
-            if (!masterIds.has(e.eId)) destroy(e);
-        });
-        enemiesData.forEach(ed => {
-            let en = get(ed.id)[0];
-            if (!en) {
-                en = recreateEnemyFromSync(ed);
-            }
-            if (en) {
-                en.targetPos = vec2(ed.x, ed.y);
-                if (!en.pos || en.pos.dist(en.targetPos) > 150) en.pos = en.targetPos.clone();
-                if (en.hp > ed.hp) en.stunTimer = 0.2;
-                en.hp = Math.min(en.hp, ed.hp);
-                en.flipX = ed.flipX;
-            }
-        });
+        const doFull = !enemyFullSynced || window.__forceEnemyFullResync;
+        applyEnemySnapshot(enemiesData, doFull);
+
+        if (Date.now() - lastEnemySyncLogAt > 4000) {
+            lastEnemySyncLogAt = Date.now();
+            slog('enemy', 'warn', 'enemy-sync ok', {
+                senderId,
+                count: enemiesData.length,
+                local: get("enemy").length,
+                full: doFull,
+                sample: enemiesData.slice(0, 3).map(e => e.id)
+            });
+        }
+    };
+
+    window.handleGameNeedSync = (requesterId) => {
+        if (!getIsHost()) return;
+        const enemiesData = get("enemy").map(e => ({
+            id: e.eId,
+            x: e.pos.x,
+            y: e.pos.y,
+            hp: e.hp,
+            flipX: e.flipX || false,
+            type: e.type || 'nrm',
+            isBoss: !!e.is("boss"),
+            dir: e.dir
+        }));
+        slog('enemy', 'warn', 'Pushing enemy snapshot for joiner', { requesterId, count: enemiesData.length });
+        if (typeof window.broadcastEnemySync === 'function') {
+            window.broadcastEnemySync({ lvl: lvlIdx, enemies: enemiesData });
+        }
+        const lootData = get("loot").map(l => l.lId);
+        if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
     };
 
     window.handlePlayerHit = (targetId, shooterId, isFatal) => {
@@ -852,13 +953,17 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                 enemies: get("enemy").length,
                 enemySyncAgeMs: enemySyncAge,
                 gameSyncAgeMs: gameSyncAge,
-                httpBlocked: !!window.gameNetBlocked
+                httpBlocked: !!window.gameNetBlocked,
+                p2p: hasLiveP2P(),
+                enemyFullSynced
             });
-            if (!shouldRunEnemyAI() && (!window.__lastEnemySyncMs || enemySyncAge > 2500)) {
-                if (Date.now() - waitingHostToastAt > 8000) {
+            if (!getIsHost() && hasLiveP2P() && (!window.__lastEnemySyncMs || enemySyncAge > 2500)) {
+                if (Date.now() - waitingHostToastAt > 5000) {
                     waitingHostToastAt = Date.now();
+                    window.__forceEnemyFullResync = true;
                     addToast("Čekám na enemy sync od hosta…");
-                    slog('enemy', 'warn', 'No recent enemy-sync while spoke', { enemySyncAgeMs: enemySyncAge });
+                    slog('enemy', 'warn', 'No recent enemy-sync — requesting snapshot', { enemySyncAgeMs: enemySyncAge });
+                    if (typeof window.requestEnemySync === 'function') window.requestEnemySync();
                 }
             }
         }
