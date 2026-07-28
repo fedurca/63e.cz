@@ -46,6 +46,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    const dlBtn = document.getElementById('btn-download-session-log');
+    if (dlBtn) {
+        dlBtn.addEventListener('click', () => {
+            if (typeof window.downloadSessionLog === 'function') window.downloadSessionLog('json');
+        });
+    }
+    const dlLastBtn = document.getElementById('btn-download-last-session-log');
+    if (dlLastBtn) {
+        dlLastBtn.addEventListener('click', () => {
+            if (typeof window.downloadLastSessionLog === 'function') window.downloadLastSessionLog('json');
+        });
+    }
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'F4') {
+            e.preventDefault();
+            if (typeof window.downloadSessionLog === 'function') window.downloadSessionLog('json');
+        }
+    });
+
     DOM.topoCanvas.addEventListener('mousemove', (e) => { 
         const mouseX = e.offsetX; 
         const mouseY = e.offsetY; 
@@ -228,6 +247,8 @@ window.chat_isHost = () => isDnsHost;
 let connections = {}; 
 let channels = {}; 
 let networkGraph = { root: myId, edges: [] }; 
+window.chat_getNetworkRoot = () => networkGraph.root;
+window.networkGraph = networkGraph; 
 let seenMessages = new Set(); 
 let knownNodes = {}; 
 window.chat_knownNodes = knownNodes; 
@@ -465,6 +486,157 @@ function dekomprimovat(b64) {
 }
 
 let logBuffer = [];
+const SESSION_LOG_MAX = 5000;
+const SESSION_STORAGE_KEY = 'p2p_last_session_log';
+let playSessionId = null;
+let sessionLogEntries = [];
+let sessionLogMeta = null;
+let sessionLogCounters = { gameSyncIn: 0, gameSyncOut: 0, enemySyncIn: 0, enemySyncOut: 0, shootIn: 0, shootOut: 0, httpDrops: 0, ttlDrops: 0 };
+
+function ensurePlaySession() {
+    if (playSessionId) return playSessionId;
+    playSessionId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : ('sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8));
+    sessionLogMeta = {
+        sessionId: playSessionId,
+        startedAt: new Date().toISOString(),
+        build: (typeof window !== 'undefined' && window.__GAME_BUILD) || 'unknown',
+        myId: typeof myId !== 'undefined' ? myId : null,
+        userAgent: (typeof navigator !== 'undefined') ? navigator.userAgent : '',
+        url: (typeof location !== 'undefined') ? location.href : ''
+    };
+    sessionLog('session', 'info', 'Session started', sessionLogMeta);
+    return playSessionId;
+}
+
+function sessionLog(cat, level, msg, data) {
+    try {
+        ensurePlaySession();
+        const entry = {
+            t: new Date().toISOString(),
+            ms: (typeof performance !== 'undefined') ? Math.round(performance.now()) : Date.now(),
+            cat: cat || 'app',
+            level: level || 'info',
+            msg: String(msg || ''),
+            data: data === undefined ? undefined : data
+        };
+        sessionLogEntries.push(entry);
+        if (sessionLogEntries.length > SESSION_LOG_MAX) {
+            sessionLogEntries.splice(0, sessionLogEntries.length - SESSION_LOG_MAX);
+        }
+        if (level !== 'trace' && (level === 'warn' || level === 'error' || cat === 'host' || cat === 'relay' || cat === 'combat')) {
+            const prefix = `[${cat}/${level}]`;
+            if (DOM.debugLog) {
+                const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+                const extra = data ? ' ' + (typeof data === 'string' ? data : JSON.stringify(data)) : '';
+                DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${level === 'error' ? 'error' : (level === 'warn' ? 'error' : 'sync')}">${prefix} ${escapeHTML(entry.msg)}${escapeHTML(extra).slice(0, 180)}</span></div>`;
+                DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight;
+            }
+        }
+    } catch (e) {}
+}
+window.sessionLog = sessionLog;
+
+function getSessionLogDump() {
+    ensurePlaySession();
+    let role = 'Spoke';
+    if (isDnsHost) role = 'Master';
+    else if (isHttpRelayMode) role = 'HTTP Relay';
+    return {
+        meta: {
+            ...sessionLogMeta,
+            exportedAt: new Date().toISOString(),
+            myId: typeof myId !== 'undefined' ? myId : null,
+            myName: typeof myName !== 'undefined' ? myName : null,
+            role,
+            isDnsHost: !!isDnsHost,
+            isHttpRelayMode: !!isHttpRelayMode,
+            networkRoot: networkGraph && networkGraph.root,
+            knownNodes: Object.keys(knownNodes || {}),
+            openChannels: Object.keys(channels || {}).filter(k => channels[k] && channels[k].readyState === 'open'),
+            counters: { ...sessionLogCounters },
+            entryCount: sessionLogEntries.length
+        },
+        entries: sessionLogEntries.slice()
+    };
+}
+window.getSessionLogDump = getSessionLogDump;
+
+function sessionLogToText(dump) {
+    const lines = [];
+    lines.push(`# 63e.cz session log ${dump.meta.sessionId}`);
+    lines.push(`# started ${dump.meta.startedAt} exported ${dump.meta.exportedAt}`);
+    lines.push(`# role=${dump.meta.role} myId=${dump.meta.myId} build=${dump.meta.build}`);
+    lines.push(`# nodes=${(dump.meta.knownNodes || []).join(',')} channels=${(dump.meta.openChannels || []).join(',')}`);
+    lines.push(`# counters=${JSON.stringify(dump.meta.counters || {})}`);
+    lines.push('');
+    for (const e of dump.entries) {
+        const dataStr = e.data !== undefined ? ' ' + JSON.stringify(e.data) : '';
+        lines.push(`[${e.t}] [${e.cat}/${e.level}] ${e.msg}${dataStr}`);
+    }
+    return lines.join('\n');
+}
+
+function downloadSessionLog(format) {
+    const dump = getSessionLogDump();
+    const fmt = (format === 'txt') ? 'txt' : 'json';
+    const body = fmt === 'txt' ? sessionLogToText(dump) : JSON.stringify(dump, null, 2);
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `63e-session-${dump.meta.sessionId || 'unknown'}-${stamp}.${fmt}`;
+    const blob = new Blob([body], { type: fmt === 'txt' ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    sessionLog('session', 'info', 'Session log downloaded', { format: fmt, entries: dump.entries.length });
+    return filename;
+}
+window.downloadSessionLog = downloadSessionLog;
+
+function persistSessionLogSnapshot() {
+    try {
+        const dump = getSessionLogDump();
+        const slim = {
+            meta: dump.meta,
+            entries: dump.entries.slice(-1000)
+        };
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(slim));
+    } catch (e) {}
+}
+
+window.downloadLastSessionLog = function(format) {
+    try {
+        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+        if (!raw) {
+            alert('Žádný uložený log minulé session.');
+            return null;
+        }
+        const dump = JSON.parse(raw);
+        const fmt = (format === 'txt') ? 'txt' : 'json';
+        const body = fmt === 'txt' ? sessionLogToText(dump) : JSON.stringify(dump, null, 2);
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const filename = `63e-last-session-${(dump.meta && dump.meta.sessionId) || 'unknown'}-${stamp}.${fmt}`;
+        const blob = new Blob([body], { type: fmt === 'txt' ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        return filename;
+    } catch (e) {
+        alert('Nepodařilo se načíst minulou session.');
+        return null;
+    }
+};
+
 function flushLogs() {
     if (logBuffer.length === 0) return;
     if (Date.now() < apiBackoffUntil) return;
@@ -474,7 +646,11 @@ function flushLogs() {
 }
 setInterval(flushLogs, 5000);
 window.addEventListener('beforeunload', () => {
+    persistSessionLogSnapshot();
     if (logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+});
+window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persistSessionLogSnapshot();
 });
 
 function logDebug(msg, type = 'info', sourceId = null) { 
@@ -483,6 +659,9 @@ function logDebug(msg, type = 'info', sourceId = null) {
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
         DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
         DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight; 
+        if (DOM.debugLog.children.length > 800) {
+            while (DOM.debugLog.children.length > 600) DOM.debugLog.removeChild(DOM.debugLog.firstChild);
+        }
     }
     try {
         let currentRole = "Spoke";
@@ -492,6 +671,7 @@ function logDebug(msg, type = 'info', sourceId = null) {
         const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
         logBuffer.push({ message: [prefix, logData], type: type, time: Date.now() });
         if (logBuffer.length >= 20) flushLogs();
+        sessionLog('net', type === 'error' ? 'error' : (type === 'sync' ? 'info' : 'info'), String(msg).replace(/<[^>]+>/g, ''), { sourceId: idStr, role: currentRole, uiType: type });
     } catch(e) { }
 }
 
@@ -993,56 +1173,72 @@ async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
     logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
 }
 
+const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync']);
+const GAME_TTL = 5;
+
 // NETWORK BROADCAST HOOKS
 window.broadcastGameSync = (data) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
+    sessionLogCounters.gameSyncOut++;
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.broadcastGameShoot = (data) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-shoot', sender: myId, payload: JSON.stringify(data) });
+    sessionLogCounters.shootOut++;
+    sessionLog('combat', 'info', 'shoot out', { x: data && data.x, y: data && data.y, lvl: data && data.lvl });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-shoot', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.broadcastEnemySync = (enemiesData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
+    sessionLogCounters.enemySyncOut++;
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
 };
 
 window.broadcastEnemyHit = (eId, dmg) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
+    sessionLog('combat', 'info', 'enemy-hit out', { eId, dmg });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
 };
 
 window.broadcastMapSync = (mapData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
 };
 
 window.broadcastPlayerHit = (targetId, shooterId, isFatal) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-hit', sender: myId, target: targetId, shooter: shooterId, fatal: isFatal });
+    sessionLog('combat', 'info', 'player-hit out', { targetId, shooterId, isFatal });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-hit', sender: myId, target: targetId, shooter: shooterId, fatal: isFatal });
 };
 
 window.broadcastLevelComplete = (nextLvlIdx) => {
     if (Object.keys(knownNodes).length === 0) return;
+    sessionLog('scene', 'info', 'level-complete broadcast', { nextLvlIdx });
     routeMessage({ id: generateMsgId(), ttl: 10, type: 'game-next', sender: myId, lvl: nextLvlIdx });
 };
 
 window.broadcastLootPickup = (lId) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 5, type: 'loot-pickup', sender: myId, lId: lId });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-pickup', sender: myId, lId: lId });
 };
 
 window.broadcastLootSync = (activeLootIds) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
 };
 
 function routeMessage(msgObj, sourceChannel = null) {
-    if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'enemy-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
+    if (GAME_MSG_TYPES.has(msgObj.type) && sourceChannel === 'http') {
+        sessionLogCounters.httpDrops++;
+        if (sessionLogCounters.httpDrops <= 20 || sessionLogCounters.httpDrops % 50 === 0) {
+            sessionLog('relay', 'warn', 'Dropped game msg on HTTP relay', { type: msgObj.type, sender: msgObj.sender, drops: sessionLogCounters.httpDrops });
+        }
+        return;
+    }
 
-    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && !GAME_MSG_TYPES.has(msgObj.type)) { 
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id); 
         if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1050,8 +1246,17 @@ function routeMessage(msgObj, sourceChannel = null) {
     
     processPayload(msgObj);
     
+    const ttlBefore = msgObj.ttl;
     msgObj.ttl -= 1; 
-    if (msgObj.ttl <= 0) return; 
+    if (msgObj.ttl <= 0) {
+        if (GAME_MSG_TYPES.has(msgObj.type) && sourceChannel && sourceChannel !== null) {
+            sessionLogCounters.ttlDrops++;
+            if (sessionLogCounters.ttlDrops <= 30 || sessionLogCounters.ttlDrops % 100 === 0) {
+                sessionLog('route', 'warn', 'TTL exhausted, not forwarding', { type: msgObj.type, sender: msgObj.sender, ttlBefore, sourceChannel, drops: sessionLogCounters.ttlDrops });
+            }
+        }
+        return;
+    } 
     
     if (!msgObj.path) msgObj.path = []; 
     msgObj.path.push(myId);
@@ -1062,6 +1267,7 @@ function routeMessage(msgObj, sourceChannel = null) {
                 const str = JSON.stringify(msgObj); 
                 if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
                     logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId); 
+                    sessionLog('peer', 'warn', 'Channel buffer high', { bufferedKB: Math.round(ch.bufferedAmount/1024), type: msgObj.type });
                 }
                 ch.send(str); 
             } catch(err) {} 
@@ -1069,12 +1275,12 @@ function routeMessage(msgObj, sourceChannel = null) {
     });
 
     if (isHttpRelayMode) { 
-        if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
+        if (sourceChannel !== 'http' && !GAME_MSG_TYPES.has(msgObj.type)) {
             addToHttpOutbox('hub', msgObj); 
         }
     } else if (isDnsHost) { 
         knownHttpClients.forEach(clientId => { 
-            if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+            if (clientId !== msgObj.sender && clientId !== sourceChannel && !GAME_MSG_TYPES.has(msgObj.type)) { 
                 addToHttpOutbox(clientId, msgObj); 
             } 
         }); 
@@ -1113,17 +1319,20 @@ async function processPayload(msg) {
     } 
     else if (msg.type === 'game-sync') {
         if (msg.sender !== myId && typeof window.handleGameSync === 'function') {
-            try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){}
+            sessionLogCounters.gameSyncIn++;
+            try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){ sessionLog('sync', 'error', 'handleGameSync failed', { err: String(e) }); }
         }
     }
     else if (msg.type === 'game-shoot') {
         if (msg.sender !== myId && typeof window.handleGameShoot === 'function') {
-            try { window.handleGameShoot(msg.sender, JSON.parse(msg.payload)); } catch(e){}
+            sessionLogCounters.shootIn++;
+            try { window.handleGameShoot(msg.sender, JSON.parse(msg.payload)); } catch(e){ sessionLog('combat', 'error', 'handleGameShoot failed', { err: String(e) }); }
         }
     }
     else if (msg.type === 'enemy-sync') {
         if (msg.sender !== myId && typeof window.handleEnemySync === 'function') {
-            try { window.handleEnemySync(JSON.parse(msg.payload)); } catch(e){}
+            sessionLogCounters.enemySyncIn++;
+            try { window.handleEnemySync(JSON.parse(msg.payload), msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleEnemySync failed', { err: String(e) }); }
         }
     }
     else if (msg.type === 'map-sync') {
@@ -1137,7 +1346,8 @@ async function processPayload(msg) {
         }
     }
     else if (msg.type === 'enemy-hit') {
-        if (typeof window.handleEnemyHit === 'function') {
+        // Shooter already applied damage locally; skip self to avoid double HP subtract
+        if (msg.sender !== myId && typeof window.handleEnemyHit === 'function') {
             window.handleEnemyHit(msg.eId, msg.dmg);
         }
     }
@@ -1265,6 +1475,7 @@ async function processPayload(msg) {
     } 
     else if (msg.type === 'topo-sync') {
         networkGraph = msg.graph;
+        window.networkGraph = networkGraph;
         if (!isDnsHost) { 
             const now = Date.now(); 
             if (msg.graph.root && knownNodes[msg.graph.root]) {
@@ -1808,6 +2019,7 @@ async function fullResetAndReconnect() {
     appSessionTime = 0; 
     currentSessionId = null; 
     
+    sessionLog('host', 'warn', 'fullResetAndReconnect start', { wasHost: isDnsHost, http: isHttpRelayMode });
     logDebug("Provádím kompletní reset...", "info", myId); 
     window.endVideoCall(true);
     
@@ -1823,11 +2035,13 @@ async function fullResetAndReconnect() {
     knownNodes = {}; 
     window.chat_knownNodes = knownNodes;
     networkGraph = { root: null, edges: [] }; 
+    window.networkGraph = networkGraph; 
     processingOffers.clear(); 
     peerStats = {}; 
     isDnsHost = false; 
     isHttpRelayMode = false; 
     window.isHttpRelayMode = false;
+    window.gameNetBlocked = false;
     knownHttpClients.clear(); 
     httpOutbox = {}; 
     drawnEdges = []; 
@@ -1894,6 +2108,12 @@ window.initSystem = async function() {
     DOM.setupScreen.style.display = 'none'; 
     loadHistory(); 
     await initCrypto();
+    ensurePlaySession();
+    if (sessionLogMeta) {
+        sessionLogMeta.myId = myId;
+        sessionLogMeta.build = window.__GAME_BUILD || sessionLogMeta.build;
+    }
+    sessionLog('session', 'info', 'initSystem', { myId, myName });
     
     const hostAlive = await readSignal('host-alive'); 
     const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
@@ -1901,8 +2121,10 @@ window.initSystem = async function() {
     if (typeof window.startGameKaboom === "function") window.startGameKaboom();
 
     if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
+        sessionLog('host', 'info', 'Joining existing host', { hostId: hostAlive.id });
         joinViaDns(); 
     } else {
+        sessionLog('host', 'info', 'No live host, starting Master loop');
         startDnsHostLoop();
     }
 };
@@ -1910,6 +2132,9 @@ window.initSystem = async function() {
 async function startDnsHostLoop() {
     isDnsHost = true; 
     networkGraph.root = myId; 
+    window.networkGraph = networkGraph;
+    window.gameNetBlocked = false;
+    sessionLog('host', 'info', 'Became Master (DNS host)', { myId });
     unlockChat(); 
     
     await writeSignal('queue', []); 
@@ -2067,6 +2292,8 @@ async function joinViaDns() {
 function startHttpRelayMode() {
     isHttpRelayMode = true; 
     window.isHttpRelayMode = true;
+    window.gameNetBlocked = true;
+    sessionLog('relay', 'warn', 'Entered HTTP Relay mode — game sync disabled');
     unlockChat(); 
     if (typeof window.triggerHttpBlock === 'function') window.triggerHttpBlock();
     
@@ -2126,6 +2353,8 @@ function startHttpRelayMode() {
             blacklistedHubTimeout = Date.now() + 60000;
             isHttpRelayMode = false;
             window.isHttpRelayMode = false;
+            window.gameNetBlocked = false;
+            sessionLog('relay', 'warn', 'Left HTTP Relay — hub unresponsive');
             checkIsolation();
         }
     }, 3000);
