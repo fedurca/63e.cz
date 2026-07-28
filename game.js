@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=20260728-enemy25";
+import { LVL } from "./maps.js?v=20260728-wait26";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,13 +62,16 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-window.__GAME_BUILD = "p2p-v25-enemy-resync-20260728";
+window.__GAME_BUILD = "p2p-v26-wait-master-20260728";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 window.gameNetBlocked = false;
 window.__lastEnemySyncMs = 0;
 window.__lastGameSyncMs = 0;
 window.__currentLvlIdx = 0;
 window.__forceEnemyFullResync = false;
+window.__hostGameState = null;
+window.__pendingEnemySnapshot = null;
+window.__gameScene = "none";
 
 function slog(cat, level, msg, data) {
     if (typeof window.sessionLog === 'function') window.sessionLog(cat, level, msg, data);
@@ -96,11 +99,11 @@ function hasLiveP2P() {
     return false;
 }
 
-/** Run local enemy AI when Master, or solo / no live P2P yet. Never while waiting on host sync over P2P. */
+/** Run local enemy AI when Master, or solo with no peers and not waiting for master. */
 function shouldRunEnemyAI() {
     if (getIsHost()) return true;
     if (hasLiveP2P()) return false;
-    if (window.gameNetBlocked) return true; // HTTP-only: sync will not arrive
+    if (window.gameNetBlocked) return false; // relay: don't invent enemy state
     const nodes = window.chat_knownNodes || {};
     const myId = window.chat_myId;
     const peers = Object.keys(nodes).filter(id => id !== myId);
@@ -113,7 +116,7 @@ function updateNetBlockBanner() {
     const http = window.gameNetBlocked || (typeof window.isHttpRelayMode !== 'undefined' && window.isHttpRelayMode);
     if (http && !hasLiveP2P()) {
         el.classList.add('visible');
-        el.textContent = 'HTTP Relay: herní sync (hráči/enemy/střelba) nefunguje. Čekám na WebRTC P2P…';
+        el.textContent = 'HTTP Relay: herní sync nefunguje. Čekám na WebRTC P2P…';
     } else {
         el.classList.remove('visible');
     }
@@ -123,8 +126,9 @@ window.onGameNetReady = (reason) => {
     window.__forceEnemyFullResync = true;
     window.gameNetBlocked = false;
     updateNetBlockBanner();
-    slog('enemy', 'warn', 'P2P ready — next enemy-sync will full-resync', { reason });
-    addToast("P2P OK — synchronizuji nepřátele…");
+    slog('enemy', 'warn', 'P2P ready', { reason });
+    if (typeof window.requestEnemySync === 'function') window.requestEnemySync();
+    addToast("P2P OK — synchronizuji…");
 };
 
 function initAudio() {
@@ -431,16 +435,41 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     });
 
-    let eIdx = 0;
-    get("enemy").forEach(e => {
-        // Deterministic ID from spawn tile position (stable across clients)
-        const px = Math.round((e.pos && e.pos.x) || 0);
-        const py = Math.round((e.pos && e.pos.y) || 0);
-        e.eId = `e_${lvlIdx}_${px}_${py}`;
-        e.spawnIdx = eIdx++;
-        try { e.use(e.eId); } catch (err) {}
+    // Deterministic IDs from map tile coords (do NOT use() dynamic tags — avoids Kaboom tag collisions)
+    const tileEnemies = [];
+    for (let ty = 0; ty < lvl.m.length; ty++) {
+        const row = lvl.m[ty] || "";
+        for (let tx = 0; tx < row.length; tx++) {
+            const ch = row[tx];
+            if (ch === "1" || ch === "2" || ch === "3" || ch === "B" || ch === "X") {
+                tileEnemies.push({ tx, ty, ch, x: tx * 40 + 20, y: ty * 40 + 20 });
+            }
+        }
+    }
+    tileEnemies.sort((a, b) => (a.y - b.y) || (a.x - b.x));
+    const spawnedEnemies = Array.from(get("enemy")).sort((a, b) => {
+        const ay = (a.pos && a.pos.y) || 0, by = (b.pos && b.pos.y) || 0;
+        const ax = (a.pos && a.pos.x) || 0, bx = (b.pos && b.pos.x) || 0;
+        return (ay - by) || (ax - bx);
     });
-    get("loot").forEach(l => l.use(l.lId));
+    spawnedEnemies.forEach((e, i) => {
+        const t = tileEnemies[i];
+        e.eId = t ? `e_${lvlIdx}_${t.tx}_${t.ty}` : `e_${lvlIdx}_ord${i}`;
+    });
+    if (getIsHost()) {
+        slog("enemy", "warn", "Host spawned enemies", {
+            lvl: lvlIdx,
+            fromMap: tileEnemies.length,
+            spawned: spawnedEnemies.length
+        });
+    }
+    get("loot").forEach(l => { try { l.use(l.lId); } catch (err) {} });
+
+    // Spoke: clear locally spawned enemies — authority is host snapshot only
+    const isSpoke = !getIsHost();
+    if (isSpoke) {
+        get("enemy").forEach(e => { try { destroy(e); } catch (err) {} });
+    }
 
     function spawnDust(p) { 
         for(let i=0; i<6; i++) add([ rect(4,4), pos(p.x + rand(-10,10), p.y), color(200,200,200), move(vec2(rand(-1,1), rand(-0.1,-1)), rand(20,60)), opacity(0.8), lifespan(0.3, {fade: 0.3}), z(50) ]); 
@@ -695,35 +724,78 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     };
 
+    window.__gameScene = "game";
+
     let enemyFullSynced = false;
     let lastEnemySyncLogAt = 0;
+    let emptySyncStreak = 0;
 
     const findEnemyBySyncId = (id) => {
         if (!id) return null;
-        try {
-            const byTag = get(id);
-            if (byTag && byTag[0] && byTag[0].is && byTag[0].is("enemy")) return byTag[0];
-        } catch (e) {}
-        const all = get("enemy");
-        for (const e of all) {
+        for (const e of get("enemy")) {
             if (e.eId === id) return e;
         }
         return null;
     };
 
+    const collectEnemiesForSync = () => {
+        const out = [];
+        for (const e of get("enemy")) {
+            try {
+                if (typeof e.exists === "function" && !e.exists()) continue;
+                if (!e.pos) continue;
+                if (!e.eId) e.eId = `e_${lvlIdx}_${Math.round(e.pos.x)}_${Math.round(e.pos.y)}_${out.length}`;
+                out.push({
+                    id: e.eId,
+                    x: e.pos.x,
+                    y: e.pos.y,
+                    hp: e.hp,
+                    flipX: !!e.flipX,
+                    type: e.type || "nrm",
+                    isBoss: !!(e.is && e.is("boss")),
+                    dir: e.dir
+                });
+            } catch (err) {}
+        }
+        return out;
+    };
+
+    const publishHostState = (reason) => {
+        if (!getIsHost()) return null;
+        const enemies = collectEnemiesForSync();
+        const state = {
+            lvl: lvlIdx,
+            scene: "game",
+            enemies,
+            loot: get("loot").map(l => l.lId),
+            score,
+            enemyCount: enemies.length,
+            reason: reason || "tick",
+            ts: Date.now()
+        };
+        window.__hostGameState = state;
+        if (typeof window.broadcastHostGameState === "function") {
+            window.broadcastHostGameState(state);
+        } else if (typeof window.broadcastEnemySync === "function") {
+            window.broadcastEnemySync({ lvl: lvlIdx, enemies, loot: state.loot, enemyCount: enemies.length });
+        }
+        return state;
+    };
+
     const recreateEnemyFromSync = (ed) => {
         try {
-            const type = ed.type || 'nrm';
-            const spriteName = ed.isBoss ? 'e_bnc' : ({ nrm: 'e_nrm', jmp: 'e_jmp', bnc: 'e_bnc', fly: 'e_fly' }[type] || 'e_nrm');
-            const scaleVal = ed.isBoss ? 3.0 : (type === 'bnc' ? 1.7 : 1.4);
+            if (!ed || ed.x == null || ed.y == null) return null;
+            const type = ed.type || "nrm";
+            const spriteName = ed.isBoss ? "e_bnc" : ({ nrm: "e_nrm", jmp: "e_jmp", bnc: "e_bnc", fly: "e_fly" }[type] || "e_nrm");
+            const scaleVal = ed.isBoss ? 3.0 : (type === "bnc" ? 1.7 : 1.4);
             const props = {
                 eId: ed.id,
                 hp: ed.hp != null ? ed.hp : 2,
                 type,
-                speed: type === 'bnc' ? 120 : (type === 'jmp' ? 100 : (type === 'fly' ? 70 : 80)),
+                speed: type === "bnc" ? 120 : (type === "jmp" ? 100 : (type === "fly" ? 70 : 80)),
                 stunTimer: 0,
                 dir: ed.dir != null ? ed.dir : 1,
-                baseY: type === 'fly' ? ed.y : null,
+                baseY: type === "fly" ? ed.y : null,
                 jTmr: rand(1, 3),
                 targetPos: vec2(ed.x, ed.y)
             };
@@ -737,19 +809,17 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                 "enemy",
                 props
             ];
-            if (type !== 'fly') comps.splice(5, 0, body());
-            if (type === 'bnc' && !ed.isBoss) comps.push("pusher");
+            if (type !== "fly") comps.splice(5, 0, body());
+            if (type === "bnc" && !ed.isBoss) comps.push("pusher");
             else comps.push("danger");
             if (ed.isBoss) comps.push("boss", "danger");
             const en = add(comps);
             en.eId = ed.id;
-            try { en.use(ed.id); } catch (err) {}
             en.flipX = !!ed.flipX;
-            if (type === 'fly') en.baseY = ed.y;
-            slog('enemy', 'info', 'Recreated enemy from sync', { id: ed.id, type, x: ed.x, y: ed.y });
+            if (type === "fly") en.baseY = ed.y;
             return en;
         } catch (err) {
-            slog('enemy', 'error', 'recreateEnemyFromSync failed', { id: ed && ed.id, err: String(err) });
+            slog("enemy", "error", "recreateEnemyFromSync failed", { id: ed && ed.id, err: String(err) });
             return null;
         }
     };
@@ -760,8 +830,8 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             enemiesData.forEach(ed => recreateEnemyFromSync(ed));
             enemyFullSynced = true;
             window.__forceEnemyFullResync = false;
-            slog('enemy', 'warn', 'Full enemy resync applied', { count: enemiesData.length });
-            addToast(`Enemy sync: ${enemiesData.length}`);
+            slog("enemy", "warn", "Full enemy resync applied", { count: enemiesData.length });
+            if (enemiesData.length > 0) addToast(`Enemy sync: ${enemiesData.length}`);
             return;
         }
         const masterIds = new Set(enemiesData.map(ed => ed.id));
@@ -779,66 +849,106 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             if (en.hp > ed.hp) en.stunTimer = 0.2;
             en.hp = Math.min(en.hp, ed.hp);
             en.flipX = !!ed.flipX;
-            if (en.type === 'fly') {
-                en.baseY = ed.y;
-            }
+            if (en.type === "fly") en.baseY = ed.y;
         });
     };
 
     window.handleEnemySync = (payload, senderId) => {
         if (getIsHost()) return;
-        window.__lastEnemySyncMs = Date.now();
 
         let enemiesData = payload;
         let syncLvl = lvlIdx;
+        let enemyCount = null;
         if (payload && !Array.isArray(payload) && Array.isArray(payload.enemies)) {
             enemiesData = payload.enemies;
             if (Number.isFinite(payload.lvl)) syncLvl = payload.lvl;
+            if (Number.isFinite(payload.enemyCount)) enemyCount = payload.enemyCount;
         }
         if (syncLvl !== lvlIdx) {
-            slog('enemy', 'warn', 'enemy-sync level mismatch', { senderId, syncLvl, localLvl: lvlIdx });
+            slog("enemy", "warn", "enemy-sync level mismatch → lockstep", { senderId, syncLvl, localLvl: lvlIdx });
+            window.__pendingEnemySnapshot = enemiesData;
             if (maybeLockstepLevel(senderId || null, syncLvl, true)) return;
             return;
         }
         if (!Array.isArray(enemiesData)) {
-            slog('enemy', 'error', 'enemy-sync payload not array', { payloadType: typeof payload });
+            slog("enemy", "error", "enemy-sync payload not array", { payloadType: typeof payload });
             return;
         }
 
-        const doFull = !enemyFullSynced || window.__forceEnemyFullResync;
+        // Do not wipe monsters on empty sync before first real snapshot (host was sending []).
+        if (enemiesData.length === 0) {
+            emptySyncStreak++;
+            if (!enemyFullSynced) {
+                if (Date.now() - lastEnemySyncLogAt > 3000) {
+                    lastEnemySyncLogAt = Date.now();
+                    slog("enemy", "warn", "Ignoring empty enemy-sync (waiting for real snapshot)", { streak: emptySyncStreak, senderId });
+                }
+                if (typeof window.requestEnemySync === "function") window.requestEnemySync();
+                return;
+            }
+            if (emptySyncStreak < 3) {
+                slog("enemy", "warn", "Empty enemy-sync deferred", { streak: emptySyncStreak });
+                return;
+            }
+        } else {
+            emptySyncStreak = 0;
+        }
+
+        window.__lastEnemySyncMs = Date.now();
+        const doFull = !enemyFullSynced || window.__forceEnemyFullResync || (enemiesData.length > 0 && get("enemy").length === 0);
         applyEnemySnapshot(enemiesData, doFull);
 
         if (Date.now() - lastEnemySyncLogAt > 4000) {
             lastEnemySyncLogAt = Date.now();
-            slog('enemy', 'warn', 'enemy-sync ok', {
+            slog("enemy", "warn", "enemy-sync ok", {
                 senderId,
                 count: enemiesData.length,
                 local: get("enemy").length,
                 full: doFull,
+                hostCount: enemyCount,
                 sample: enemiesData.slice(0, 3).map(e => e.id)
             });
         }
     };
 
+    window.handleHostGameState = (senderId, state) => {
+        if (getIsHost() || !state) return;
+        window.__hostGameState = { ...state, senderId };
+        const remoteLvl = safeLevelIndex(state.lvl);
+        if (remoteLvl !== lvlIdx) {
+            window.__pendingEnemySnapshot = state.enemies || [];
+            maybeLockstepLevel(senderId, remoteLvl, true);
+            return;
+        }
+        if (Array.isArray(state.enemies)) {
+            window.handleEnemySync({
+                lvl: remoteLvl,
+                enemies: state.enemies,
+                enemyCount: state.enemyCount,
+                loot: state.loot
+            }, senderId);
+        }
+        if (Array.isArray(state.loot)) window.handleLootSync(state.loot);
+    };
+
     window.handleGameNeedSync = (requesterId) => {
         if (!getIsHost()) return;
-        const enemiesData = get("enemy").map(e => ({
-            id: e.eId,
-            x: e.pos.x,
-            y: e.pos.y,
-            hp: e.hp,
-            flipX: e.flipX || false,
-            type: e.type || 'nrm',
-            isBoss: !!e.is("boss"),
-            dir: e.dir
-        }));
-        slog('enemy', 'warn', 'Pushing enemy snapshot for joiner', { requesterId, count: enemiesData.length });
-        if (typeof window.broadcastEnemySync === 'function') {
-            window.broadcastEnemySync({ lvl: lvlIdx, enemies: enemiesData });
-        }
-        const lootData = get("loot").map(l => l.lId);
-        if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
+        const state = publishHostState("need-sync:" + requesterId);
+        slog("enemy", "warn", "Pushing host game state", {
+            requesterId,
+            enemyCount: state && state.enemyCount,
+            lvl: lvlIdx
+        });
     };
+
+    if (isSpoke && Array.isArray(window.__pendingEnemySnapshot)) {
+        const snap = window.__pendingEnemySnapshot;
+        window.__pendingEnemySnapshot = null;
+        if (snap.length > 0) applyEnemySnapshot(snap, true);
+        else slog("enemy", "warn", "Entered level with empty pending snapshot — waiting for host");
+    } else if (getIsHost()) {
+        publishHostState("scene-enter");
+    }
 
     window.handlePlayerHit = (targetId, shooterId, isFatal) => {
         if (isFatal && shooterId === localId) {
@@ -858,9 +968,12 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     };
 
     window.handleLevelComplete = (nextLvlIdx) => {
-        if (playerDead) return;
-        playerDead = true;
         nextLvlIdx = safeLevelIndex(nextLvlIdx);
+        slog("scene", "warn", "Level complete → advance all", { nextLvlIdx, fromScene: "game" });
+        if (playerDead && window.__currentLvlIdx === nextLvlIdx) return;
+        playerDead = true;
+        window.__pendingEnemySnapshot = null;
+        window.__forceEnemyFullResync = true;
         if (nextLvlIdx < safeLevelCount()) go("game", nextLvlIdx, hp, ammo, score);
         else go("victory", score);
     };
@@ -878,6 +991,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     
     window.handleLootSync = (activeLootIds) => {
         if (getIsHost()) return;
+        if (!Array.isArray(activeLootIds)) return;
         const idSet = new Set(activeLootIds);
         get("loot").forEach(l => {
             if (!idSet.has(l.lId)) destroy(l);
@@ -922,21 +1036,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
 
         if (getIsHost() && time() - lastMapSyncTime > 0.1) {
             lastMapSyncTime = time();
-            const enemiesData = get("enemy").map(e => ({
-                id: e.eId,
-                x: e.pos.x,
-                y: e.pos.y,
-                hp: e.hp,
-                flipX: e.flipX || false,
-                type: e.type || 'nrm',
-                isBoss: !!e.is("boss")
-            }));
-            if (typeof window.broadcastEnemySync === 'function') {
-                window.broadcastEnemySync({ lvl: lvlIdx, enemies: enemiesData });
-            }
-            
-            const lootData = get("loot").map(l => l.lId);
-            if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
+            publishHostState("tick");
         }
 
         if (time() - lastSyncSummaryTime > 2) {
@@ -1214,14 +1314,157 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     onCollide("player","finish",()=>{ 
         if(!playerDead){ 
             playerDead=true; 
-            if(typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(lvlIdx + 1);
-            if (lvlIdx + 1 < safeLevelCount()) go("game", lvlIdx + 1, hp, ammo, score);
+            const next = lvlIdx + 1;
+            slog("scene", "warn", "Local finish flag — broadcast level", { next });
+            if(typeof window.broadcastLevelComplete === 'function') window.broadcastLevelComplete(next);
+            if (next < safeLevelCount()) go("game", next, hp, ammo, score);
             else go("victory", score); 
         } 
     });
 });
 
+scene("waiting", () => {
+    window.__gameScene = "waiting";
+    initAudio();
+    setBackground(12, 16, 28);
+    document.getElementById("game-wrapper").style.backgroundColor = "rgb(12,16,28)";
+    updateNetBlockBanner();
+
+    add([text("63e.cz", { size: 28 }), pos(width() / 2, height() / 2 - 50), anchor("center"), color(0, 200, 255)]);
+    const label = add([
+        text("Čekám na připojení k masterovi…", { size: 18 }),
+        pos(width() / 2, height() / 2),
+        anchor("center"),
+        color(220, 220, 220)
+    ]);
+    const sub = add([
+        text("Hra začne až po sync stavu od hostitele", { size: 12 }),
+        pos(width() / 2, height() / 2 + 28),
+        anchor("center"),
+        color(140, 140, 160)
+    ]);
+
+    let askedAt = 0;
+    let hostWaitLogged = false;
+
+    // Global level-complete while waiting: jump straight into that level
+    window.handleLevelComplete = (nextLvlIdx) => {
+        nextLvlIdx = safeLevelIndex(nextLvlIdx);
+        slog("scene", "warn", "Level complete while waiting", { nextLvlIdx });
+        window.__forceEnemyFullResync = true;
+        if (nextLvlIdx < safeLevelCount()) go("game", nextLvlIdx, 6, 25, 0);
+        else go("victory", 0);
+    };
+
+    window.handleHostGameState = (senderId, state) => {
+        if (!state) return;
+        window.__hostGameState = { ...state, senderId };
+        slog("enemy", "warn", "Host state received in lobby", {
+            senderId,
+            lvl: state.lvl,
+            enemyCount: state.enemyCount,
+            enemies: Array.isArray(state.enemies) ? state.enemies.length : -1
+        });
+    };
+
+    window.handleEnemySync = (payload, senderId) => {
+        let enemies = payload;
+        let lvl = 0;
+        if (payload && !Array.isArray(payload) && Array.isArray(payload.enemies)) {
+            enemies = payload.enemies;
+            if (Number.isFinite(payload.lvl)) lvl = payload.lvl;
+        }
+        if (!Array.isArray(enemies)) return;
+        // Ignore empty while waiting — keep requesting
+        if (enemies.length === 0) return;
+        window.__hostGameState = {
+            lvl,
+            enemies,
+            enemyCount: enemies.length,
+            loot: payload && payload.loot,
+            senderId,
+            ts: Date.now()
+        };
+    };
+
+    onUpdate(() => {
+        updateNetBlockBanner();
+
+        // Master (or solo before peers): start immediately
+        if (getIsHost()) {
+            if (!hostWaitLogged) {
+                hostWaitLogged = true;
+                slog("scene", "info", "Master — leaving waiting lobby");
+            }
+            go("game", 0, 6, 25, 0);
+            return;
+        }
+
+        if (window.gameNetBlocked && !hasLiveP2P()) {
+            label.text = "HTTP Relay — čekám na WebRTC k masterovi…";
+            return;
+        }
+
+        if (!hasLiveP2P()) {
+            label.text = "Čekám na připojení k masterovi…";
+            sub.text = "WebRTC data channel ještě není otevřený";
+            return;
+        }
+
+        label.text = "Připojeno — čekám na stav hry od mastera…";
+        sub.text = "Level + nepřátelé synchronizuji z hostitele";
+
+        if (Date.now() - askedAt > 2500) {
+            askedAt = Date.now();
+            if (typeof window.requestEnemySync === "function") window.requestEnemySync();
+        }
+
+        const st = window.__hostGameState;
+        if (!st || !Number.isFinite(Number(st.lvl))) return;
+
+        const enemies = Array.isArray(st.enemies) ? st.enemies : [];
+        // Require an explicit host snapshot (enemyCount set by publishHostState).
+        // Do not enter on bare empty enemy-sync ticks without enemyCount.
+        if (typeof st.enemyCount !== "number") return;
+
+        window.__pendingEnemySnapshot = enemies;
+        window.__forceEnemyFullResync = true;
+        const lvl = safeLevelIndex(st.lvl);
+        slog("scene", "warn", "Lobby → game at host level", {
+            lvl,
+            enemies: enemies.length,
+            enemyCount: st.enemyCount,
+            reason: st.reason
+        });
+        go("game", lvl, 6, 25, Number(st.score) || 0);
+    });
+});
+
+// STARTER
+window.startGameKaboom = () => {
+    if (window.gameStarted) return;
+    if (!safeLevelCount()) {
+        const el = document.getElementById("crash-screen");
+        if (el) {
+            el.style.display = "block";
+            el.innerHTML = `<h1>Error</h1><pre>Mapy se nenačetly: LVL je prázdné. Ověř soubor map.js/maps.js a načti stránku bez cache.</pre>`;
+        }
+        return;
+    }
+    window.gameStarted = true;
+    initAudio();
+    // Everyone starts in lobby; master leaves immediately, clients wait for P2P + host state
+    go("waiting");
+};
+
+// Automaticky spustit, pokud bylo UI menu uz odkliknuto pres parametr
+const setupScreen = document.getElementById('setup-screen');
+if (setupScreen && setupScreen.style.display === 'none') {
+    window.startGameKaboom();
+}
+
 scene("lose", (lvlIdx, sc) => {
+    window.__gameScene = "lose";
     lvlIdx = safeLevelIndex(lvlIdx);
     setBackground(30,10,10); 
     document.getElementById('game-wrapper').style.backgroundColor = `rgb(30,10,10)`;
@@ -1240,9 +1483,10 @@ scene("lose", (lvlIdx, sc) => {
 });
 
 scene("victory", (sc) => {
+    window.__gameScene = "victory";
     setBackground(80,140,255); 
     document.getElementById('game-wrapper').style.backgroundColor = `rgb(80,140,255)`;
-    add([text("🏆 VÍTĚZSTVÍ! 🏆", {size:44}), pos(width()/2, 70), color(255,200,0), anchor("center")]); 
+    add([text("VÍTĚZSTVÍ!", {size:44}), pos(width()/2, 70), color(255,200,0), anchor("center")]); 
     add([text(`Konečné score: ${sc}`, {size:26}), pos(width()/2, 130), anchor("center")]);
     add([text("Díky za hraní!", {size:16}), pos(width()/2, 180), color(50,50,50), anchor("center")]);
     
@@ -1268,25 +1512,3 @@ scene("victory", (sc) => {
     
     onSceneLeave(() => { kE.cancel(); kS.cancel(); mM.cancel(); tS.cancel(); });
 });
-
-// STARTER
-window.startGameKaboom = () => {
-    if (window.gameStarted) return;
-    if (!safeLevelCount()) {
-        const el = document.getElementById("crash-screen");
-        if (el) {
-            el.style.display = "block";
-            el.innerHTML = `<h1>Error</h1><pre>Mapy se nenačetly: LVL je prázdné. Ověř soubor map.js/maps.js a načti stránku bez cache.</pre>`;
-        }
-        return;
-    }
-    window.gameStarted = true;
-    initAudio();
-    go("game", 0, 6, 25, 0);
-};
-
-// Automaticky spustit, pokud bylo UI menu uz odkliknuto pres parametr
-const setupScreen = document.getElementById('setup-screen');
-if (setupScreen && setupScreen.style.display === 'none') {
-    window.startGameKaboom();
-}

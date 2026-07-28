@@ -1173,7 +1173,7 @@ async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
     logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
 }
 
-const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync', 'game-need-sync']);
+const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync', 'game-need-sync', 'game-state']);
 const GAME_TTL = 5;
 
 // NETWORK BROADCAST HOOKS
@@ -1194,6 +1194,25 @@ window.broadcastEnemySync = (enemiesData) => {
     if (Object.keys(knownNodes).length === 0) return;
     sessionLogCounters.enemySyncOut++;
     routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
+};
+
+window.broadcastHostGameState = (state) => {
+    if (Object.keys(knownNodes).length === 0) return;
+    sessionLogCounters.enemySyncOut++;
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-state', sender: myId, payload: JSON.stringify(state) });
+    // Also keep legacy enemy-sync for older clients / in-game handlers
+    routeMessage({
+        id: generateMsgId(),
+        ttl: GAME_TTL,
+        type: 'enemy-sync',
+        sender: myId,
+        payload: JSON.stringify({
+            lvl: state.lvl,
+            enemies: state.enemies || [],
+            loot: state.loot || [],
+            enemyCount: state.enemyCount
+        })
+    });
 };
 
 window.broadcastEnemyHit = (eId, dmg) => {
@@ -1350,6 +1369,20 @@ async function processPayload(msg) {
         if (msg.sender !== myId && isDnsHost && typeof window.handleGameNeedSync === 'function') {
             sessionLog('enemy', 'info', 'Host received game-need-sync', { from: msg.sender });
             try { window.handleGameNeedSync(msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleGameNeedSync failed', { err: String(e) }); }
+        }
+    }
+    else if (msg.type === 'game-state') {
+        if (msg.sender !== myId && typeof window.handleHostGameState === 'function') {
+            try {
+                const state = JSON.parse(msg.payload);
+                sessionLog('enemy', 'warn', 'game-state in', {
+                    from: msg.sender,
+                    lvl: state && state.lvl,
+                    enemyCount: state && state.enemyCount,
+                    reason: state && state.reason
+                });
+                window.handleHostGameState(msg.sender, state);
+            } catch(e){ sessionLog('enemy', 'error', 'handleHostGameState failed', { err: String(e) }); }
         }
     }
     else if (msg.type === 'map-sync') {
