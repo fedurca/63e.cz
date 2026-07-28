@@ -1693,8 +1693,11 @@ function cleanupConnection(targetId, switchToHttp = false) {
     } else if (!isDnsHost && targetId === 'hub' && !isHttpRelayMode) {
         if (joinInterval) clearInterval(joinInterval); 
         
-        if (switchToHttp) {
+        if (switchToHttp === true) {
             startHttpRelayMode();
+        } else if (window.__skipIsolationOnce) {
+            window.__skipIsolationOnce = false;
+            sessionLog('peer', 'info', 'Hub cleaned without isolation (retry path)');
         } else {
             checkIsolation();
         }
@@ -1925,15 +1928,24 @@ setInterval(async () => {
     for (const [peerId, pc] of Object.entries(allConnections)) {
         if (!pc) continue;
         
-        if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+        // Only time out while ICE is actively checking — NOT in "new"
+        // (initiator stays in "new" until the host answer arrives).
+        if (pc.iceConnectionState === 'checking') {
             if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
             
-            if (Date.now() - pc.checkingStartTime > 25000) {
-                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error', myId);
+            if (Date.now() - pc.checkingStartTime > 45000) {
+                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo v ICE checking. Ukončuji.`, 'error', myId);
+                sessionLog('peer', 'warn', 'ICE checking timeout', { peerId });
                 
-                if (peerId === 'hub' && !isDnsHost && !isHttpRelayMode) {
-                    logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay", myId);
-                    cleanupConnection(peerId, true);
+                if (peerId === 'hub' && !isDnsHost) {
+                    const inLobby = (typeof window.__gameScene !== 'undefined' && window.__gameScene === 'waiting');
+                    window.__skipIsolationOnce = true;
+                    cleanupConnection(peerId, !inLobby);
+                    if (inLobby || isHttpRelayMode) {
+                        setTimeout(() => {
+                            if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('ice-checking-timeout');
+                        }, 1200);
+                    }
                 } else {
                     if (peerId === 'hub') blacklistedHubTimeout = Date.now() + 30000;
                     cleanupConnection(peerId);
@@ -2321,19 +2333,38 @@ async function startDnsHostLoop() {
 async function joinViaDns() {
     DOM.uiRole.innerText = "Spojuji se (WebRTC)..."; 
     currentSessionId = generateMsgId(); 
-    writeSignal(`offer-${myId}`, { consumed: true, ts: 0 }); 
+    // Clear stale offer/answer slots for a fresh handshake
+    await writeSignal(`offer-${myId}`, { consumed: true, ts: 0 });
+    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
+    if (connections['hub']) {
+        try { cleanupConnection('hub', false); } catch (e) {}
+    }
     await createP2PNode('hub', true, true, currentSessionId); 
     
     if (joinInterval) clearInterval(joinInterval); 
     let pokusy = 0; 
     globalKnownHubId = null; 
+    sessionLog('peer', 'info', 'joinViaDns started', { sid: currentSessionId });
     
     joinInterval = setInterval(async () => {
         pokusy++;
-        if (pokusy > 12) { 
-            clearInterval(joinInterval); 
-            logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
-            cleanupConnection('hub', true); 
+        // ~60s of waiting for host answer before HTTP / retry
+        if (pokusy > 20) { 
+            clearInterval(joinInterval);
+            joinInterval = null;
+            const inLobby = (typeof window.__gameScene !== 'undefined' && window.__gameScene === 'waiting');
+            logDebug(`[API] Host neodpověděl na Offer včas.`, "log-relay", myId);
+            sessionLog('peer', 'warn', 'joinViaDns answer timeout', { pokusy, inLobby });
+            if (inLobby) {
+                window.__skipIsolationOnce = true;
+                cleanupConnection('hub', false);
+                setTimeout(() => {
+                    if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('answer-timeout-lobby');
+                }, 1500);
+            } else {
+                logDebug(`[API] Přecházím na HTTP Relay!`, "log-relay", myId);
+                cleanupConnection('hub', true);
+            }
             return; 
         }
         
@@ -2352,7 +2383,7 @@ async function joinViaDns() {
         
         const answerPayload = await readSignal(`answer-${myId}`);
         if (answerPayload && !answerPayload.consumed && connections['hub']) {
-            if (answerPayload.ts && (Date.now() - answerPayload.ts > 30000)) return;
+            if (answerPayload.ts && (Date.now() - answerPayload.ts > 45000)) return;
             
             const answerSid = answerPayload.sid ? answerPayload.sid : null; 
             if (answerSid !== currentSessionId) return; 
@@ -2361,16 +2392,62 @@ async function joinViaDns() {
             if (answerData && answerData.sdp && answerData.type) {
                 if (connections['hub'].signalingState !== 'have-local-offer') return; 
                 clearInterval(joinInterval);
+                joinInterval = null;
                 
                 try { 
                     await connections['hub'].setRemoteDescription(new RTCSessionDescription({ type: String(answerData.type).toLowerCase().trim(), sdp: String(answerData.sdp) })); 
-                    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 }); 
+                    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
+                    sessionLog('peer', 'info', 'Host answer applied', { sid: currentSessionId });
+                    logDebug(`[WebRTC] Answer od hosta aplikován, čekám na ICE…`, 'success', myId);
                 } catch(e) { 
                     logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error', myId); 
                 }
             }
         }
     }, 3000);
+}
+
+let joinRetryLock = false;
+window.retryJoinMaster = async function(reason) {
+    if (isDnsHost) return false;
+    if (joinRetryLock) return false;
+    if (channels['hub'] && channels['hub'].readyState === 'open') return false;
+    joinRetryLock = true;
+    try {
+        sessionLog('peer', 'warn', 'retryJoinMaster', { reason: reason || 'manual' });
+        logDebug(`[P2P] Nový pokus o spojení s masterem (${reason || 'manual'})…`, 'webrtc', myId);
+        if (httpRelayInterval) {
+            clearInterval(httpRelayInterval);
+            httpRelayInterval = null;
+        }
+        isHttpRelayMode = false;
+        window.isHttpRelayMode = false;
+        window.gameNetBlocked = false;
+        updateNetBlockBannerSafe();
+        if (joinInterval) {
+            clearInterval(joinInterval);
+            joinInterval = null;
+        }
+        if (connections['hub'] || channels['hub']) {
+            try {
+                window.__skipIsolationOnce = true;
+                cleanupConnection('hub', false);
+            } catch (e) {}
+        }
+        await joinViaDns();
+        return true;
+    } catch (e) {
+        sessionLog('peer', 'error', 'retryJoinMaster failed', { err: String(e) });
+        return false;
+    } finally {
+        setTimeout(() => { joinRetryLock = false; }, 4000);
+    }
+};
+
+function updateNetBlockBannerSafe() {
+    if (typeof window.updateNetBlockBanner === 'function') {
+        try { window.updateNetBlockBanner(); } catch (e) {}
+    }
 }
 
 function startHttpRelayMode() {
@@ -2380,6 +2457,15 @@ function startHttpRelayMode() {
     sessionLog('relay', 'warn', 'Entered HTTP Relay mode — game sync disabled');
     unlockChat(); 
     if (typeof window.triggerHttpBlock === 'function') window.triggerHttpBlock();
+
+    // Keep trying WebRTC in background so lobby / game can recover
+    if (!isDnsHost) {
+        setTimeout(() => {
+            if (isHttpRelayMode && !(channels['hub'] && channels['hub'].readyState === 'open')) {
+                if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('http-auto-rejoin');
+            }
+        }, 8000);
+    }
     
     setTimeout(async () => { 
         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 

@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=20260728-wait26";
+import { LVL } from "./maps.js?v=20260728-lobby27";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,7 +62,7 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-window.__GAME_BUILD = "p2p-v26-wait-master-20260728";
+window.__GAME_BUILD = "p2p-v27-lobby-retry-20260728";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 window.gameNetBlocked = false;
 window.__lastEnemySyncMs = 0;
@@ -116,11 +116,12 @@ function updateNetBlockBanner() {
     const http = window.gameNetBlocked || (typeof window.isHttpRelayMode !== 'undefined' && window.isHttpRelayMode);
     if (http && !hasLiveP2P()) {
         el.classList.add('visible');
-        el.textContent = 'HTTP Relay: herní sync nefunguje. Čekám na WebRTC P2P…';
+        el.textContent = 'HTTP Relay: herní sync nefunguje. Opakuji WebRTC k masterovi…';
     } else {
         el.classList.remove('visible');
     }
 }
+window.updateNetBlockBanner = updateNetBlockBanner;
 
 window.onGameNetReady = (reason) => {
     window.__forceEnemyFullResync = true;
@@ -1338,7 +1339,7 @@ scene("waiting", () => {
         color(220, 220, 220)
     ]);
     const sub = add([
-        text("Hra začne až po sync stavu od hostitele", { size: 12 }),
+        text("Mezerník / klepnutí = zkusit spojení znovu", { size: 12 }),
         pos(width() / 2, height() / 2 + 28),
         anchor("center"),
         color(140, 140, 160)
@@ -1346,6 +1347,18 @@ scene("waiting", () => {
 
     let askedAt = 0;
     let hostWaitLogged = false;
+    let lastRetryAt = Date.now();
+    let retryCount = 0;
+
+    const doRetry = (why) => {
+        retryCount++;
+        lastRetryAt = Date.now();
+        slog("peer", "warn", "Lobby retry join", { why, retryCount });
+        if (typeof window.retryJoinMaster === "function") window.retryJoinMaster(why);
+    };
+
+    onKeyPress("space", () => doRetry("lobby-space"));
+    onClick(() => doRetry("lobby-click"));
 
     // Global level-complete while waiting: jump straight into that level
     window.handleLevelComplete = (nextLvlIdx) => {
@@ -1370,18 +1383,21 @@ scene("waiting", () => {
     window.handleEnemySync = (payload, senderId) => {
         let enemies = payload;
         let lvl = 0;
+        let enemyCount = null;
         if (payload && !Array.isArray(payload) && Array.isArray(payload.enemies)) {
             enemies = payload.enemies;
             if (Number.isFinite(payload.lvl)) lvl = payload.lvl;
+            if (Number.isFinite(payload.enemyCount)) enemyCount = payload.enemyCount;
         }
         if (!Array.isArray(enemies)) return;
-        // Ignore empty while waiting — keep requesting
-        if (enemies.length === 0) return;
+        if (enemies.length === 0 && enemyCount == null) return;
         window.__hostGameState = {
             lvl,
             enemies,
-            enemyCount: enemies.length,
+            enemyCount: enemyCount != null ? enemyCount : enemies.length,
             loot: payload && payload.loot,
+            scene: "game",
+            reason: "enemy-sync-lobby",
             senderId,
             ts: Date.now()
         };
@@ -1390,7 +1406,6 @@ scene("waiting", () => {
     onUpdate(() => {
         updateNetBlockBanner();
 
-        // Master (or solo before peers): start immediately
         if (getIsHost()) {
             if (!hostWaitLogged) {
                 hostWaitLogged = true;
@@ -1400,14 +1415,21 @@ scene("waiting", () => {
             return;
         }
 
-        if (window.gameNetBlocked && !hasLiveP2P()) {
-            label.text = "HTTP Relay — čekám na WebRTC k masterovi…";
-            return;
-        }
+        const http = !!(window.gameNetBlocked || (typeof window.isHttpRelayMode !== "undefined" && window.isHttpRelayMode));
+        const p2p = hasLiveP2P();
 
-        if (!hasLiveP2P()) {
-            label.text = "Čekám na připojení k masterovi…";
-            sub.text = "WebRTC data channel ještě není otevřený";
+        if (!p2p) {
+            const waitSec = Math.max(0, Math.ceil((12000 - (Date.now() - lastRetryAt)) / 1000));
+            if (http) {
+                label.text = "WebRTC selhalo — opakuji spojení s masterem…";
+                sub.text = `Pokus ${retryCount + 1} · další za ${waitSec}s · klepni / Mezerník = hned`;
+            } else {
+                label.text = "Čekám na připojení k masterovi…";
+                sub.text = `WebRTC ještě není hotové · pokus ${retryCount + 1} · klepni = znovu`;
+            }
+            if (Date.now() - lastRetryAt > 12000) {
+                doRetry(http ? "lobby-http-auto" : "lobby-wait-auto");
+            }
             return;
         }
 
@@ -1421,12 +1443,9 @@ scene("waiting", () => {
 
         const st = window.__hostGameState;
         if (!st || !Number.isFinite(Number(st.lvl))) return;
-
-        const enemies = Array.isArray(st.enemies) ? st.enemies : [];
-        // Require an explicit host snapshot (enemyCount set by publishHostState).
-        // Do not enter on bare empty enemy-sync ticks without enemyCount.
         if (typeof st.enemyCount !== "number") return;
 
+        const enemies = Array.isArray(st.enemies) ? st.enemies : [];
         window.__pendingEnemySnapshot = enemies;
         window.__forceEnemyFullResync = true;
         const lvl = safeLevelIndex(st.lvl);
