@@ -46,25 +46,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    const dlBtn = document.getElementById('btn-download-session-log');
-    if (dlBtn) {
-        dlBtn.addEventListener('click', () => {
-            if (typeof window.downloadSessionLog === 'function') window.downloadSessionLog('json');
-        });
-    }
-    const dlLastBtn = document.getElementById('btn-download-last-session-log');
-    if (dlLastBtn) {
-        dlLastBtn.addEventListener('click', () => {
-            if (typeof window.downloadLastSessionLog === 'function') window.downloadLastSessionLog('json');
-        });
-    }
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'F4') {
-            e.preventDefault();
-            if (typeof window.downloadSessionLog === 'function') window.downloadSessionLog('json');
-        }
-    });
-
     DOM.topoCanvas.addEventListener('mousemove', (e) => { 
         const mouseX = e.offsetX; 
         const mouseY = e.offsetY; 
@@ -247,8 +228,6 @@ window.chat_isHost = () => isDnsHost;
 let connections = {}; 
 let channels = {}; 
 let networkGraph = { root: myId, edges: [] }; 
-window.chat_getNetworkRoot = () => networkGraph.root;
-window.networkGraph = networkGraph; 
 let seenMessages = new Set(); 
 let knownNodes = {}; 
 window.chat_knownNodes = knownNodes; 
@@ -486,157 +465,6 @@ function dekomprimovat(b64) {
 }
 
 let logBuffer = [];
-const SESSION_LOG_MAX = 5000;
-const SESSION_STORAGE_KEY = 'p2p_last_session_log';
-let playSessionId = null;
-let sessionLogEntries = [];
-let sessionLogMeta = null;
-let sessionLogCounters = { gameSyncIn: 0, gameSyncOut: 0, enemySyncIn: 0, enemySyncOut: 0, shootIn: 0, shootOut: 0, httpDrops: 0, ttlDrops: 0 };
-
-function ensurePlaySession() {
-    if (playSessionId) return playSessionId;
-    playSessionId = (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : ('sess_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8));
-    sessionLogMeta = {
-        sessionId: playSessionId,
-        startedAt: new Date().toISOString(),
-        build: (typeof window !== 'undefined' && window.__GAME_BUILD) || 'unknown',
-        myId: typeof myId !== 'undefined' ? myId : null,
-        userAgent: (typeof navigator !== 'undefined') ? navigator.userAgent : '',
-        url: (typeof location !== 'undefined') ? location.href : ''
-    };
-    sessionLog('session', 'info', 'Session started', sessionLogMeta);
-    return playSessionId;
-}
-
-function sessionLog(cat, level, msg, data) {
-    try {
-        ensurePlaySession();
-        const entry = {
-            t: new Date().toISOString(),
-            ms: (typeof performance !== 'undefined') ? Math.round(performance.now()) : Date.now(),
-            cat: cat || 'app',
-            level: level || 'info',
-            msg: String(msg || ''),
-            data: data === undefined ? undefined : data
-        };
-        sessionLogEntries.push(entry);
-        if (sessionLogEntries.length > SESSION_LOG_MAX) {
-            sessionLogEntries.splice(0, sessionLogEntries.length - SESSION_LOG_MAX);
-        }
-        if (level !== 'trace' && (level === 'warn' || level === 'error' || cat === 'host' || cat === 'relay' || cat === 'combat' || cat === 'enemy' || cat === 'peer')) {
-            const prefix = `[${cat}/${level}]`;
-            if (DOM.debugLog) {
-                const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
-                const extra = data ? ' ' + (typeof data === 'string' ? data : JSON.stringify(data)) : '';
-                DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time}]</span> <span class="log-${level === 'error' ? 'error' : (level === 'warn' ? 'error' : 'sync')}">${prefix} ${escapeHTML(entry.msg)}${escapeHTML(extra).slice(0, 180)}</span></div>`;
-                DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight;
-            }
-        }
-    } catch (e) {}
-}
-window.sessionLog = sessionLog;
-
-function getSessionLogDump() {
-    ensurePlaySession();
-    let role = 'Spoke';
-    if (isDnsHost) role = 'Master';
-    else if (isHttpRelayMode) role = 'HTTP Relay';
-    return {
-        meta: {
-            ...sessionLogMeta,
-            exportedAt: new Date().toISOString(),
-            myId: typeof myId !== 'undefined' ? myId : null,
-            myName: typeof myName !== 'undefined' ? myName : null,
-            role,
-            isDnsHost: !!isDnsHost,
-            isHttpRelayMode: !!isHttpRelayMode,
-            networkRoot: networkGraph && networkGraph.root,
-            knownNodes: Object.keys(knownNodes || {}),
-            openChannels: Object.keys(channels || {}).filter(k => channels[k] && channels[k].readyState === 'open'),
-            counters: { ...sessionLogCounters },
-            entryCount: sessionLogEntries.length
-        },
-        entries: sessionLogEntries.slice()
-    };
-}
-window.getSessionLogDump = getSessionLogDump;
-
-function sessionLogToText(dump) {
-    const lines = [];
-    lines.push(`# 63e.cz session log ${dump.meta.sessionId}`);
-    lines.push(`# started ${dump.meta.startedAt} exported ${dump.meta.exportedAt}`);
-    lines.push(`# role=${dump.meta.role} myId=${dump.meta.myId} build=${dump.meta.build}`);
-    lines.push(`# nodes=${(dump.meta.knownNodes || []).join(',')} channels=${(dump.meta.openChannels || []).join(',')}`);
-    lines.push(`# counters=${JSON.stringify(dump.meta.counters || {})}`);
-    lines.push('');
-    for (const e of dump.entries) {
-        const dataStr = e.data !== undefined ? ' ' + JSON.stringify(e.data) : '';
-        lines.push(`[${e.t}] [${e.cat}/${e.level}] ${e.msg}${dataStr}`);
-    }
-    return lines.join('\n');
-}
-
-function downloadSessionLog(format) {
-    const dump = getSessionLogDump();
-    const fmt = (format === 'txt') ? 'txt' : 'json';
-    const body = fmt === 'txt' ? sessionLogToText(dump) : JSON.stringify(dump, null, 2);
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `63e-session-${dump.meta.sessionId || 'unknown'}-${stamp}.${fmt}`;
-    const blob = new Blob([body], { type: fmt === 'txt' ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-    sessionLog('session', 'info', 'Session log downloaded', { format: fmt, entries: dump.entries.length });
-    return filename;
-}
-window.downloadSessionLog = downloadSessionLog;
-
-function persistSessionLogSnapshot() {
-    try {
-        const dump = getSessionLogDump();
-        const slim = {
-            meta: dump.meta,
-            entries: dump.entries.slice(-1000)
-        };
-        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(slim));
-    } catch (e) {}
-}
-
-window.downloadLastSessionLog = function(format) {
-    try {
-        const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
-        if (!raw) {
-            alert('Žádný uložený log minulé session.');
-            return null;
-        }
-        const dump = JSON.parse(raw);
-        const fmt = (format === 'txt') ? 'txt' : 'json';
-        const body = fmt === 'txt' ? sessionLogToText(dump) : JSON.stringify(dump, null, 2);
-        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const filename = `63e-last-session-${(dump.meta && dump.meta.sessionId) || 'unknown'}-${stamp}.${fmt}`;
-        const blob = new Blob([body], { type: fmt === 'txt' ? 'text/plain;charset=utf-8' : 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        return filename;
-    } catch (e) {
-        alert('Nepodařilo se načíst minulou session.');
-        return null;
-    }
-};
-
 function flushLogs() {
     if (logBuffer.length === 0) return;
     if (Date.now() < apiBackoffUntil) return;
@@ -646,11 +474,7 @@ function flushLogs() {
 }
 setInterval(flushLogs, 5000);
 window.addEventListener('beforeunload', () => {
-    persistSessionLogSnapshot();
     if (logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
-});
-window.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') persistSessionLogSnapshot();
 });
 
 function logDebug(msg, type = 'info', sourceId = null) { 
@@ -659,9 +483,6 @@ function logDebug(msg, type = 'info', sourceId = null) {
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
         DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
         DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight; 
-        if (DOM.debugLog.children.length > 800) {
-            while (DOM.debugLog.children.length > 600) DOM.debugLog.removeChild(DOM.debugLog.firstChild);
-        }
     }
     try {
         let currentRole = "Spoke";
@@ -671,7 +492,6 @@ function logDebug(msg, type = 'info', sourceId = null) {
         const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
         logBuffer.push({ message: [prefix, logData], type: type, time: Date.now() });
         if (logBuffer.length >= 20) flushLogs();
-        sessionLog('net', type === 'error' ? 'error' : (type === 'sync' ? 'info' : 'info'), String(msg).replace(/<[^>]+>/g, ''), { sourceId: idStr, role: currentRole, uiType: type });
     } catch(e) { }
 }
 
@@ -1173,97 +993,56 @@ async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
     logDebug(`[FILE] Bloky pro soubor ${fileId} odeslány na uzel ${targetId}.`, 'success', myId);
 }
 
-const GAME_MSG_TYPES = new Set(['game-sync', 'enemy-sync', 'map-sync', 'game-shoot', 'game-hit', 'enemy-hit', 'game-next', 'loot-pickup', 'loot-sync', 'game-need-sync', 'game-state']);
-const GAME_TTL = 5;
-
 // NETWORK BROADCAST HOOKS
 window.broadcastGameSync = (data) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLogCounters.gameSyncOut++;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.broadcastGameShoot = (data) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLogCounters.shootOut++;
-    sessionLog('combat', 'info', 'shoot out', { x: data && data.x, y: data && data.y, lvl: data && data.lvl });
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-shoot', sender: myId, payload: JSON.stringify(data) });
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-shoot', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.broadcastEnemySync = (enemiesData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLogCounters.enemySyncOut++;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
-};
-
-window.broadcastHostGameState = (state) => {
-    if (Object.keys(knownNodes).length === 0) return;
-    sessionLogCounters.enemySyncOut++;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-state', sender: myId, payload: JSON.stringify(state) });
-    // Also keep legacy enemy-sync for older clients / in-game handlers
-    routeMessage({
-        id: generateMsgId(),
-        ttl: GAME_TTL,
-        type: 'enemy-sync',
-        sender: myId,
-        payload: JSON.stringify({
-            lvl: state.lvl,
-            enemies: state.enemies || [],
-            loot: state.loot || [],
-            enemyCount: state.enemyCount
-        })
-    });
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
 };
 
 window.broadcastEnemyHit = (eId, dmg) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLog('combat', 'info', 'enemy-hit out', { eId, dmg });
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'enemy-hit', sender: myId, eId: eId, dmg: dmg });
 };
 
 window.broadcastMapSync = (mapData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
 };
 
 window.broadcastPlayerHit = (targetId, shooterId, isFatal) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLog('combat', 'info', 'player-hit out', { targetId, shooterId, isFatal });
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-hit', sender: myId, target: targetId, shooter: shooterId, fatal: isFatal });
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'game-hit', sender: myId, target: targetId, shooter: shooterId, fatal: isFatal });
 };
 
 window.broadcastLevelComplete = (nextLvlIdx) => {
     if (Object.keys(knownNodes).length === 0) return;
-    sessionLog('scene', 'info', 'level-complete broadcast', { nextLvlIdx });
     routeMessage({ id: generateMsgId(), ttl: 10, type: 'game-next', sender: myId, lvl: nextLvlIdx });
 };
 
 window.broadcastLootPickup = (lId) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-pickup', sender: myId, lId: lId });
+    routeMessage({ id: generateMsgId(), ttl: 5, type: 'loot-pickup', sender: myId, lId: lId });
 };
 
 window.broadcastLootSync = (activeLootIds) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
-};
-
-window.requestEnemySync = () => {
-    if (isDnsHost) return;
-    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-need-sync', sender: myId });
-    sessionLog('enemy', 'info', 'requestEnemySync sent');
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
 };
 
 function routeMessage(msgObj, sourceChannel = null) {
-    if (GAME_MSG_TYPES.has(msgObj.type) && sourceChannel === 'http') {
-        sessionLogCounters.httpDrops++;
-        if (sessionLogCounters.httpDrops <= 20 || sessionLogCounters.httpDrops % 50 === 0) {
-            sessionLog('relay', 'warn', 'Dropped game msg on HTTP relay', { type: msgObj.type, sender: msgObj.sender, drops: sessionLogCounters.httpDrops });
-        }
-        return;
-    }
+    if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'enemy-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
 
-    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && !GAME_MSG_TYPES.has(msgObj.type)) { 
+    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id); 
         if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1271,17 +1050,8 @@ function routeMessage(msgObj, sourceChannel = null) {
     
     processPayload(msgObj);
     
-    const ttlBefore = msgObj.ttl;
     msgObj.ttl -= 1; 
-    if (msgObj.ttl <= 0) {
-        if (GAME_MSG_TYPES.has(msgObj.type) && sourceChannel && sourceChannel !== null) {
-            sessionLogCounters.ttlDrops++;
-            if (sessionLogCounters.ttlDrops <= 30 || sessionLogCounters.ttlDrops % 100 === 0) {
-                sessionLog('route', 'warn', 'TTL exhausted, not forwarding', { type: msgObj.type, sender: msgObj.sender, ttlBefore, sourceChannel, drops: sessionLogCounters.ttlDrops });
-            }
-        }
-        return;
-    } 
+    if (msgObj.ttl <= 0) return; 
     
     if (!msgObj.path) msgObj.path = []; 
     msgObj.path.push(myId);
@@ -1292,7 +1062,6 @@ function routeMessage(msgObj, sourceChannel = null) {
                 const str = JSON.stringify(msgObj); 
                 if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
                     logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId); 
-                    sessionLog('peer', 'warn', 'Channel buffer high', { bufferedKB: Math.round(ch.bufferedAmount/1024), type: msgObj.type });
                 }
                 ch.send(str); 
             } catch(err) {} 
@@ -1300,12 +1069,12 @@ function routeMessage(msgObj, sourceChannel = null) {
     });
 
     if (isHttpRelayMode) { 
-        if (sourceChannel !== 'http' && !GAME_MSG_TYPES.has(msgObj.type)) {
+        if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
             addToHttpOutbox('hub', msgObj); 
         }
     } else if (isDnsHost) { 
         knownHttpClients.forEach(clientId => { 
-            if (clientId !== msgObj.sender && clientId !== sourceChannel && !GAME_MSG_TYPES.has(msgObj.type)) { 
+            if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
                 addToHttpOutbox(clientId, msgObj); 
             } 
         }); 
@@ -1333,11 +1102,6 @@ async function processPayload(msg) {
                 const teleStr = formatTelemetry(msg.tele); 
                 renderMessage('System', `${safeName} (${msg.sender}) se připojil(a) do hry a sítě.<br><span style="font-size: 0.65rem; color: #888;">${teleStr}</span>`, 'system', Date.now(), true, null, true, null); 
                 logDebug(`[TELEMETRIE] ${msg.name} [ID: ${msg.sender}] připojen.`, 'announce', msg.sender); 
-                if (isDnsHost && typeof window.handleGameNeedSync === 'function') {
-                    setTimeout(() => {
-                        try { window.handleGameNeedSync(msg.sender); } catch (e) {}
-                    }, 400);
-                }
             }
             
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
@@ -1349,40 +1113,17 @@ async function processPayload(msg) {
     } 
     else if (msg.type === 'game-sync') {
         if (msg.sender !== myId && typeof window.handleGameSync === 'function') {
-            sessionLogCounters.gameSyncIn++;
-            try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){ sessionLog('sync', 'error', 'handleGameSync failed', { err: String(e) }); }
+            try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){}
         }
     }
     else if (msg.type === 'game-shoot') {
         if (msg.sender !== myId && typeof window.handleGameShoot === 'function') {
-            sessionLogCounters.shootIn++;
-            try { window.handleGameShoot(msg.sender, JSON.parse(msg.payload)); } catch(e){ sessionLog('combat', 'error', 'handleGameShoot failed', { err: String(e) }); }
+            try { window.handleGameShoot(msg.sender, JSON.parse(msg.payload)); } catch(e){}
         }
     }
     else if (msg.type === 'enemy-sync') {
         if (msg.sender !== myId && typeof window.handleEnemySync === 'function') {
-            sessionLogCounters.enemySyncIn++;
-            try { window.handleEnemySync(JSON.parse(msg.payload), msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleEnemySync failed', { err: String(e) }); }
-        }
-    }
-    else if (msg.type === 'game-need-sync') {
-        if (msg.sender !== myId && isDnsHost && typeof window.handleGameNeedSync === 'function') {
-            sessionLog('enemy', 'info', 'Host received game-need-sync', { from: msg.sender });
-            try { window.handleGameNeedSync(msg.sender); } catch(e){ sessionLog('enemy', 'error', 'handleGameNeedSync failed', { err: String(e) }); }
-        }
-    }
-    else if (msg.type === 'game-state') {
-        if (msg.sender !== myId && typeof window.handleHostGameState === 'function') {
-            try {
-                const state = JSON.parse(msg.payload);
-                sessionLog('enemy', 'warn', 'game-state in', {
-                    from: msg.sender,
-                    lvl: state && state.lvl,
-                    enemyCount: state && state.enemyCount,
-                    reason: state && state.reason
-                });
-                window.handleHostGameState(msg.sender, state);
-            } catch(e){ sessionLog('enemy', 'error', 'handleHostGameState failed', { err: String(e) }); }
+            try { window.handleEnemySync(JSON.parse(msg.payload)); } catch(e){}
         }
     }
     else if (msg.type === 'map-sync') {
@@ -1396,8 +1137,7 @@ async function processPayload(msg) {
         }
     }
     else if (msg.type === 'enemy-hit') {
-        // Shooter already applied damage locally; skip self to avoid double HP subtract
-        if (msg.sender !== myId && typeof window.handleEnemyHit === 'function') {
+        if (typeof window.handleEnemyHit === 'function') {
             window.handleEnemyHit(msg.eId, msg.dmg);
         }
     }
@@ -1525,7 +1265,6 @@ async function processPayload(msg) {
     } 
     else if (msg.type === 'topo-sync') {
         networkGraph = msg.graph;
-        window.networkGraph = networkGraph;
         if (!isDnsHost) { 
             const now = Date.now(); 
             if (msg.graph.root && knownNodes[msg.graph.root]) {
@@ -1693,11 +1432,8 @@ function cleanupConnection(targetId, switchToHttp = false) {
     } else if (!isDnsHost && targetId === 'hub' && !isHttpRelayMode) {
         if (joinInterval) clearInterval(joinInterval); 
         
-        if (switchToHttp === true) {
+        if (switchToHttp) {
             startHttpRelayMode();
-        } else if (window.__skipIsolationOnce) {
-            window.__skipIsolationOnce = false;
-            sessionLog('peer', 'info', 'Hub cleaned without isolation (retry path)');
         } else {
             checkIsolation();
         }
@@ -1810,50 +1546,16 @@ async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) 
     }
 }
 
-function exitHttpRelayForP2P(reason) {
-    if (!isHttpRelayMode && !window.gameNetBlocked) return;
-    if (httpRelayInterval) {
-        clearInterval(httpRelayInterval);
-        httpRelayInterval = null;
-    }
-    isHttpRelayMode = false;
-    window.isHttpRelayMode = false;
-    window.gameNetBlocked = false;
-    httpOutbox = {};
-    sessionLog('relay', 'info', 'Left HTTP Relay — P2P ready', { reason: reason || 'p2p' });
-    logDebug(`[P2P] HTTP Relay vypnut (${reason || 'p2p'}). Herní sync znovu aktivní.`, 'success', myId);
-    if (typeof window.onGameNetReady === 'function') {
-        try { window.onGameNetReady(reason || 'p2p'); } catch (e) {}
-    }
-}
-window.chat_hasOpenHub = () => !!(channels['hub'] && channels['hub'].readyState === 'open');
-window.chat_exitHttpRelayForP2P = exitHttpRelayForP2P;
-
 function bindDataChannel(channel, targetId) {
     const setupChannel = async () => { 
         channels[targetId] = channel; 
         updateDebugStats('peers', Object.keys(channels).length); 
         unlockChat(); 
-        logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId);
-        sessionLog('peer', 'info', 'Data channel open', { targetId, wasHttp: isHttpRelayMode });
-
-        if (targetId === 'hub' || isDnsHost) {
-            exitHttpRelayForP2P('datachannel:' + targetId);
-            if (joinInterval) {
-                clearInterval(joinInterval);
-                joinInterval = null;
-            }
-        }
+        logDebug(`P2P Spojeno s ${targetId} 🚀`, 'success', myId); 
         
         setTimeout(async () => { 
             const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
-            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
-
-            // Ask host for immediate enemy/loot snapshot (late join / post-HTTP recovery)
-            if (!isDnsHost && targetId === 'hub') {
-                routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-need-sync', sender: myId });
-                sessionLog('enemy', 'info', 'Requested game-need-sync from hub');
-            }
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
             
             if (!isDnsHost) {
                 setTimeout(() => { 
@@ -1928,24 +1630,15 @@ setInterval(async () => {
     for (const [peerId, pc] of Object.entries(allConnections)) {
         if (!pc) continue;
         
-        // Only time out while ICE is actively checking — NOT in "new"
-        // (initiator stays in "new" until the host answer arrives).
-        if (pc.iceConnectionState === 'checking') {
+        if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
             if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
             
-            if (Date.now() - pc.checkingStartTime > 45000) {
-                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo v ICE checking. Ukončuji.`, 'error', myId);
-                sessionLog('peer', 'warn', 'ICE checking timeout', { peerId });
+            if (Date.now() - pc.checkingStartTime > 25000) {
+                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error', myId);
                 
-                if (peerId === 'hub' && !isDnsHost) {
-                    const inLobby = (typeof window.__gameScene !== 'undefined' && window.__gameScene === 'waiting');
-                    window.__skipIsolationOnce = true;
-                    cleanupConnection(peerId, !inLobby);
-                    if (inLobby || isHttpRelayMode) {
-                        setTimeout(() => {
-                            if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('ice-checking-timeout');
-                        }, 1200);
-                    }
+                if (peerId === 'hub' && !isDnsHost && !isHttpRelayMode) {
+                    logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay", myId);
+                    cleanupConnection(peerId, true);
                 } else {
                     if (peerId === 'hub') blacklistedHubTimeout = Date.now() + 30000;
                     cleanupConnection(peerId);
@@ -2115,7 +1808,6 @@ async function fullResetAndReconnect() {
     appSessionTime = 0; 
     currentSessionId = null; 
     
-    sessionLog('host', 'warn', 'fullResetAndReconnect start', { wasHost: isDnsHost, http: isHttpRelayMode });
     logDebug("Provádím kompletní reset...", "info", myId); 
     window.endVideoCall(true);
     
@@ -2131,13 +1823,11 @@ async function fullResetAndReconnect() {
     knownNodes = {}; 
     window.chat_knownNodes = knownNodes;
     networkGraph = { root: null, edges: [] }; 
-    window.networkGraph = networkGraph; 
     processingOffers.clear(); 
     peerStats = {}; 
     isDnsHost = false; 
     isHttpRelayMode = false; 
     window.isHttpRelayMode = false;
-    window.gameNetBlocked = false;
     knownHttpClients.clear(); 
     httpOutbox = {}; 
     drawnEdges = []; 
@@ -2204,12 +1894,6 @@ window.initSystem = async function() {
     DOM.setupScreen.style.display = 'none'; 
     loadHistory(); 
     await initCrypto();
-    ensurePlaySession();
-    if (sessionLogMeta) {
-        sessionLogMeta.myId = myId;
-        sessionLogMeta.build = window.__GAME_BUILD || sessionLogMeta.build;
-    }
-    sessionLog('session', 'info', 'initSystem', { myId, myName });
     
     const hostAlive = await readSignal('host-alive'); 
     const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
@@ -2217,10 +1901,8 @@ window.initSystem = async function() {
     if (typeof window.startGameKaboom === "function") window.startGameKaboom();
 
     if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
-        sessionLog('host', 'info', 'Joining existing host', { hostId: hostAlive.id });
         joinViaDns(); 
     } else {
-        sessionLog('host', 'info', 'No live host, starting Master loop');
         startDnsHostLoop();
     }
 };
@@ -2228,9 +1910,6 @@ window.initSystem = async function() {
 async function startDnsHostLoop() {
     isDnsHost = true; 
     networkGraph.root = myId; 
-    window.networkGraph = networkGraph;
-    window.gameNetBlocked = false;
-    sessionLog('host', 'info', 'Became Master (DNS host)', { myId });
     unlockChat(); 
     
     await writeSignal('queue', []); 
@@ -2333,38 +2012,19 @@ async function startDnsHostLoop() {
 async function joinViaDns() {
     DOM.uiRole.innerText = "Spojuji se (WebRTC)..."; 
     currentSessionId = generateMsgId(); 
-    // Clear stale offer/answer slots for a fresh handshake
-    await writeSignal(`offer-${myId}`, { consumed: true, ts: 0 });
-    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
-    if (connections['hub']) {
-        try { cleanupConnection('hub', false); } catch (e) {}
-    }
+    writeSignal(`offer-${myId}`, { consumed: true, ts: 0 }); 
     await createP2PNode('hub', true, true, currentSessionId); 
     
     if (joinInterval) clearInterval(joinInterval); 
     let pokusy = 0; 
     globalKnownHubId = null; 
-    sessionLog('peer', 'info', 'joinViaDns started', { sid: currentSessionId });
     
     joinInterval = setInterval(async () => {
         pokusy++;
-        // ~60s of waiting for host answer before HTTP / retry
-        if (pokusy > 20) { 
-            clearInterval(joinInterval);
-            joinInterval = null;
-            const inLobby = (typeof window.__gameScene !== 'undefined' && window.__gameScene === 'waiting');
-            logDebug(`[API] Host neodpověděl na Offer včas.`, "log-relay", myId);
-            sessionLog('peer', 'warn', 'joinViaDns answer timeout', { pokusy, inLobby });
-            if (inLobby) {
-                window.__skipIsolationOnce = true;
-                cleanupConnection('hub', false);
-                setTimeout(() => {
-                    if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('answer-timeout-lobby');
-                }, 1500);
-            } else {
-                logDebug(`[API] Přecházím na HTTP Relay!`, "log-relay", myId);
-                cleanupConnection('hub', true);
-            }
+        if (pokusy > 6) { 
+            clearInterval(joinInterval); 
+            logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
+            cleanupConnection('hub', true); 
             return; 
         }
         
@@ -2383,7 +2043,7 @@ async function joinViaDns() {
         
         const answerPayload = await readSignal(`answer-${myId}`);
         if (answerPayload && !answerPayload.consumed && connections['hub']) {
-            if (answerPayload.ts && (Date.now() - answerPayload.ts > 45000)) return;
+            if (answerPayload.ts && (Date.now() - answerPayload.ts > 30000)) return;
             
             const answerSid = answerPayload.sid ? answerPayload.sid : null; 
             if (answerSid !== currentSessionId) return; 
@@ -2392,13 +2052,10 @@ async function joinViaDns() {
             if (answerData && answerData.sdp && answerData.type) {
                 if (connections['hub'].signalingState !== 'have-local-offer') return; 
                 clearInterval(joinInterval);
-                joinInterval = null;
                 
                 try { 
                     await connections['hub'].setRemoteDescription(new RTCSessionDescription({ type: String(answerData.type).toLowerCase().trim(), sdp: String(answerData.sdp) })); 
-                    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 });
-                    sessionLog('peer', 'info', 'Host answer applied', { sid: currentSessionId });
-                    logDebug(`[WebRTC] Answer od hosta aplikován, čekám na ICE…`, 'success', myId);
+                    await writeSignal(`answer-${myId}`, { consumed: true, ts: 0 }); 
                 } catch(e) { 
                     logDebug(`Chyba aplikace Answeru: ${e.message}`, 'error', myId); 
                 }
@@ -2407,65 +2064,11 @@ async function joinViaDns() {
     }, 3000);
 }
 
-let joinRetryLock = false;
-window.retryJoinMaster = async function(reason) {
-    if (isDnsHost) return false;
-    if (joinRetryLock) return false;
-    if (channels['hub'] && channels['hub'].readyState === 'open') return false;
-    joinRetryLock = true;
-    try {
-        sessionLog('peer', 'warn', 'retryJoinMaster', { reason: reason || 'manual' });
-        logDebug(`[P2P] Nový pokus o spojení s masterem (${reason || 'manual'})…`, 'webrtc', myId);
-        if (httpRelayInterval) {
-            clearInterval(httpRelayInterval);
-            httpRelayInterval = null;
-        }
-        isHttpRelayMode = false;
-        window.isHttpRelayMode = false;
-        window.gameNetBlocked = false;
-        updateNetBlockBannerSafe();
-        if (joinInterval) {
-            clearInterval(joinInterval);
-            joinInterval = null;
-        }
-        if (connections['hub'] || channels['hub']) {
-            try {
-                window.__skipIsolationOnce = true;
-                cleanupConnection('hub', false);
-            } catch (e) {}
-        }
-        await joinViaDns();
-        return true;
-    } catch (e) {
-        sessionLog('peer', 'error', 'retryJoinMaster failed', { err: String(e) });
-        return false;
-    } finally {
-        setTimeout(() => { joinRetryLock = false; }, 4000);
-    }
-};
-
-function updateNetBlockBannerSafe() {
-    if (typeof window.updateNetBlockBanner === 'function') {
-        try { window.updateNetBlockBanner(); } catch (e) {}
-    }
-}
-
 function startHttpRelayMode() {
     isHttpRelayMode = true; 
     window.isHttpRelayMode = true;
-    window.gameNetBlocked = true;
-    sessionLog('relay', 'warn', 'Entered HTTP Relay mode — game sync disabled');
     unlockChat(); 
     if (typeof window.triggerHttpBlock === 'function') window.triggerHttpBlock();
-
-    // Keep trying WebRTC in background so lobby / game can recover
-    if (!isDnsHost) {
-        setTimeout(() => {
-            if (isHttpRelayMode && !(channels['hub'] && channels['hub'].readyState === 'open')) {
-                if (typeof window.retryJoinMaster === 'function') window.retryJoinMaster('http-auto-rejoin');
-            }
-        }, 8000);
-    }
     
     setTimeout(async () => { 
         const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
@@ -2523,8 +2126,6 @@ function startHttpRelayMode() {
             blacklistedHubTimeout = Date.now() + 60000;
             isHttpRelayMode = false;
             window.isHttpRelayMode = false;
-            window.gameNetBlocked = false;
-            sessionLog('relay', 'warn', 'Left HTTP Relay — hub unresponsive');
             checkIsolation();
         }
     }, 3000);
