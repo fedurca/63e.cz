@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=1.1.0";
+import { LVL } from "./maps.js?v=1.1.1";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,8 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-// build v1.1.0 — acoustic link and per-tab topology ids
-window.__GAME_BUILD = "v1.1.0";
+// build v1.1.1 — audio decode off the game thread
+window.__GAME_BUILD = "v1.1.1";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {
@@ -769,7 +769,23 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
         
         if (light && player.pos) light.pos = player.pos;
-        if (player.vel.y > 800) player.vel.y = 800;
+        if (player.vel) {
+            if (player.vel.y > 560) player.vel.y = 560;
+            if (dt() > 0.045 && player.vel.y > 0) {
+                let steps = 0;
+                while (steps < 8) {
+                    let hit = false;
+                    const solids = allOf("solid");
+                    for (let i = 0; i < solids.length; i++) {
+                        if (player.isColliding && player.isColliding(solids[i])) { hit = true; break; }
+                    }
+                    if (!hit) break;
+                    player.pos.y -= 8;
+                    player.vel.y = Math.min(player.vel.y, 180);
+                    steps++;
+                }
+            }
+        }
 
         if (player.isGrounded()) { 
             coyoteTime = 0.15; jumps = 0; 
