@@ -1,4 +1,4 @@
-importScripts("audio-codec.js?v=1.1.10");
+importScripts("audio-codec.js?v=1.1.11");
 
 let listener = AudioCodec.createListener();
 

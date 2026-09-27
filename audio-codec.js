@@ -162,6 +162,10 @@
                 finishLetter(slot);
                 slot.letterDone = true;
             }
+            if (!hot && ms >= 500) {
+                slot.morse = "";
+                slot.text = "";
+            }
             return;
         }
         if (slot.hot) {
@@ -181,7 +185,7 @@
 
     function cancelOwn(mic, tx, hint) {
         if (!mic || !tx || mic.length < 32 || tx.length < 32) return { out: mic, lag: 0, gain: 0 };
-        const wide = Math.min(Math.round(SR * 0.08), Math.floor(tx.length / 2), mic.length - 1);
+        const wide = Math.min(Math.round(SR * 0.2), Math.floor(tx.length / 2), mic.length - 1);
         const tight = Math.round(SR * 0.004);
         const minL = hint == null ? -wide : Math.max(-wide, hint - tight);
         const maxL = hint == null ? wide : Math.min(wide, hint + tight);
@@ -226,7 +230,7 @@
             before += mic[mic0 + i] * mic[mic0 + i];
             after += out[mic0 + i] * out[mic0 + i];
         }
-        if (after > before * 0.72) return { out: mic, lag: lag, gain: 0 };
+        if (after > before * 0.92) return { out: mic, lag: lag, gain: 0 };
         return { out: out, lag: lag, gain: gain };
     }
 
@@ -312,7 +316,7 @@
                     packets.push(pkt);
                 }
                 slot.packets = [];
-                if (slot.hot || slot.text || slot.morse || slot.e > 5e-6) {
+                if (slot.e > 1e-6) {
                     bands.push({
                         ch: slot.ch, freq: slot.freq, e: slot.e, snr: slot.snr,
                         hot: slot.hot, text: slot.text, morse: slot.morse

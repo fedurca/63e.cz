@@ -171,7 +171,7 @@
 
     function ensureWorker() {
         if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.10");
+        worker = new Worker("audio-worker.js?v=1.1.11");
         worker.onmessage = function (e) {
             if (!enabled) return;
             const msg = e.data || {};
@@ -190,6 +190,8 @@
     let cancelLock = false;
     let histMic = new Float32Array(0);
     let histOrigin = 0;
+    let measuredPcm = null;
+    let sinceMeasure = 0;
     const wav = new Float32Array(SR * 10);
     let wavAt = 0;
     let wavN = 0;
@@ -229,8 +231,6 @@
         playingUntil = audioCtx ? audioCtx.currentTime : 0;
         txRec = null;
         histMic = new Float32Array(0);
-        cancelLock = false;
-        cancelInfo = { gain: 0, lag: 0 };
     }
 
     function playPcm(pcm, freq) {
@@ -247,8 +247,7 @@
         playingUntil = t + pcm.length / SR;
         txRec = { pcm: pcm, t0: t };
         histMic = new Float32Array(0);
-        cancelLock = false;
-        cancelInfo = { gain: 0, lag: 0 };
+        measuredPcm = null;
     }
 
     function pump() {
@@ -327,9 +326,11 @@
         joined.set(histMic);
         joined.set(mic, histMic.length);
         const cap = Math.round(SR * 1.2);
-        histMic = joined.length > cap ? joined.subarray(joined.length - cap) : joined;
         if (joined.length > cap) histOrigin += joined.length - cap;
-        if (!cancelLock && histMic.length > SR * 0.7) {
+        histMic = joined.length > cap ? new Float32Array(joined.subarray(joined.length - cap)) : joined;
+        sinceMeasure += mic.length;
+        if (measuredPcm !== txRec.pcm && histMic.length > SR * 0.45 && sinceMeasure > SR * 0.5) {
+            sinceMeasure = 0;
             const tx = new Float32Array(histMic.length);
             for (let i = 0; i < tx.length; i++) {
                 const s = histOrigin + i;
@@ -337,18 +338,20 @@
             }
             const sub = C.cancelOwn(histMic, tx, null);
             if (sub.gain > 0.04) {
-                cancelInfo = { gain: sub.gain * 0.9, lag: sub.lag || 0 };
+                cancelInfo = { gain: sub.gain, lag: sub.lag || 0 };
                 cancelLock = true;
+                measuredPcm = txRec.pcm;
             }
         }
         ui.cancel = cancelLock
             ? ("odečet " + cancelInfo.gain.toFixed(2) + " / " + Math.round(cancelInfo.lag / SR * 1000) + " ms")
             : "odečet měřím";
-        if (!cancelLock) return new Float32Array(mic.length);
+        if (!cancelLock) return mic;
         const out = new Float32Array(mic.length);
         out.set(mic);
+        const j0 = histMic.length - mic.length;
         for (let i = 0; i < out.length; i++) {
-            const s = idx + i - cancelInfo.lag;
+            const s = histOrigin + j0 + i - cancelInfo.lag;
             if (s >= 0 && s < txRec.pcm.length) out[i] -= cancelInfo.gain * txRec.pcm[s];
         }
         return out;
