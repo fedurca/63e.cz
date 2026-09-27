@@ -9,7 +9,7 @@
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>63e.cz v1.0.0</title>
+    <title>63e.cz v1.0.1</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
@@ -94,6 +94,11 @@
         .ctrl-btn:active { background: rgba(255,255,255,0.3); }
         .btn-shoot { background: rgba(231, 76, 60, 0.4); border-color: rgba(231, 76, 60, 0.7); }
         .btn-shoot:active { background: rgba(231, 76, 60, 0.7); }
+        .btn-tilt {
+            width: clamp(44px, 12dvh, 56px); height: clamp(44px, 12dvh, 56px);
+            font-size: 11px; font-weight: 700; letter-spacing: 0; opacity: 0.55;
+        }
+        .btn-tilt.on { opacity: 1; background: rgba(0, 200, 255, 0.45); border-color: rgba(0, 220, 255, 0.9); }
 
         #app { 
             position: fixed; bottom: 0; left: 0; width: 100vw; height: 50vh;
@@ -174,7 +179,7 @@
         #debug-log { flex: 1; padding: 8px; overflow-y: auto; font-size: 0.7rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; user-select: text; }
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12; border-radius: 4px; margin: 2px 0;} .log-file { color: #00d2d3; font-weight: bold;} .log-announce { color: #00ff00; background: rgba(0,255,0,0.1); padding: 2px 4px; border-left: 2px solid #00ff00; margin-top: 2px;} .log-ice { color: #9b59b6; font-size: 0.65rem; margin-left: 10px; display: block; } .log-relay { color: #8e44ad; font-weight: bold;}
         
-        #setup-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px; } 
+        #setup-screen { display: none !important; } 
         .setup-box { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 100%; max-width: 400px; text-align: center; } 
         .setup-box input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; font-size: 1.1rem; text-align: center; color: #111;} 
         .setup-box button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 1.1rem; font-weight: bold; background: var(--primary); color: white; cursor: pointer; }
@@ -226,10 +231,11 @@ window.addEventListener('error', function(e) {
 <div id="game-wrapper">
     <canvas id="game-canvas"></canvas>
     <button type="button" id="fullscreen-toggle" title="Přepnout Fullscreen" aria-pressed="false">📺</button>
-    <div id="build-tag">v1.0.0</div>
+    <div id="build-tag">v1.0.1</div>
     
     <div id="mobile-controls">
         <div class="ctrl-group">
+            <button type="button" id="btn-tilt" class="ctrl-btn btn-tilt" aria-pressed="false" aria-label="Naklánění">TILT</button>
             <button type="button" id="btn-left" class="ctrl-btn" aria-label="Vlevo">◀</button>
             <button type="button" id="btn-right" class="ctrl-btn" aria-label="Vpravo">▶</button>
         </div>
@@ -253,13 +259,9 @@ window.addEventListener('error', function(e) {
     </div>
 </div>
 
-<div id="setup-screen">
-    <div class="setup-box">
-        <h2>Vstup do hry a sítě</h2>
-        <p style="color: #666; margin: 10px 0 20px; font-size: 0.9rem;">Multiplayer se zprostředkovává automaticky po připojení.</p>
-        <input type="text" id="username" placeholder="Tvá přezdívka">
-        <button id="join-btn" onclick="initSystem()">Připojit a hrát</button>
-    </div>
+<div id="setup-screen" style="display:none" hidden>
+    <input type="text" id="username" tabindex="-1" aria-hidden="true">
+    <button id="join-btn" type="button" hidden>Připojit</button>
 </div>
 
 <div id="app">
@@ -277,10 +279,10 @@ window.addEventListener('error', function(e) {
         <div id="chat-container">
             <div id="chat-area"></div>
             <div id="input-area">
-                <div id="ui-my-name">...</div>
+                <div id="ui-my-name" title="Klepni a nastav přezdívku">...</div>
                 <input type="file" id="file-input" onchange="handleFileUpload(event)">
                 <button class="btn-attach" id="btn-attach" onclick="DOM.fileInput.click()" disabled title="Poslat soubor">📎</button>
-                <input type="text" id="chat-input" placeholder="Zpráva..." disabled onkeypress="if(event.key === 'Enter') sendMsg()">
+                <input type="text" id="chat-input" placeholder="Zpráva…  (/nick jméno)" disabled onkeypress="if(event.key === 'Enter') sendMsg()">
                 <button id="send-btn" disabled onclick="sendMsg()">Odeslat</button>
             </div>
         </div>
@@ -336,7 +338,7 @@ window.addEventListener('error', function(e) {
 </div>
 
 <script>
-window.__GAME_BUILD = "v1.0.0";
+window.__GAME_BUILD = "v1.0.1";
 (function setupMobileGameUi() {
     var wrap = document.getElementById("game-wrapper");
     var fsBtn = document.getElementById("fullscreen-toggle");
@@ -403,6 +405,15 @@ window.__GAME_BUILD = "v1.0.0";
     }
     bindHold("btn-left", "left");
     bindHold("btn-right", "right");
+    var tiltBtn = document.getElementById("btn-tilt");
+    if (tiltBtn) {
+        tiltBtn.addEventListener("pointerdown", function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof window.toggleTilt === "function") window.toggleTilt();
+        });
+        tiltBtn.addEventListener("contextmenu", function(e) { e.preventDefault(); });
+    }
 
     function bindTap(id, fnName) {
         var el = document.getElementById(id);
@@ -485,8 +496,8 @@ window.__GAME_BUILD = "v1.0.0";
     window.__mobileUiReady = true;
 })();
 </script>
-<script src="network.js?v=1.0.0"></script>
-<script type="module" src="game.js?v=1.0.0"></script>
+<script src="network.js?v=1.0.1"></script>
+<script type="module" src="game.js?v=1.0.1"></script>
 
 </body>
 </html>

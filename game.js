@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=1.0.0";
+import { LVL } from "./maps.js?v=1.0.1";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,8 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-// build v1.0.0 — mobile fullscreen, touch controls, throttled world snapshots
-window.__GAME_BUILD = "v1.0.0";
+// build v1.0.1 — enemies keep moving, heart skip, nick in chat, tilt opt-in
+window.__GAME_BUILD = "v1.0.1";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {
@@ -123,9 +123,8 @@ function getPlayerColor(nodeId) {
     return rgb(c.r, c.g, c.b);
 }
 
-let useTilt = false; 
-let tiltAccel = 0;
-let tiltInitialized = false; 
+window.useTilt = false;
+let tiltAccel = 0; 
 
 function addToast(msg) {
     if (typeof add === "undefined") return; 
@@ -148,34 +147,52 @@ function handleOrientation(event) {
     else tiltAccel = 0;
 }
 
+function syncTiltButton() {
+    const btn = document.getElementById("btn-tilt");
+    if (!btn) return;
+    btn.classList.toggle("on", !!window.useTilt);
+    btn.setAttribute("aria-pressed", window.useTilt ? "true" : "false");
+}
+
 function tryEnableTilt(showToast = false) {
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    const enable = () => {
+        window.addEventListener("deviceorientation", handleOrientation);
+        window.useTilt = true;
+        syncTiltButton();
+        if (showToast) addToast("Naklánění zapnuto");
+    };
+    if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
         DeviceOrientationEvent.requestPermission().then(response => {
-            if (response === 'granted') {
-                window.addEventListener('deviceorientation', handleOrientation);
-                useTilt = true;
-                if (showToast) addToast("Naklánění: ZAPNUTO (vypneš dvojklikem)");
-            } else {
-                useTilt = false;
-                if (showToast) addToast("Naklánění: ZAMÍTNUTO");
+            if (response === "granted") enable();
+            else {
+                window.useTilt = false;
+                syncTiltButton();
+                if (showToast) addToast("Naklánění zamítnuto");
             }
-        }).catch(console.error);
+        }).catch(() => {
+            window.useTilt = false;
+            syncTiltButton();
+        });
     } else {
-        window.addEventListener('deviceorientation', handleOrientation);
-        useTilt = true;
-        if (showToast) addToast("Naklánění: ZAPNUTO (vypneš dvojklikem)");
+        enable();
     }
 }
 
-function initTiltOnInteraction() {
-    if (tiltInitialized) return;
-    tiltInitialized = true;
-    tryEnableTilt(true); 
-}
-window.addEventListener('click', initTiltOnInteraction);
-window.addEventListener('touchstart', initTiltOnInteraction);
+window.toggleTilt = function() {
+    if (!window.useTilt) {
+        tryEnableTilt(true);
+        return;
+    }
+    window.removeEventListener("deviceorientation", handleOrientation);
+    window.useTilt = false;
+    tiltAccel = 0;
+    syncTiltButton();
+    addToast("Naklánění vypnuto");
+};
 
 kaboom({ canvas: document.getElementById("game-canvas"), width: 800, height: 480, letterbox: true, crisp: true, background: [0, 0, 0], scale: 1 });
+
+const allOf = (tag) => get(tag, { recursive: true });
 
 const TEXTS = {
     debugTitle: "=== DEBUG INFO ===",
@@ -324,8 +341,9 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     });
 
-    let eIdx = 0; get("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; e.use(e.eId); });
-    get("loot").forEach(l => l.use(l.lId));
+    let eIdx = 0;
+    allOf("enemy").forEach(e => { e.eId = `e_${lvlIdx}_${eIdx++}`; });
+    allOf("loot").forEach(l => { if (l.lId) l.use(l.lId); });
 
     function spawnDust(p) { 
         for(let i=0; i<6; i++) add([ rect(4,4), pos(p.x + rand(-10,10), p.y), color(200,200,200), move(vec2(rand(-1,1), rand(-0.1,-1)), rand(20,60)), opacity(0.8), lifespan(0.3, {fade: 0.3}), z(50) ]); 
@@ -340,6 +358,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     function doShake(intensity) { screenShake = Math.max(screenShake, intensity); }
 
     const localId = typeof window.chat_myId !== 'undefined' ? window.chat_myId : 'local';
+    const displayName = () => (typeof window.chat_displayName === "function" ? window.chat_displayName() : localId);
     const playerColor = getPlayerColor(localId); 
     
     const player = add([ 
@@ -348,14 +367,15 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         "player", { stun: false, cVel: 0 } 
     ]);
     player.play("idle");
-    player.add([
-        text(localId.substring(0,6), {size: 10}),
+    const nameTag = player.add([
+        text(String(displayName()).substring(0, 10), {size: 10}),
         pos(0, -30),
         anchor("center"),
         color(255,255,255)
     ]);
+    window.onLocalNick = (name) => { nameTag.text = String(name || localId).substring(0, 10); };
 
-    get("enemy").forEach(e => { if (e.type === "fly" && e.pos) e.baseY = e.pos.y; });
+    allOf("enemy").forEach(e => { if (e.type === "fly" && e.pos) e.baseY = e.pos.y; });
 
     const ui = add([fixed(), z(100)]);
     ui.add([sprite("coin"), pos(20,22)]);
@@ -374,7 +394,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     ]);
     
     loop(0.5, () => {
-        const myName = localStorage.getItem('chat_nickname') || localId;
+        const myName = displayName();
         playerStats[localId] = { name: myName, hp: hp, score: score, kills: myKills, deaths: myDeaths };
         let txt = "HRÁČI A STATY:\n";
         for (let id in playerStats) {
@@ -400,6 +420,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
 
     const updateHP = () => {
         destroyAll("ui_hp");
+        destroyAll("cheat_zone");
         
         for (let i=0; i<maxHp; i++) {
             const heartPos = vec2(width() - 40 - i*35, 20);
@@ -408,9 +429,37 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             if (i < hp) {
                 ui.add([sprite("heart"), pos(heartPos), "ui_hp"]);
             }
+
+            // Hearts are drawn right-to-left; maxHp-2 is the second heart from the left.
+            if (i === maxHp - 2) {
+                ui.add([
+                    rect(44, 44),
+                    pos(heartPos.x - 10, heartPos.y - 10),
+                    opacity(0),
+                    area(),
+                    z(120),
+                    "cheat_zone"
+                ]);
+            }
         }
     };
     updateHP();
+
+    let cheatClicks = 0;
+    let lastCheatTime = 0;
+    const skipLevel = () => {
+        cheatClicks = 0;
+        const next = lvlIdx + 1;
+        if (typeof window.broadcastLevelComplete === "function") window.broadcastLevelComplete(next);
+        if (next < safeLevelCount()) go("game", next, hp, ammo, score);
+        else go("victory", score);
+    };
+    onClick("cheat_zone", () => {
+        if (time() - lastCheatTime > 2) cheatClicks = 0;
+        cheatClicks++;
+        lastCheatTime = time();
+        if (cheatClicks >= 3) skipLevel();
+    });
 
     let bossBarBg, bossBarFg, bossText;
     if (lvl.isBoss) {
@@ -420,7 +469,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         bossText = bossUI.add([text("BOSS", {size: 16}), pos(width()/2, height() - 45), anchor("center")]);
         
         onUpdate(() => { 
-            const bosses = get("boss"); 
+            const bosses = allOf("boss"); 
             if (bosses.length > 0) { 
                 bossBarFg.width = 396 * (Math.max(0, bosses[0].hp) / bosses[0].maxHp); 
             } else { 
@@ -540,7 +589,10 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     };
 
     window.handleEnemyHit = (eId, dmg) => {
-        let en = get(eId)[0];
+        let en = null;
+        for (const e of allOf("enemy")) {
+            if (e.eId === eId) { en = e; break; }
+        }
         if (en) {
             en.hp -= dmg;
             en.stunTimer = 0.2;
@@ -562,13 +614,18 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         window.__lastEnemySnapAt = time();
         const masterIds = new Set(enemiesData.map(ed => ed && ed.id).filter(Boolean));
         if (masterIds.size === 0) return;
-        get("enemy").forEach(e => {
+        allOf("enemy").forEach(e => {
             if (e.eId && !masterIds.has(e.eId)) destroy(e);
         });
         enemiesData.forEach(ed => {
             if (!ed || !ed.id) return;
-            const en = get(ed.id)[0];
-            if (!en || !en.exists()) return;
+            let en = get(ed.id)[0];
+            if (!en) {
+                for (const cand of allOf("enemy")) {
+                    if (cand.eId === ed.id) { en = cand; break; }
+                }
+            }
+            if (!en || (typeof en.exists === "function" && !en.exists())) return;
             en.targetPos = vec2(ed.x, ed.y);
             if (!en.pos || en.pos.dist(en.targetPos) > 180) en.pos = en.targetPos.clone();
             if (typeof ed.hp === "number") {
@@ -622,7 +679,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         if (getIsHost()) return;
         if (!Array.isArray(activeLootIds)) return;
         const idSet = new Set(activeLootIds);
-        get("loot").forEach(l => {
+        allOf("loot").forEach(l => {
             if (!idSet.has(l.lId)) destroy(l);
         });
     };
@@ -645,13 +702,13 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             score: score,
             kills: myKills,
             deaths: myDeaths,
-            name: localStorage.getItem('chat_nickname') || localId
+            name: displayName()
         };
         if (getIsHost()) {
-            data.enemies = get("enemy").map(e => ({
+            data.enemies = allOf("enemy").map(e => ({
                 id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: !!e.flipX
             }));
-            data.loot = get("loot").map(l => l.lId);
+            data.loot = allOf("loot").map(l => l.lId);
         }
         if (typeof window.broadcastWorldSnapshot === "function") window.broadcastWorldSnapshot(data);
     };
@@ -710,7 +767,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             player.move(player.cVel, 0); 
             if (player.curAnim() !== "jump") player.play("jump");
         } else {
-            let dir = (useTilt && tiltAccel !== 0) ? tiltAccel : 0;
+            let dir = (window.useTilt && tiltAccel !== 0) ? tiltAccel : 0;
             
             if ((window.ctrlState && window.ctrlState.left) || isKeyDown("left") || isKeyDown("a")) dir = -1;
             if ((window.ctrlState && window.ctrlState.right) || isKeyDown("right") || isKeyDown("d")) dir = 1;
@@ -759,12 +816,12 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
 
         if (debugVisible && Math.floor(time()*60)%10 === 0) {
             const remoteIdsStr = get("remote_player").map(rp => rp.id).join(', ');
-            const enemyDbg = get("enemy").map(e => `${e.eId.split('_').pop()}:[${Math.round(e.pos.x)},${Math.round(e.pos.y)}]`).join(' ');
+            const enemyDbg = allOf("enemy").map(e => `${e.eId.split('_').pop()}:[${Math.round(e.pos.x)},${Math.round(e.pos.y)}]`).join(' ');
             const dbgTxt = `${TEXTS.debugTitle}\n${TEXTS.debugLevel(lvlIdx+1)}\n${TEXTS.debugHP(hp, maxHp)}\n` +
                            `${TEXTS.debugAmmo(ammo)}\n${TEXTS.debugScore(score)}\n${TEXTS.debugPos(player.pos.x, player.pos.y)}\n` +
                            `${TEXTS.debugVel(player.cVel)}\n${TEXTS.debugGround(player.isGrounded())}\n` +
                            `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
-                           `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(get("coin").length)}\n` +
+                           `${TEXTS.debugEnemies(allOf("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(allOf("coin").length)}\n` +
                            `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
                            `Peers: ${remoteIdsStr}\nBuild: ${window.__GAME_BUILD || ""}`;
             document.getElementById("debug-content").innerText = dbgTxt;
@@ -772,18 +829,25 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     });
 
     onUpdate("enemy", (e) => {
-        const isHost = getIsHost();
+        const snapAge = window.__lastEnemySnapAt ? (time() - window.__lastEnemySnapAt) : 999;
+        let followHost = !getIsHost() && snapAge < 1 && e.targetPos;
+        if (followHost) {
+            const dx = Math.abs(e.targetPos.x - (e._snapX == null ? e.targetPos.x : e._snapX));
+            const dy = Math.abs(e.targetPos.y - (e._snapY == null ? e.targetPos.y : e._snapY));
+            e._snapX = e.targetPos.x;
+            e._snapY = e.targetPos.y;
+            e._snapStill = (dx + dy) < 0.75 ? (e._snapStill || 0) + dt() : 0;
+            if (e._snapStill > 1.2) followHost = false;
+        }
 
-        if (!isHost) {
+        if (followHost) {
             e.gravityScale = 0;
-            if (e.vel) { e.vel.x = 0; e.vel.y = 0; } 
-            if (e.targetPos) {
-                const follow = Math.min(1, 8 * dt());
-                e.pos.x = lerp(e.pos.x, e.targetPos.x, follow);
-                e.pos.y = lerp(e.pos.y, e.targetPos.y, follow);
-            }
-        } else {
-            if (e.gravityScale === 0) e.gravityScale = 1;
+            if (e.vel) { e.vel.x = 0; e.vel.y = 0; }
+            const follow = Math.min(1, 8 * dt());
+            e.pos.x = lerp(e.pos.x, e.targetPos.x, follow);
+            e.pos.y = lerp(e.pos.y, e.targetPos.y, follow);
+        } else if (e.type !== "fly" && e.gravityScale === 0) {
+            e.gravityScale = 1;
         }
 
         if (e.stunTimer > 0) { 
@@ -794,14 +858,15 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         const bs = e.type==="bnc" ? (e.is("boss")?3.0:1.7) : 1.4; 
         e.scale = vec2(bs + Math.sin(time()*6)*0.06, bs - Math.sin(time()*6)*0.06);
         
-        if (isHost) {
+        if (!followHost) {
+            const spd = e.speed || (e.type === "bnc" ? 120 : (e.type === "jmp" ? 100 : (e.type === "fly" ? 70 : 80)));
             if (e.type==="fly") { 
                 if (e.baseY!==null) e.pos.y = e.baseY + Math.sin(time()*4)*70; 
-                e.move(e.speed*e.dir,0); 
-                e.flipX = e.dir < 0; 
+                e.move(spd*(e.dir || 1),0); 
+                e.flipX = (e.dir || 1) < 0; 
             } else {
-                e.move(e.speed,0);
-                e.flipX = e.speed < 0; 
+                e.move(spd,0);
+                e.flipX = spd < 0; 
             }
             
             if (e.type==="jmp" && e.isGrounded()) { 
@@ -809,7 +874,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             }
             if (e.type==="bnc") { 
                 if (player.exists() && player.pos && Math.abs(player.pos.x-e.pos.x)<450) {
-                    e.speed=lerp(e.speed,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); 
+                    e.speed=lerp(e.speed || spd,(player.pos.x<e.pos.x?-1:1)*(e.is("boss")?170:180),0.06); 
                 }
                 if (e.isGrounded()) { e.jump(680); e.scale=vec2(bs*1.15,bs*0.75); } 
             }

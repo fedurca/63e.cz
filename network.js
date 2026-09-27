@@ -35,7 +35,9 @@ document.addEventListener("DOMContentLoaded", () => {
         incomingName: document.getElementById('incoming-name')
     };
 
-    DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nickname', e.target.value.trim()));
+    if (DOM.username) {
+        DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nick_custom', e.target.value.trim()));
+    }
 
     document.getElementById('btn-copy-log').addEventListener('click', () => {
         const text = DOM.debugLog.innerText;
@@ -112,15 +114,46 @@ document.addEventListener("DOMContentLoaded", () => {
         DOM.chatInput.value = pendingAutoMsg; 
     }
     
-    if (urlNick) { 
-        DOM.username.value = decodeURIComponent(urlNick); 
-        localStorage.setItem('chat_nickname', DOM.username.value); 
-        logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info', myId); 
-        setTimeout(() => { window.initSystem(); }, 500); 
-    } else { 
-        const savedName = localStorage.getItem('chat_nickname'); 
-        if (savedName) DOM.username.value = savedName; 
+    if (urlNick) {
+        const nick = decodeURIComponent(urlNick).trim();
+        if (nick) localStorage.setItem('chat_nick_custom', nick);
+        if (DOM.username) DOM.username.value = nick;
+        logDebug(`[SYSTEM] Zjištěna přezdívka z URL. Zahajuji připojení...`, 'info', myId);
     }
+
+    if (DOM.uiMyName) {
+        DOM.uiMyName.title = "Klepni a nastav přezdívku. Prázdné pole vrátí ID.";
+        DOM.uiMyName.style.cursor = "pointer";
+        DOM.uiMyName.addEventListener("click", () => {
+            if (DOM.uiMyName.querySelector("input")) return;
+            const input = document.createElement("input");
+            input.type = "text";
+            input.maxLength = 16;
+            input.placeholder = myId;
+            input.value = localStorage.getItem("chat_nick_custom") || "";
+            input.setAttribute("aria-label", "Přezdívka");
+            input.style.cssText = "width:88px;padding:2px 6px;border-radius:8px;border:1px solid #ccc;color:#111;font-size:0.85rem;";
+            DOM.uiMyName.textContent = "";
+            DOM.uiMyName.appendChild(input);
+            input.focus();
+            input.select();
+            let done = false;
+            const commit = () => {
+                if (done) return;
+                done = true;
+                window.setPlayerNick(input.value);
+            };
+            input.addEventListener("keydown", (e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") { e.preventDefault(); commit(); }
+                if (e.key === "Escape") { done = true; DOM.uiMyName.textContent = window.chat_displayName(); }
+            });
+            input.addEventListener("blur", commit);
+        });
+    }
+
+    if (DOM.setupScreen) DOM.setupScreen.style.display = "none";
+    setTimeout(() => { if (typeof window.initSystem === "function") window.initSystem(); }, 0);
 });
 
 window.toggleChat = function() {
@@ -501,7 +534,7 @@ function updateDebugStats(stat, value) {
 }
 
 function unlockChat() {
-    DOM.setupScreen.style.display = 'none'; 
+    if (DOM.setupScreen) DOM.setupScreen.style.display = 'none'; 
     DOM.chatInput.disabled = false; 
     DOM.sendBtn.disabled = false; 
     DOM.btnAttach.disabled = false; 
@@ -1400,9 +1433,40 @@ function drawTopology() {
     });
 }
 
+window.chat_displayName = function() {
+    const custom = (localStorage.getItem('chat_nick_custom') || '').trim();
+    return custom || myId;
+};
+
+window.setPlayerNick = async function(raw) {
+    const clean = String(raw || '').trim().slice(0, 16);
+    if (clean) localStorage.setItem('chat_nick_custom', clean);
+    else localStorage.removeItem('chat_nick_custom');
+    myName = window.chat_displayName();
+    if (DOM.uiMyName) DOM.uiMyName.textContent = myName;
+    if (knownNodes[myId]) knownNodes[myId].name = myName;
+    if (typeof window.onLocalNick === 'function') {
+        try { window.onLocalNick(myName); } catch (e) {}
+    }
+    logDebug(`[NICK] Jméno je teď ${myName}`, 'info', myId);
+    try {
+        if (myKeyPair) {
+            const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey);
+            routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry });
+        }
+    } catch (e) {}
+};
+
 window.sendMsg = async function() { 
     const text = DOM.chatInput.value.trim(); 
-    if (!text) return; 
+    if (!text) return;
+
+    if (text === '/nick' || text.startsWith('/nick ')) {
+        window.setPlayerNick(text === '/nick' ? '' : text.slice(6));
+        DOM.chatInput.value = '';
+        renderMessage('System', `Přezdívka: ${escapeHTML(myName)}`, 'system', Date.now(), true, null, true, null);
+        return;
+    } 
     
     const timeNow = Date.now(); 
     let encryptedPayloads = {}; 
@@ -1937,15 +2001,16 @@ async function checkIsolation() {
 }
 
 window.initSystem = async function() {
-    DOM.joinBtn.disabled = true; 
+    if (window.__netBooted) return;
+    window.__netBooted = true;
+    if (DOM.joinBtn) DOM.joinBtn.disabled = true; 
     DOM.uiRole.innerText = "Kontroluji API..."; 
     appSessionTime = 0; 
     
-    myName = DOM.username.value.trim() || 'Anonym_' + myId; 
-    localStorage.setItem('chat_nickname', myName); 
-    DOM.uiMyName.innerText = escapeHTML(myName); 
+    myName = window.chat_displayName();
+    if (DOM.uiMyName) DOM.uiMyName.textContent = myName; 
     
-    DOM.setupScreen.style.display = 'none'; 
+    if (DOM.setupScreen) DOM.setupScreen.style.display = 'none'; 
     loadHistory(); 
     await initCrypto();
     
