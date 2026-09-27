@@ -1695,14 +1695,19 @@ async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) 
         
         if (state === 'disconnected') {
             if (pc._discTimer) return;
+            logDebug(`[P2P] ${targetId} disconnected. Držím linku a čekám na návrat.`, 'webrtc', myId);
+            const live = channels[targetId];
+            if (live && live.readyState === 'open') {
+                try { live.send(JSON.stringify({ type: '_ping', sender: myId, t: Date.now(), tele: myTelemetry })); } catch (e) {}
+            }
             pc._discTimer = setTimeout(() => {
                 pc._discTimer = null;
                 if (connections[targetId] !== pc) return;
                 const again = pc.iceConnectionState;
-                if (again === 'connected' || again === 'completed') return;
+                if (again === 'connected' || again === 'completed' || again === 'checking') return;
                 logDebug(`[P2P] ${targetId} zůstává ${again}. Skládám P2P znovu.`, 'webrtc', myId);
                 cleanupConnection(targetId);
-            }, 4000);
+            }, 20000);
             return;
         }
         if (state === 'connected' || state === 'completed') {
@@ -1793,7 +1798,7 @@ function bindDataChannel(channel, targetId) {
             } else {
                 clearInterval(pingInterval);
             }
-        }, 10000); 
+        }, 2000); 
     };
     
     if (channel.readyState === 'open') {
