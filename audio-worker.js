@@ -1,4 +1,4 @@
-importScripts("audio-codec.js?v=1.1.6");
+importScripts("audio-codec.js?v=1.1.7");
 
 let acc = new Float32Array(0);
 let busy = false;

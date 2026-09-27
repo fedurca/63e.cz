@@ -9,7 +9,7 @@
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>63e.cz v1.1.6</title>
+    <title>63e.cz v1.1.7</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
@@ -147,7 +147,13 @@
         
         .main-content { display: flex; flex: 1; overflow: hidden; flex-direction: row; min-height: 0; }
         #chat-container { flex: 1; display: flex; flex-direction: column; position: relative; min-height: 0; border-right: 1px solid #ddd; }
-        #chat-area { flex: 1; padding: 10px 15px; overflow-y: auto; background: #e5ddd5; color: #111; display: flex; flex-direction: column; gap: 8px; user-select: text; touch-action: manipulation;}
+        #chat-area {
+            flex: 1; min-height: 0; padding: 10px 15px; overflow-y: auto; background: #e5ddd5; color: #111;
+            display: flex; flex-direction: column; gap: 8px;
+            -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+            touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
+        .msg { -webkit-user-select: text; user-select: text; }
         .msg { max-width: 85%; min-width: 150px; padding: 8px 12px; border-radius: 12px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; position: relative;}
         .msg-self { align-self: flex-end; background: #dcf8c6; color: #111; border-bottom-right-radius: 2px; } 
         .msg-other { align-self: flex-start; background: #fff; color: #111; border-bottom-left-radius: 2px; }
@@ -171,21 +177,29 @@
         #send-btn { background: var(--primary); color: white; border: none; border-radius: 20px; padding: 0 15px; font-weight: bold; cursor: pointer; height: 100%; min-height: 36px;} 
         #send-btn:disabled, .btn-attach:disabled { opacity: 0.3; cursor: not-allowed; }
         
-        #debug-panel { display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace; width: 450px; flex-shrink: 0; height: 100%; overflow-y: hidden; border-left: 1px solid #333; }
+        #debug-panel {
+            display: flex; flex-direction: column; background: #1e1e1e; color: #00ff00; font-family: monospace;
+            width: 450px; flex-shrink: 0; height: 100%; min-height: 0; overflow-y: auto;
+            border-left: 1px solid #333; touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
         @media (max-width: 800px) { #debug-panel { display: none; } }
+        @media (max-height: 520px) {
+            #debug-panel { width: min(450px, 46vw); }
+            #topo-container { height: 96px; }
+        }
 
         .debug-header { background: #333; padding: 6px 10px; font-size: 0.75rem; color: #fff; border-bottom: 1px solid #444; font-weight: bold; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; }
         .debug-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; font-size: 0.7rem; color: #aaa; padding: 5px 10px; background: #111; border-bottom: 1px solid #444; flex-shrink: 0; } 
         .debug-stats span { color: #00ff00; font-weight: bold; }
         
         #topo-container { height: 120px; background: #0a0a0a; display: flex; justify-content: center; align-items: center; position: relative; border-bottom: 1px solid #444; flex-shrink: 0; overflow: hidden; } 
-        #topo-canvas { width: 100%; height: 100%; cursor: crosshair; }
+        #topo-canvas { width: 100%; height: 100%; cursor: grab; touch-action: none; }
         .topo-label { position: absolute; top: 5px; left: 5px; color: #888; font-size: 0.65rem; pointer-events: none; } 
         #topo-legend { position: absolute; bottom: 5px; left: 5px; font-size: 0.6rem; color: #aaa; pointer-events: none; } 
         .legend-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
         #topo-tooltip { position: absolute; background: rgba(0,0,0,0.85); color: #00ff00; font-family: monospace; font-size: 0.7rem; padding: 8px; border-radius: 6px; pointer-events: none; display: none; z-index: 100; white-space: nowrap; border: 1px solid #333; box-shadow: 0 4px 6px rgba(0,0,0,0.5); line-height: 1.5; } 
         
-        #net-health-panel { height: 120px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; } 
+        #net-health-panel { height: 120px; overflow-y: auto; background: #151515; border-bottom: 1px solid #444; flex-shrink: 0; touch-action: pan-y; -webkit-overflow-scrolling: touch; } 
         #net-health-list table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.7rem; color: #ccc; } 
         #net-health-list th { background: #222; padding: 4px 10px; position: sticky; top: 0; color: #fff; z-index: 2;} 
         #net-health-list td { padding: 4px 10px; border-bottom: 1px solid #333; }
@@ -194,7 +208,13 @@
         .btn-call:hover { background:#005bb5; } 
         .btn-call:disabled { opacity: 0.5; cursor: not-allowed; background:#555;}
         
-        #debug-log { flex: 1; padding: 8px; overflow-y: auto; font-size: 0.7rem; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; user-select: text; contain: content; }
+        #btn-copy-log { background:#0f0; color:#000; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:12px; min-height:32px; touch-action: manipulation; }
+        #debug-log {
+            flex: 1 0 140px; min-height: 140px; padding: 8px; overflow-y: auto; font-size: 0.7rem; line-height: 1.4;
+            white-space: pre-wrap; word-wrap: break-word; contain: content;
+            -webkit-user-select: text !important; user-select: text !important; -webkit-touch-callout: default;
+            touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+        }
         .log-info { color: #aaa; } .log-success { color: #2ed573; } .log-error { color: #ff4757; } .log-webrtc { color: #feca57; } .log-path { color: #ff9ff3; font-weight: bold;} .log-sync { color: #f39c12; font-weight: bold; background: rgba(243,156,18,0.1); padding: 4px; border-left: 3px solid #f39c12; border-radius: 4px; margin: 2px 0;} .log-file { color: #00d2d3; font-weight: bold;} .log-announce { color: #00ff00; background: rgba(0,255,0,0.1); padding: 2px 4px; border-left: 2px solid #00ff00; margin-top: 2px;} .log-ice { color: #9b59b6; font-size: 0.65rem; margin-left: 10px; display: block; } .log-relay { color: #8e44ad; font-weight: bold;}
         
         #setup-screen { display: none !important; } 
@@ -251,7 +271,7 @@ window.addEventListener('error', function(e) {
     <button type="button" id="fullscreen-toggle" title="Přepnout Fullscreen" aria-pressed="false">📺</button>
     <button type="button" id="audio-toggle" title="Zvuková síť vypnutá" aria-pressed="false">♪</button>
     <div id="audio-debug" hidden></div>
-    <div id="build-tag">v1.1.6</div>
+    <div id="build-tag">v1.1.7</div>
     
     <div id="mobile-controls">
         <div class="ctrl-group">
@@ -324,9 +344,20 @@ window.addEventListener('error', function(e) {
                 <div>Přímé linky: <span id="dbg-peers">0</span></div>
                 <div>Uzlů v síti: <span id="dbg-nodes">1</span></div>
             </div>
+            <div class="debug-header">♪ ZDRAVÍ AKUSTIKY</div>
+            <div id="audio-health" class="debug-stats">
+                <div>Směr: <span id="ah-dir">vypnuto</span></div>
+                <div>Mic: <span id="ah-mic">—</span></div>
+                <div>TX/s: <span id="ah-tx">0</span></div>
+                <div>RX/s: <span id="ah-rx">0</span></div>
+                <div>Pásma: <span id="ah-bands">—</span></div>
+                <div>Slyším: <span id="ah-in">nikdo</span></div>
+                <div>Slyší mě: <span id="ah-out">neznámo</span></div>
+                <div>Chat → <span id="ah-chat-out">0</span> ← <span id="ah-chat-in">0</span></div>
+            </div>
             <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ</div>
             <div id="net-health-panel"><div id="net-health-list"></div></div>
-            <div class="debug-header">📜 SYSTÉMOVÝ LOG <button id="btn-copy-log" style="background:#0f0; color:#000; border:none; border-radius:3px; padding:2px 6px; cursor:pointer; font-size:9px;">📋 Kopírovat</button></div>
+            <div class="debug-header">📜 SYSTÉMOVÝ LOG <button type="button" id="btn-copy-log">Kopírovat</button></div>
             <div id="debug-log"></div>
         </div>
     </div>
@@ -359,7 +390,7 @@ window.addEventListener('error', function(e) {
 </div>
 
 <script>
-window.__GAME_BUILD = "v1.1.6";
+window.__GAME_BUILD = "v1.1.7";
 (function setupMobileGameUi() {
     var wrap = document.getElementById("game-wrapper");
     var fsBtn = document.getElementById("fullscreen-toggle");
@@ -523,10 +554,10 @@ window.__GAME_BUILD = "v1.1.6";
     window.__mobileUiReady = true;
 })();
 </script>
-<script src="audio-codec.js?v=1.1.6"></script>
-<script src="network.js?v=1.1.6"></script>
-<script src="audio-net.js?v=1.1.6"></script>
-<script type="module" src="game.js?v=1.1.6"></script>
+<script src="audio-codec.js?v=1.1.7"></script>
+<script src="network.js?v=1.1.7"></script>
+<script src="audio-net.js?v=1.1.7"></script>
+<script type="module" src="game.js?v=1.1.7"></script>
 
 </body>
 </html>

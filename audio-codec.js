@@ -151,37 +151,97 @@
         return c;
     }
 
-    function packPose(id, pose) {
-        const bits = [];
+    function writeId(bits, id) {
         const clean = String(id || "").toLowerCase().replace(/[^0-9a-z]/g, "").slice(0, 6).padEnd(6, "0");
         for (let i = 0; i < 6; i++) writeBits(bits, Math.max(0, ALPH.indexOf(clean[i])), 6);
-        const x = Math.max(0, Math.min(1023, Math.round((pose && pose.x) || 0) / 5));
+    }
+    function readId(bits, at) {
+        let id = "";
+        for (let i = 0; i < 6; i++) {
+            const v = readBits(bits, at + i * 6, 6);
+            if (v < 0 || v >= ALPH.length) return "";
+            id += ALPH[v];
+        }
+        return id === "000000" ? "" : id;
+    }
+    function seal(bits) {
+        while (bits.length < 62) bits.push(0);
+        const body = bits.slice(0, 62);
+        writeBits(body, crc8bits(body, 62), 8);
+        return symbolsFromBits(body);
+    }
+
+    function packPose(id, pose) {
+        const bits = [];
+        writeBits(bits, 0, 1);
+        writeId(bits, id);
+        const x = Math.max(0, Math.min(511, Math.round((pose && pose.x) || 0) / 10));
         const y = Math.max(0, Math.min(255, Math.round((pose && pose.y) || 0) / 16));
-        writeBits(bits, x, 10);
+        writeBits(bits, x, 9);
         writeBits(bits, y, 8);
         writeBits(bits, ((pose && pose.hp) || 0) & 15, 4);
         writeBits(bits, ((pose && pose.lvl) || 0) & 15, 4);
-        writeBits(bits, crc8bits(bits, bits.length), 8);
-        return symbolsFromBits(bits);
+        return seal(bits);
     }
 
-    function unpackPose(symbols) {
+    function packChat(id, text, seq) {
+        const utf = new TextEncoder().encode(String(text || "").slice(0, 36));
+        if (!utf.length) return [];
+        const head = utf.subarray(0, 1);
+        const rest = utf.subarray(1);
+        const bodies = [];
+        for (let i = 0; i < rest.length; i += 5) bodies.push(rest.subarray(i, i + 5));
+        const count = 1 + bodies.length;
+        if (count > 8) return [];
+        function frame(part, payload, withId) {
+            const bits = [];
+            writeBits(bits, 1, 1);
+            writeBits(bits, seq & 15, 4);
+            writeBits(bits, part & 7, 3);
+            writeBits(bits, (count - 1) & 7, 3);
+            if (withId) writeId(bits, id);
+            writeBits(bits, payload.length & 15, 4);
+            for (let i = 0; i < payload.length; i++) writeBits(bits, payload[i], 8);
+            return seal(bits);
+        }
+        const out = [frame(0, head, true)];
+        for (let i = 0; i < bodies.length; i++) out.push(frame(i + 1, bodies[i], false));
+        return out;
+    }
+
+    function unpackFrame(symbols) {
         const bits = bitsFromSymbols(symbols);
         if (bits.length < 70) return null;
         if (readBits(bits, 62, 8) !== crc8bits(bits, 62)) return null;
-        let id = "";
-        for (let i = 0; i < 6; i++) {
-            const v = readBits(bits, i * 6, 6);
-            if (v < 0 || v >= ALPH.length) return null;
-            id += ALPH[v];
+        if (readBits(bits, 0, 1) === 0) {
+            const id = readId(bits, 1);
+            if (!id) return null;
+            let at = 37;
+            const x = readBits(bits, at, 9); at += 9;
+            const y = readBits(bits, at, 8); at += 8;
+            const hp = readBits(bits, at, 4); at += 4;
+            const lvl = readBits(bits, at, 4);
+            return { kind: "pose", id: id, x: x * 10, y: y * 16, hp: hp, lvl: lvl };
         }
-        if (!id || id === "000000") return null;
-        let at = 36;
-        const x = readBits(bits, at, 10); at += 10;
-        const y = readBits(bits, at, 8); at += 8;
-        const hp = readBits(bits, at, 4); at += 4;
-        const lvl = readBits(bits, at, 4);
-        return { id: id, x: x * 5, y: y * 16, hp: hp, lvl: lvl };
+        const seq = readBits(bits, 1, 4);
+        const part = readBits(bits, 5, 3);
+        const count = readBits(bits, 8, 3) + 1;
+        let at = 11;
+        let id = "";
+        if (part === 0) {
+            id = readId(bits, at);
+            at += 36;
+            if (!id) return null;
+        }
+        const plen = readBits(bits, at, 4); at += 4;
+        const maxLen = part === 0 ? 1 : 5;
+        if (plen > maxLen || at + plen * 8 > 62) return null;
+        const bytes = [];
+        for (let i = 0; i < plen; i++) {
+            bytes.push(readBits(bits, at, 8));
+            at += 8;
+        }
+        return { kind: "chat", seq: seq, part: part, count: count, id: id, bytes: bytes };
     }
 
     root.AudioCodec = {
@@ -191,6 +251,7 @@
         encodeFrame: encodeFrame,
         decodeAll: decodeAll,
         packPose: packPose,
-        unpackPose: unpackPose
+        packChat: packChat,
+        unpackFrame: unpackFrame
     };
 })(typeof self !== "undefined" ? self : this);

@@ -39,18 +39,41 @@ document.addEventListener("DOMContentLoaded", () => {
         DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nick_custom', e.target.value.trim()));
     }
 
-    document.getElementById('btn-copy-log').addEventListener('click', () => {
-        const text = DOM.debugLog.innerText;
-        if(navigator.clipboard) {
-            navigator.clipboard.writeText(text).then(() => alert('Systémový log zkopírován!'));
-        } else {
-            prompt('Zkopíruj ručně:', text);
+    document.getElementById('btn-copy-log').addEventListener('click', async () => {
+        const text = DOM.debugLog ? DOM.debugLog.innerText : "";
+        const btn = document.getElementById('btn-copy-log');
+        let copied = false;
+        try {
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                copied = true;
+            }
+        } catch (e) {}
+        if (!copied) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', 'readonly');
+            ta.style.position = 'fixed';
+            ta.style.top = '0';
+            ta.style.left = '0';
+            ta.style.fontSize = '16px';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            ta.setSelectionRange(0, text.length);
+            try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+            ta.remove();
+        }
+        if (btn) {
+            const prev = btn.textContent;
+            btn.textContent = copied ? 'Zkopírováno' : 'Označeno';
+            setTimeout(() => { btn.textContent = prev; }, 1200);
         }
     });
 
     DOM.topoCanvas.addEventListener('mousemove', (e) => { 
-        const mouseX = e.offsetX; 
-        const mouseY = e.offsetY; 
+        const mouseX = e.offsetX - topoPan.x;
+        const mouseY = e.offsetY - topoPan.y; 
         let hoveredEdge = null; 
         
         for (const edge of drawnEdges) { 
@@ -91,7 +114,22 @@ document.addEventListener("DOMContentLoaded", () => {
         } 
     });
     
-    DOM.topoCanvas.addEventListener('mouseleave', () => DOM.topoTooltip.style.display = 'none'); 
+    DOM.topoCanvas.addEventListener('mouseleave', () => DOM.topoTooltip.style.display = 'none');
+    let topoDrag = null;
+    DOM.topoCanvas.addEventListener('pointerdown', (e) => {
+        topoDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, px: topoPan.x, py: topoPan.y };
+        try { DOM.topoCanvas.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    DOM.topoCanvas.addEventListener('pointermove', (e) => {
+        if (!topoDrag || topoDrag.id !== e.pointerId) return;
+        topoPan.x = topoDrag.px + (e.clientX - topoDrag.x);
+        topoPan.y = topoDrag.py + (e.clientY - topoDrag.y);
+        drawTopology();
+    });
+    const endTopoDrag = (e) => { if (topoDrag && e.pointerId === topoDrag.id) topoDrag = null; };
+    DOM.topoCanvas.addEventListener('pointerup', endTopoDrag);
+    DOM.topoCanvas.addEventListener('pointercancel', endTopoDrag);
+    DOM.topoCanvas.addEventListener('dblclick', () => { topoPan = { x: 0, y: 0 }; drawTopology(); }); 
     window.addEventListener('resize', drawTopology);
 
     const urlParams = new URLSearchParams(window.location.search); 
@@ -333,7 +371,9 @@ let blacklistedHubId = null;
 let blacklistedHubTimeout = 0; 
 let processingOffers = new Set(); 
 let peerStats = {}; 
-let drawnEdges = []; 
+let drawnEdges = [];
+let topoPan = { x: 0, y: 0 };
+let tuneLink = null; 
 let appSessionTime = 0; 
 let watchdogTick = Date.now(); 
 let isIceRestarting = false; 
@@ -585,6 +625,31 @@ function logDebug(msg, type = 'info', sourceId = null) {
         if (logBuffer.length >= 20) flushLogs();
     } catch(e) { }
 }
+
+window.publishAudioTune = function (tune) {
+    const send = (payload) => {
+        const msg = JSON.stringify({ type: "audio-tune", sender: myId, t: Date.now(), tune: payload });
+        let n = 0;
+        Object.keys(channels).forEach((id) => {
+            const ch = channels[id];
+            if (ch && ch.readyState === "open") {
+                try { ch.send(msg); n++; } catch (e) {}
+            }
+        });
+        return n;
+    };
+    if (!tune) {
+        if (tuneLink) send({ on: false });
+        tuneLink = null;
+        return;
+    }
+    const n = send(tune);
+    const state = n ? "link" : "wait";
+    if (state !== tuneLink) {
+        tuneLink = state;
+        logDebug(n ? "[AUDIO] ladění po síti, linek " + n : "[AUDIO] ladění čeká na P2P", "webrtc", myId);
+    }
+};
 
 function updateDebugStats(stat, value) { 
     const el = document.getElementById(`dbg-${stat}`);
@@ -1425,9 +1490,10 @@ function drawTopology() {
     const w = DOM.topoCanvas.offsetWidth || DOM.topoCanvas.width; 
     const h = DOM.topoCanvas.offsetHeight || DOM.topoCanvas.height; 
     
-    DOM.topoCanvas.width = w; 
-    DOM.topoCanvas.height = h; 
-    ctx.clearRect(0, 0, w, h); 
+    DOM.topoCanvas.width = w;
+    DOM.topoCanvas.height = h;
+    ctx.setTransform(1, 0, 0, 1, topoPan.x, topoPan.y);
+    ctx.clearRect(-topoPan.x, -topoPan.y, w, h); 
     drawnEdges = []; 
     
     if (!networkGraph || !networkGraph.root) return;
@@ -1533,7 +1599,7 @@ window.onAudioChat = function (id, text) {
     if (saveMessage({ id: msgId, author: author, text: clean, time: Date.now() })) {
         renderMessage(author, clean, "other", Date.now(), true, null, false, msgId);
     }
-    logDebug("[AUDIO] chat od " + id + ": " + clean, "webrtc", myId);
+    logDebug("[AUDIO] chat ← " + id + ": " + clean, "webrtc", myId);
 };
 
 window.sendMsg = async function() { 
@@ -1825,6 +1891,11 @@ function bindDataChannel(channel, targetId) {
         try { 
             const msgObj = JSON.parse(e.data); 
             
+            if (msgObj.type === 'audio-tune') {
+                if (typeof window.onAudioTune === "function") window.onAudioTune(msgObj.sender, msgObj.tune || {});
+                return;
+            }
+
             if (msgObj.type === '_ping') { 
                 if (!knownNodes[msgObj.sender]) { 
                     channel.send(JSON.stringify({ type: 'request-announce', sender: myId })); 
