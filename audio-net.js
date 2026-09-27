@@ -1,4 +1,4 @@
-// Acoustic link. Own playback is subtracted from the mic before decode.
+// Soft fifth, both devices at once, pose five times a second.
 (function () {
     const SR = 44100;
     let enabled = false;
@@ -7,18 +7,34 @@
     let proc = null;
     let playGain = null;
     let worker = null;
-    let beaconTimer = null;
+    let pumpTimer = null;
+    let statTimer = null;
+    let nextAt = 0;
+    let rootPhase = 0;
+    let bank = 0;
+    let seqOk = null;
+    let lastPose = null;
+    let txThisSec = 0;
+    let rxThisSec = 0;
+    let lastRxAt = 0;
     let micHold = [];
     let micHoldLen = 0;
-    const tx = new Float32Array(SR);
-    let txWrite = 0;
     const peers = new Map();
-    const ui = { mic: 0, lagMs: 0, gain: 0, tx: "—", rx: "—", err: "" };
+    const ui = {
+        mic: 0, e0: 0, e1: 0, tx: "—", rx: "čekám", peer: "", err: ""
+    };
 
     function myId() {
         return (typeof window.chat_myId === "string" && window.chat_myId) || "local";
     }
     function codec() { return window.AudioCodec; }
+
+    function bankOf(id) {
+        let h = 2166136261;
+        const s = String(id || "");
+        for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+        return (h >>> 0) % 2;
+    }
 
     function audioLog(msg) {
         ui.rx = msg;
@@ -30,60 +46,96 @@
         const box = document.getElementById("audio-debug");
         if (!box) return;
         box.hidden = !enabled;
+        const name = codec() ? codec().BANKS[bank].name : "?";
         const lines = [
-            enabled ? "Zvuková síť: zapnuto" : "Zvuková síť: vypnuto",
+            enabled ? "Tichý akord " + name + ", 5×/s" : "Zvuková síť vypnutá",
             "Mikrofon: " + ui.mic.toFixed(3),
-            "Echo: " + ui.lagMs.toFixed(0) + " ms, zisk " + ui.gain.toFixed(2),
+            "Slyším C " + ui.e0.toExponential(1) + "  G " + ui.e1.toExponential(1),
             "TX: " + ui.tx,
             "RX: " + ui.rx,
-            "Sousedi: " + (peers.size ? Array.from(peers.keys()).join(", ") : "nikdo")
+            "Soused: " + (ui.peer || "nikdo")
         ];
-        if (ui.err) lines.push("Chyba: " + ui.err);
+        if (ui.err) lines.push(ui.err);
         box.textContent = lines.join("\n");
     }
 
-    function pushTx(pcm) {
-        for (let i = 0; i < pcm.length; i++) {
-            tx[txWrite] = pcm[i];
-            txWrite = (txWrite + 1) % SR;
+    function acceptPose(pose) {
+        if (!pose || !pose.id || pose.id === myId()) return;
+        const now = Date.now();
+        if (!seqOk || seqOk.id !== pose.id) {
+            seqOk = { id: pose.id, n: 1 };
+            return;
         }
-    }
-    function txAt(age) {
-        let i = txWrite - 1 - age;
-        i %= SR;
-        if (i < 0) i += SR;
-        return tx[i];
+        seqOk.n = (seqOk.n || 1) + 1;
+        if (seqOk.n < 2 || now - lastRxAt < 160) return;
+        if (lastPose && lastPose.id === pose.id) {
+            const dx = pose.x - lastPose.x;
+            const dy = pose.y - lastPose.y;
+            if (dx * dx + dy * dy > 700 * 700) return;
+        }
+        lastPose = pose;
+        lastRxAt = now;
+        rxThisSec++;
+        peers.set(pose.id, now);
+        ui.peer = pose.id + " @" + pose.x + "," + pose.y + " hp" + pose.hp;
+        if (typeof window.noteAudioPeer === "function") window.noteAudioPeer(pose.id);
+        if (typeof window.ingestAudioPeer === "function") {
+            window.ingestAudioPeer(pose.id, {
+                x: pose.x, y: pose.y, lvl: pose.lvl, hp: pose.hp,
+                name: pose.id, flipX: false, anim: "idle"
+            });
+        }
+        if (bankOf(pose.id) === bank && pose.id > myId()) {
+            bank ^= 1;
+            audioLog("stejné pásmo, přepínám na " + codec().BANKS[bank].name);
+        }
+        renderDebug();
     }
 
-    function cancelEcho(mic) {
-        const N = Math.min(480, mic.length);
-        const base = mic.length - N;
-        let bestLag = 0;
-        let best = 0;
-        const maxLag = Math.round(SR * 0.09);
-        for (let lag = 0; lag <= maxLag; lag += 20) {
-            let c = 0;
-            for (let i = 0; i < N; i += 6) c += mic[base + i] * txAt(lag + (N - 1 - i));
-            if (c > best) { best = c; bestLag = lag; }
+    function onHeard(msg) {
+        ui.mic = ui.mic * 0.5 + (msg.rms || 0) * 0.5;
+        const banks = msg.banks || [];
+        for (let i = 0; i < banks.length; i++) {
+            if (banks[i].bank === 0) ui.e0 = banks[i].energy || 0;
+            if (banks[i].bank === 1) ui.e1 = banks[i].energy || 0;
+            if (!banks[i].confident) continue;
+            const pose = codec().unpackPose(banks[i].symbols);
+            if (pose) acceptPose(pose);
         }
-        if (best < 0.002) {
-            ui.gain = 0;
-            ui.lagMs = 0;
-            return mic;
+        renderDebug();
+    }
+
+    function ensureWorker() {
+        if (worker) return worker;
+        worker = new Worker("audio-worker.js?v=1.1.6");
+        worker.onmessage = function (e) {
+            if (!enabled) return;
+            const msg = e.data || {};
+            if (msg.type === "heard") onHeard(msg);
+        };
+        worker.onerror = function () { ui.err = "worker"; audioLog("worker chyba"); };
+        return worker;
+    }
+
+    function pump() {
+        if (!enabled || !audioCtx || !codec()) return;
+        const C = codec();
+        if (nextAt < audioCtx.currentTime + 0.05) nextAt = audioCtx.currentTime + 0.06;
+        while (nextAt < audioCtx.currentTime + 0.32) {
+            const pose = window.__audioPose || { x: 0, y: 0, hp: 6, lvl: 0 };
+            const symbols = C.packPose(myId(), pose);
+            const built = C.encodeFrame(bank, symbols, rootPhase);
+            rootPhase = built.rootPhase;
+            const buf = audioCtx.createBuffer(1, built.pcm.length, SR);
+            buf.getChannelData(0).set(built.pcm);
+            const src = audioCtx.createBufferSource();
+            src.buffer = buf;
+            src.connect(playGain);
+            src.start(nextAt);
+            nextAt += built.pcm.length / SR;
+            txThisSec++;
+            ui.tx = myId() + " @" + Math.round(pose.x) + "," + Math.round(pose.y) + " hp" + (pose.hp || 0) + " " + C.BANKS[bank].name;
         }
-        let dot = 0;
-        let te = 0;
-        for (let i = 0; i < mic.length; i += 2) {
-            const t = txAt(bestLag + (mic.length - 1 - i));
-            dot += mic[i] * t;
-            te += t * t;
-        }
-        const g = te > 1e-8 ? Math.max(0, Math.min(1.4, dot / te)) : 0;
-        const out = new Float32Array(mic.length);
-        for (let i = 0; i < mic.length; i++) out[i] = mic[i] - g * txAt(bestLag + (mic.length - 1 - i));
-        ui.gain = g;
-        ui.lagMs = (bestLag / SR) * 1000;
-        return out;
     }
 
     function resample(input, fromRate) {
@@ -102,97 +154,18 @@
         return out;
     }
 
-    function deliver(parsed) {
-        if (!parsed) return;
-        if (parsed.type === "peer") {
-            if (!parsed.id || parsed.id === myId()) return;
-            peers.set(parsed.id, Date.now());
-            audioLog("slyším " + parsed.id + " @" + parsed.x + "," + parsed.y);
-            if (typeof window.noteAudioPeer === "function") window.noteAudioPeer(parsed.id);
-            if (typeof window.ingestAudioPeer === "function") {
-                window.ingestAudioPeer(parsed.id, {
-                    x: parsed.x, y: parsed.y, lvl: parsed.lvl, hp: parsed.hp,
-                    name: parsed.id, flipX: false, anim: "idle"
-                });
-            }
-        } else if (parsed.type === "enemies" && typeof window.ingestAudioEnemies === "function") {
-            audioLog("enemy snapshot lvl " + parsed.lvl + " ×" + (parsed.enemies ? parsed.enemies.length : 0));
-            window.ingestAudioEnemies(parsed.lvl, parsed.enemies);
-        } else if (parsed.type === "chat" && parsed.text) {
-            if (!parsed.id || parsed.id === myId()) return;
-            peers.set(parsed.id, Date.now());
-            audioLog("chat od " + parsed.id + ": " + parsed.text);
-            if (typeof window.onAudioChat === "function") window.onAudioChat(parsed.id, parsed.text);
-        }
-        renderDebug();
-    }
-
-    function playPcm(pcm) {
-        if (!enabled || !audioCtx || !playGain || !pcm) return;
-        pushTx(pcm);
-        const buf = audioCtx.createBuffer(1, pcm.length, SR);
-        buf.getChannelData(0).set(pcm);
-        const src = audioCtx.createBufferSource();
-        src.buffer = buf;
-        src.connect(playGain);
-        src.start();
-    }
-
-    function ensureWorker() {
-        if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.5");
-        worker.onmessage = function (e) {
-            const msg = e.data || {};
-            if (!enabled) return;
-            if (msg.type === "pcm") playPcm(msg.pcm);
-            else if (msg.type === "packets" && msg.packets) {
-                for (let i = 0; i < msg.packets.length; i++) deliver(codec().parsePacket(msg.packets[i]));
-            }
-        };
-        worker.onerror = function (err) {
-            ui.err = err && err.message ? err.message : "worker";
-            audioLog("worker chyba");
-        };
-        return worker;
-    }
-
-    function sendBytes(bytes, label) {
-        ui.tx = label || ("paket " + bytes.length + " B");
-        renderDebug();
-        ensureWorker().postMessage({ type: "encode", bytes: Array.from(bytes) });
-    }
-
-    function beaconNow() {
-        if (!enabled || !codec()) return;
-        const pose = window.__audioPose || { lvl: 0, x: 0, y: 0, hp: 6 };
-        sendBytes(codec().buildBeacon(myId(), pose), "beacon");
-        const enemies = window.__audioEnemies;
-        if (pose.host && enemies && enemies.length) {
-            setTimeout(function () {
-                if (enabled) sendBytes(codec().buildEnemies(pose.lvl || 0, enemies), "enemies");
-            }, 700);
-        }
-    }
-
-    window.queueAudioChat = function (text) {
-        if (!enabled || !codec() || !text) return;
-        sendBytes(codec().buildChat(myId(), text), "chat");
-    };
-
     function onMic(ev) {
         if (!worker || !audioCtx) return;
         const input = ev.inputBuffer.getChannelData(0);
         let peak = 0;
-        for (let i = 0; i < input.length; i += 16) peak = Math.max(peak, Math.abs(input[i]));
-        ui.mic = ui.mic * 0.8 + peak * 0.2;
+        for (let i = 0; i < input.length; i += 8) peak = Math.max(peak, Math.abs(input[i]));
+        if (peak > ui.mic) ui.mic = ui.mic * 0.7 + peak * 0.3;
         const atRate = resample(input, audioCtx.sampleRate);
-        const clean = cancelEcho(atRate);
-        const copy = new Float32Array(clean.length);
-        copy.set(clean);
+        const copy = new Float32Array(atRate.length);
+        copy.set(atRate);
         micHold.push(copy);
         micHoldLen += copy.length;
-        if (ui.mic > 0.01 && Math.random() < 0.05) renderDebug();
-        if (micHoldLen < SR * 0.25) return;
+        if (micHoldLen < SR * 0.08) return;
         const merged = new Float32Array(micHoldLen);
         let o = 0;
         for (let i = 0; i < micHold.length; i++) {
@@ -215,11 +188,15 @@
         catch (e) { audioCtx = new AC(); }
         if (audioCtx.state === "suspended") await audioCtx.resume();
         playGain = audioCtx.createGain();
-        playGain.gain.value = 0.5;
+        playGain.gain.value = 0.62;
         playGain.connect(audioCtx.destination);
+        bank = bankOf(myId());
+        rootPhase = 0;
+        seqOk = null;
+        lastPose = null;
         ensureWorker();
         micStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+            audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
             video: false
         });
         const src = audioCtx.createMediaStreamSource(micStream);
@@ -232,19 +209,35 @@
         mute.connect(audioCtx.destination);
         enabled = true;
         window.__audioLinkOn = true;
-        audioLog("zapnuto, vzorkování " + Math.round(audioCtx.sampleRate) + " Hz");
-        const slot = (myId().charCodeAt(0) || 0) % 5 * 180;
-        setTimeout(beaconNow, slot);
-        beaconTimer = setInterval(beaconNow, 2800);
-        renderDebug();
+        nextAt = audioCtx.currentTime + 0.08;
+        pumpTimer = setInterval(pump, 40);
+        pump();
+        txThisSec = 0;
+        rxThisSec = 0;
+        statTimer = setInterval(function () {
+            if (!enabled) return;
+            const who = ui.peer || "nikdo";
+            audioLog(
+                "vysláno " + txThisSec + "/s " + ui.tx
+                + " | mic " + ui.mic.toFixed(3)
+                + " C " + ui.e0.toExponential(1)
+                + " G " + ui.e1.toExponential(1)
+                + " | přijato " + rxThisSec + "/s " + who
+            );
+            txThisSec = 0;
+            rxThisSec = 0;
+        }, 1000);
+        audioLog("zapnuto, tichá kvinta " + codec().BANKS[bank].name + ", " + Math.round(audioCtx.sampleRate) + " Hz");
         return true;
     }
 
     function disable() {
         enabled = false;
         window.__audioLinkOn = false;
-        if (beaconTimer) clearInterval(beaconTimer);
-        beaconTimer = null;
+        if (pumpTimer) clearInterval(pumpTimer);
+        if (statTimer) clearInterval(statTimer);
+        pumpTimer = null;
+        statTimer = null;
         if (proc) {
             proc.onaudioprocess = null;
             try { proc.disconnect(); } catch (e) {}
@@ -263,7 +256,6 @@
         audioCtx = null;
         playGain = null;
         audioLog("vypnuto");
-        renderDebug();
     }
 
     function syncButton() {
@@ -271,8 +263,10 @@
         if (!btn) return;
         btn.classList.toggle("on", enabled);
         btn.setAttribute("aria-pressed", enabled ? "true" : "false");
-        btn.title = enabled ? "Zvuková síť zapnutá" : "Zvuková síť vypnutá";
+        btn.title = enabled ? "Tichá zvuková síť zapnutá" : "Tichá zvuková síť vypnutá";
     }
+
+    window.queueAudioChat = function () {};
 
     window.toggleAudioLink = async function () {
         try {
@@ -291,21 +285,12 @@
     window.AudioLink = {
         selfTest: function () {
             const C = codec();
-            const cases = [];
-            function check(name, pcm, expectCount, expectFirst) {
-                const got = C.decodeAll(pcm).map(function (b) { return Array.from(b); });
-                const ok = got.length === expectCount && (!expectFirst || JSON.stringify(got[0]) === JSON.stringify(expectFirst));
-                cases.push({ name: name, ok: ok, count: got.length });
-                return ok;
-            }
-            const beacon = C.buildBeacon("ab12cd", { lvl: 3, x: 420, y: 880, hp: 5 });
-            let ok = check("clean", C.encodePacket(beacon), 1, beacon);
-            const chat = C.buildChat("ab12cd", "ahoj");
-            ok = check("chat", C.encodePacket(chat), 1, chat) && ok;
-            const parsed = C.parsePacket(Uint8Array.from(chat));
-            const parseOk = parsed && parsed.type === "chat" && parsed.text === "ahoj";
-            cases.push({ name: "parse-chat", ok: !!parseOk });
-            return { ok: ok && !!parseOk, cases: cases };
+            const symbols = C.packPose("on983r1", { x: 400, y: 880, hp: 5, lvl: 2 });
+            const pcm = C.encodeFrame(1, symbols, 0).pcm;
+            const heard = C.decodeAll(pcm).banks[1];
+            const pose = C.unpackPose(heard.symbols);
+            const ok = !!(pose && pose.id === "on983r" && pose.x === 400 && pose.y === 880 && pose.hp === 5 && pose.lvl === 2);
+            return { ok: ok, pose: pose };
         }
     };
 

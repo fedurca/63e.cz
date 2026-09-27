@@ -1,221 +1,196 @@
-// Pure encode/decode for the musical audio link. No DOM, safe inside a Worker.
+// Quiet acoustic modem. Two devices share a soft perfect fifth (C and G).
+// Pose bits ride on higher partials in separate bands, five frames a second.
 (function (root) {
     const SR = 44100;
-    const NOTES = [
-        220.00, 261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33,
-        659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00
+    const FRAME = 8820;
+    const N = 441;
+    const CP = 100;
+    const STEP = N + CP;
+    const NDATA = 14;
+    const NSYM = NDATA + 2;
+    const BODY = NSYM * STEP;
+    const DATA_AMP = 0.04;
+    const ROOT_AMP = 0.035;
+    const PEAK = 0.16;
+    const ALPH = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const BANKS = [
+        { sync: 8, data: [10, 12, 14, 16, 18], root: 523.25, name: "C" },
+        { sync: 24, data: [26, 28, 30, 32, 34], root: 783.99, name: "G" }
     ];
-    const PREAMBLE = [0, 15, 0, 15, 1, 14];
-    const SYMBOL = Math.round(SR * 0.028);
-    const GAP = Math.round(SR * 0.006);
-    const STEP = SYMBOL + GAP;
-    const FILLER = [4, 6, 5, 7, 5, 4];
-    const COEFFS = NOTES.map(freq => {
-        const k = Math.round((SYMBOL * freq) / SR);
-        const w = (2 * Math.PI * k) / SYMBOL;
-        return 2 * Math.cos(w);
-    });
 
-    function crc8(bytes) {
-        let c = 0;
-        for (let i = 0; i < bytes.length; i++) {
-            c ^= bytes[i];
-            for (let b = 0; b < 8; b++) {
-                c = (c & 0x80) ? ((c << 1) ^ 0x07) & 255 : (c << 1) & 255;
-            }
-        }
-        return c;
-    }
-
-    const PLUCKS = NOTES.map(freq => {
-        const wave = new Float32Array(SYMBOL);
-        for (let i = 0; i < SYMBOL; i++) {
-            const u = i / SYMBOL;
-            const env = Math.exp(-1.7 * u) * Math.sin(Math.PI * u);
-            wave[i] = 0.16 * env * Math.sin(2 * Math.PI * freq * i / SR);
-        }
-        return wave;
-    });
-
-    function renderSymbols(syms) {
-        const n = syms.length * STEP + Math.round(SR * 0.08);
-        const out = new Float32Array(n);
-        for (let i = 0; i < n; i++) {
-            const t = i / SR;
-            out[i] = 0.03 * Math.sin(2 * Math.PI * 110 * t) + 0.02 * Math.sin(2 * Math.PI * 164.81 * t);
-        }
-        for (let k = 0; k < syms.length; k++) {
-            const wave = PLUCKS[syms[k]] || PLUCKS[0];
-            const start = k * STEP;
-            for (let i = 0; i < SYMBOL; i++) out[start + i] += wave[i];
-        }
-        let peak = 0;
-        for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]));
-        if (peak > 0.22) {
-            const g = 0.22 / peak;
-            for (let i = 0; i < n; i++) out[i] *= g;
-        }
-        return out;
-    }
-
-    function encodePacket(bytes) {
-        const payload = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
-        const crc = crc8(payload);
-        const framed = [payload.length];
-        for (let i = 0; i < payload.length; i++) framed.push(payload[i]);
-        framed.push(crc);
-        const syms = PREAMBLE.slice();
-        for (let i = 0; i < framed.length; i++) {
-            syms.push((framed[i] >> 4) & 15, framed[i] & 15);
-        }
-        for (let i = 0; i < FILLER.length; i++) syms.push(FILLER[i]);
-        return renderSymbols(syms);
-    }
-
-    function goertzel(samples, offset, coeff) {
+    function goertzel(samples, offset, bin) {
+        const w = (2 * Math.PI * bin) / N;
+        const coeff = 2 * Math.cos(w);
         let s0 = 0, s1 = 0, s2 = 0;
-        const end = offset + SYMBOL;
-        for (let i = offset; i < end; i++) {
-            s0 = samples[i] + coeff * s1 - s2;
+        for (let i = 0; i < N; i++) {
+            const x = samples[offset + i] || 0;
+            s0 = x + coeff * s1 - s2;
             s2 = s1;
             s1 = s0;
         }
         return s1 * s1 + s2 * s2 - coeff * s1 * s2;
     }
 
-    function readSymbol(samples, offset) {
-        if (offset < 0 || offset + SYMBOL > samples.length) return -1;
-        let best = 0, second = 0, idx = 0;
-        for (let n = 0; n < COEFFS.length; n++) {
-            const p = goertzel(samples, offset, COEFFS[n]);
-            if (p > best) { second = best; best = p; idx = n; }
-            else if (p > second) second = p;
+    function addTone(out, freq, start, amp) {
+        const end = Math.min(out.length, start + STEP);
+        for (let i = start; i < end; i++) {
+            const u = (i - start) / STEP;
+            const e = u < 0.15 ? u / 0.15 : u > 0.85 ? (1 - u) / 0.15 : 1;
+            out[i] += amp * e * Math.sin(2 * Math.PI * freq * i / SR);
         }
-        if (best < 0.00005 || (second > 0 && best < second * 1.28)) return -1;
-        return idx;
     }
 
-    function tryDecodeAt(samples, offset) {
-        for (let i = 0; i < PREAMBLE.length; i++) {
-            if (readSymbol(samples, offset + i * STEP) !== PREAMBLE[i]) return null;
+    function encodeFrame(bankId, symbols, rootPhase) {
+        const bank = BANKS[bankId] || BANKS[0];
+        const out = new Float32Array(FRAME);
+        let phase = rootPhase || 0;
+        const rootW = 2 * Math.PI * bank.root / SR;
+        for (let i = 0; i < FRAME; i++) {
+            phase += rootW;
+            out[i] += ROOT_AMP * Math.sin(phase);
         }
-        let p = offset + PREAMBLE.length * STEP;
-        const lenHi = readSymbol(samples, p);
-        const lenLo = readSymbol(samples, p + STEP);
-        if (lenHi < 0 || lenLo < 0) return null;
-        const len = (lenHi << 4) | lenLo;
-        if (len < 1 || len > 48) return null;
-        p += 2 * STEP;
-        const bytes = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
-            const hi = readSymbol(samples, p);
-            const lo = readSymbol(samples, p + STEP);
-            if (hi < 0 || lo < 0) return null;
-            bytes[i] = (hi << 4) | lo;
-            p += 2 * STEP;
+        addTone(out, bank.sync * SR / N, 0, DATA_AMP);
+        for (let k = 0; k < bank.data.length; k++) addTone(out, bank.data[k] * SR / N, STEP, DATA_AMP);
+        for (let s = 0; s < NDATA; s++) {
+            const bits = symbols[s] || 0;
+            for (let k = 0; k < 5; k++) {
+                if ((bits >> k) & 1) addTone(out, bank.data[k] * SR / N, (s + 2) * STEP, DATA_AMP);
+            }
         }
-        const crcHi = readSymbol(samples, p);
-        const crcLo = readSymbol(samples, p + STEP);
-        if (crcHi < 0 || crcLo < 0) return null;
-        if (((crcHi << 4) | crcLo) !== crc8(bytes)) return null;
-        return { bytes: bytes, symbols: PREAMBLE.length + (len + 2) * 2 };
+        let peak = 0;
+        for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
+        if (peak > PEAK) {
+            const g = PEAK / peak;
+            for (let i = 0; i < out.length; i++) out[i] *= g;
+        }
+        return { pcm: out, rootPhase: phase };
+    }
+
+    function findSync(samples, bin) {
+        let best = -1;
+        let at = 0;
+        const last = Math.max(0, samples.length - STEP);
+        for (let i = 0; i <= last; i += 4) {
+            const e = goertzel(samples, i + CP, bin);
+            if (e > best) { best = e; at = i; }
+        }
+        const a = Math.max(0, at - 8);
+        const b = Math.min(last, at + 8);
+        for (let i = a; i <= b; i++) {
+            const e = goertzel(samples, i + CP, bin);
+            if (e > best) { best = e; at = i; }
+        }
+        return { at: at, energy: best };
+    }
+
+    function decodeBank(samples, bankId) {
+        const bank = BANKS[bankId];
+        const sync = findSync(samples, bank.sync);
+        const ref = bank.data.map(function (bin) { return goertzel(samples, sync.at + STEP + CP, bin); });
+        const symbols = [];
+        for (let n = 0; n < NDATA; n++) {
+            let v = 0;
+            const start = sync.at + (n + 2) * STEP + CP;
+            for (let k = 0; k < 5; k++) {
+                const e = goertzel(samples, start, bank.data[k]);
+                if (ref[k] > sync.energy * 0.003 && e > ref[k] * 0.4) v |= 1 << k;
+            }
+            symbols.push(v);
+        }
+        const refMean = ref.reduce(function (a, b) { return a + b; }, 0) / Math.max(1, ref.length);
+        const confident = sync.energy > 0.015 && refMean > sync.energy * 0.02;
+        return { bank: bankId, name: bank.name, symbols: symbols, energy: sync.energy, at: sync.at, confident: confident };
     }
 
     function decodeAll(samples) {
-        const found = [];
-        const minLen = (PREAMBLE.length + 8) * STEP;
-        const hop = Math.floor(STEP / 4);
-        for (let off = 0; off + minLen < samples.length;) {
-            const pkt = tryDecodeAt(samples, off);
-            if (!pkt) { off += hop; continue; }
-            found.push(pkt.bytes);
-            off += pkt.symbols * STEP;
-        }
-        return found;
+        let rms = 0;
+        const n = samples ? samples.length : 0;
+        for (let i = 0; i < n; i += 16) rms += samples[i] * samples[i];
+        rms = n ? Math.sqrt(rms / Math.ceil(n / 16)) : 0;
+        return {
+            rms: rms,
+            banks: [decodeBank(samples, 0), decodeBank(samples, 1)]
+        };
     }
 
-    function u16(n) {
-        n = Math.max(0, Math.min(65535, Math.round(n || 0)));
-        return [n & 255, (n >> 8) & 255];
-    }
-    function rd16(b, i) { return b[i] | (b[i + 1] << 8); }
-
-    function buildBeacon(id, pose) {
-        const raw = String(id || "").slice(0, 6).padEnd(6, " ");
-        const bytes = [1];
-        for (let i = 0; i < 6; i++) bytes.push(raw.charCodeAt(i) & 127);
-        bytes.push((pose.lvl || 0) & 255);
-        const x = u16(pose.x), y = u16(pose.y);
-        bytes.push(x[0], x[1], y[0], y[1], (pose.hp || 0) & 255);
-        return bytes;
+    function bitsFromSymbols(symbols) {
+        const bits = [];
+        for (let s = 0; s < NDATA; s++) {
+            const v = symbols[s] || 0;
+            for (let b = 0; b < 5; b++) bits.push((v >> b) & 1);
+        }
+        return bits;
     }
 
-    function buildEnemies(lvl, list) {
-        const src = (list || []).slice(0, 5);
-        const bytes = [2, lvl & 255, src.length];
-        for (let i = 0; i < src.length; i++) {
-            const e = src[i];
-            const x = u16(e.x), y = u16(e.y);
-            bytes.push((e.i || 0) & 255, x[0], x[1], y[0], y[1]);
+    function symbolsFromBits(bits) {
+        const symbols = [];
+        for (let i = 0; i < NDATA; i++) {
+            let v = 0;
+            for (let b = 0; b < 5; b++) if (bits[i * 5 + b]) v |= 1 << b;
+            symbols.push(v);
         }
-        return bytes;
+        return symbols;
     }
 
-    function parsePacket(bytes) {
-        if (!bytes || !bytes.length) return null;
-        if (bytes[0] === 1 && bytes.length >= 13) {
-            let id = "";
-            for (let i = 1; i <= 6; i++) id += String.fromCharCode(bytes[i]);
-            return {
-                type: "peer",
-                id: id.trim(),
-                lvl: bytes[7],
-                x: rd16(bytes, 8),
-                y: rd16(bytes, 10),
-                hp: bytes[12]
-            };
-        }
-        if (bytes[0] === 2 && bytes.length >= 3) {
-            const lvl = bytes[1];
-            const n = bytes[2];
-            const enemies = [];
-            let p = 3;
-            for (let i = 0; i < n && p + 5 <= bytes.length; i++) {
-                enemies.push({ i: bytes[p], x: rd16(bytes, p + 1), y: rd16(bytes, p + 3) });
-                p += 5;
-            }
-            return { type: "enemies", lvl: lvl, enemies: enemies };
-        }
-        if (bytes[0] === 3 && bytes.length >= 8) {
-            let id = "";
-            for (let i = 1; i <= 6; i++) id += String.fromCharCode(bytes[i]);
-            const n = bytes[7];
-            const slice = bytes.subarray(8, 8 + n);
-            let text = "";
-            try { text = new TextDecoder().decode(slice); } catch (e) { text = ""; }
-            return { type: "chat", id: id.trim(), text: text };
-        }
-        return null;
+    function readBits(bits, at, n) {
+        let v = 0;
+        for (let i = 0; i < n; i++) v = (v << 1) | (bits[at + i] ? 1 : 0);
+        return v;
     }
 
-    function buildChat(id, text) {
-        const raw = String(text || "").slice(0, 42);
-        const utf = new TextEncoder().encode(raw);
-        const bytes = [3];
-        const idr = String(id || "").slice(0, 6).padEnd(6, " ");
-        for (let i = 0; i < 6; i++) bytes.push(idr.charCodeAt(i) & 127);
-        const n = Math.min(utf.length, 42);
-        bytes.push(n);
-        for (let i = 0; i < n; i++) bytes.push(utf[i]);
-        return bytes;
+    function writeBits(bits, value, n) {
+        for (let i = n - 1; i >= 0; i--) bits.push((value >>> i) & 1);
+    }
+
+    function crc8bits(bits, n) {
+        let c = 0;
+        for (let i = 0; i < n; i++) {
+            c ^= bits[i] ? 0x80 : 0;
+            for (let b = 0; b < 8; b++) c = (c & 0x80) ? ((c << 1) ^ 0x07) & 255 : (c << 1) & 255;
+        }
+        return c;
+    }
+
+    function packPose(id, pose) {
+        const bits = [];
+        const clean = String(id || "").toLowerCase().replace(/[^0-9a-z]/g, "").slice(0, 6).padEnd(6, "0");
+        for (let i = 0; i < 6; i++) writeBits(bits, Math.max(0, ALPH.indexOf(clean[i])), 6);
+        const x = Math.max(0, Math.min(1023, Math.round((pose && pose.x) || 0) / 5));
+        const y = Math.max(0, Math.min(255, Math.round((pose && pose.y) || 0) / 16));
+        writeBits(bits, x, 10);
+        writeBits(bits, y, 8);
+        writeBits(bits, ((pose && pose.hp) || 0) & 15, 4);
+        writeBits(bits, ((pose && pose.lvl) || 0) & 15, 4);
+        writeBits(bits, crc8bits(bits, bits.length), 8);
+        return symbolsFromBits(bits);
+    }
+
+    function unpackPose(symbols) {
+        const bits = bitsFromSymbols(symbols);
+        if (bits.length < 70) return null;
+        if (readBits(bits, 62, 8) !== crc8bits(bits, 62)) return null;
+        let id = "";
+        for (let i = 0; i < 6; i++) {
+            const v = readBits(bits, i * 6, 6);
+            if (v < 0 || v >= ALPH.length) return null;
+            id += ALPH[v];
+        }
+        if (!id || id === "000000") return null;
+        let at = 36;
+        const x = readBits(bits, at, 10); at += 10;
+        const y = readBits(bits, at, 8); at += 8;
+        const hp = readBits(bits, at, 4); at += 4;
+        const lvl = readBits(bits, at, 4);
+        return { id: id, x: x * 5, y: y * 16, hp: hp, lvl: lvl };
     }
 
     root.AudioCodec = {
-        encodePacket: encodePacket,
+        SR: SR,
+        FRAME: FRAME,
+        BANKS: BANKS,
+        encodeFrame: encodeFrame,
         decodeAll: decodeAll,
-        parsePacket: parsePacket,
-        buildBeacon: buildBeacon,
-        buildEnemies: buildEnemies,
-        buildChat: buildChat
+        packPose: packPose,
+        unpackPose: unpackPose
     };
 })(typeof self !== "undefined" ? self : this);
