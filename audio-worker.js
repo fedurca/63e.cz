@@ -1,4 +1,4 @@
-importScripts("audio-codec.js?v=1.1.1");
+importScripts("audio-codec.js?v=1.1.2");
 
 let acc = new Float32Array(0);
 let lastScan = 0;

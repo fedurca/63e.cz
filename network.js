@@ -153,6 +153,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (DOM.setupScreen) DOM.setupScreen.style.display = "none";
+    if (FORCE_LOCAL_SIGNAL) {
+        logDebug("[SIGNAL] Izolovaný localhost. Signalizace jen lokálním tunelem, veřejné API se nevolá.", "info", myId);
+        updateDebugStats("dns", "LOCAL isolated");
+    }
     setTimeout(() => { if (typeof window.initSystem === "function") window.initSystem(); }, 0);
 });
 
@@ -162,11 +166,22 @@ window.toggleChat = function() {
 };
 
 const DEFAULT_WORKER_URL = "https://api.63e.cz";
-const WORKER_URL = (new URLSearchParams(location.search).get("signal") || localStorage.getItem("signal_worker_url") || DEFAULT_WORKER_URL).replace(/\/+$/, "");
+function pageIsIsolated() {
+    try {
+        if (location.protocol === "file:") return true;
+        const h = String(location.hostname || "").toLowerCase();
+        return h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "::1" || h === "[::1]";
+    } catch (e) {
+        return false;
+    }
+}
+const explicitSignal = new URLSearchParams(location.search).get("signal");
+const FORCE_LOCAL_SIGNAL = pageIsIsolated() && !explicitSignal;
+const WORKER_URL = (explicitSignal || (!FORCE_LOCAL_SIGNAL && localStorage.getItem("signal_worker_url")) || DEFAULT_WORKER_URL).replace(/\/+$/, "");
 const MAX_HISTORY = 250;
 const LOCAL_SIGNAL_PREFIX = "p2p_v22_signal:";
-let signalTransport = "api";
-let apiBackoffUntil = 0;
+let signalTransport = FORCE_LOCAL_SIGNAL ? "local" : "api";
+let apiBackoffUntil = FORCE_LOCAL_SIGNAL ? Number.MAX_SAFE_INTEGER : 0;
 let apiWarned = false;
 
 function localSignalKey(key) {
@@ -540,7 +555,7 @@ function dekomprimovat(b64) {
 
 let logBuffer = [];
 function flushLogs() {
-    if (logBuffer.length === 0) return;
+    if (logBuffer.length === 0 || FORCE_LOCAL_SIGNAL) return;
     if (Date.now() < apiBackoffUntil) return;
     const logsToSend = [...logBuffer];
     logBuffer = [];
@@ -548,7 +563,7 @@ function flushLogs() {
 }
 setInterval(flushLogs, 5000);
 window.addEventListener('beforeunload', () => {
-    if (logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+    if (!FORCE_LOCAL_SIGNAL && logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
 });
 
 function logDebug(msg, type = 'info', sourceId = null) { 
@@ -560,8 +575,7 @@ function logDebug(msg, type = 'info', sourceId = null) {
     }
     try {
         let currentRole = "Spoke";
-        if (typeof isDnsHost !== 'undefined' && isDnsHost) currentRole = "Master";
-        else if (typeof isHttpRelayMode !== 'undefined' && isHttpRelayMode) currentRole = "HTTP Relay";
+        if (typeof isDnsHost !== "undefined" && isDnsHost) currentRole = "Master";
         const logData = { id: idStr, name: typeof myName !== 'undefined' && myName ? myName : 'Unknown', role: currentRole, type: type, message: msg, time: new Date().toISOString() };
         const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
         logBuffer.push({ message: [prefix, logData], type: type, time: Date.now() });
@@ -582,12 +596,7 @@ function unlockChat() {
     DOM.btnClearHistory.style.display = 'inline-block';
     
     let roleName = isDnsHost ? 'Master (Hub)' : 'Node (Spoke)'; 
-    let statusClass = isDnsHost ? 'host' : 'online'; 
-    
-    if(isHttpRelayMode) { 
-        roleName = 'HTTP Relay (Spoke)'; 
-        statusClass = 'relay'; 
-    }
+    let statusClass = isDnsHost ? 'host' : 'online';
     
     DOM.statusDot.className = `status-dot ${statusClass}`; 
     DOM.uiRole.innerText = roleName;
@@ -636,6 +645,7 @@ async function decryptE2E(ivB64, cipherB64, senderId) {
 }
 
 async function writeSignal(subdomena, data, retry = 2) { 
+    if (FORCE_LOCAL_SIGNAL) return writeLocalSignal(subdomena, data);
     updateDebugStats('dns', signalTransport === 'local' ? `LOCAL: ${subdomena}` : `ZÁPIS: ${subdomena}`); 
 
     if (Date.now() < apiBackoffUntil) {
@@ -658,6 +668,7 @@ async function writeSignal(subdomena, data, retry = 2) {
 }
 
 async function readSignal(subdomena) { 
+    if (FORCE_LOCAL_SIGNAL) return readLocalSignal(subdomena);
     updateDebugStats('dns', signalTransport === 'local' ? `LOCAL: ${subdomena}` : `ČTENÍ: ${subdomena}`); 
 
     if (Date.now() < apiBackoffUntil) {
@@ -795,10 +806,6 @@ window.requestFile = function(fileId) {
 };
 
 async function sendVideoSignal(targetId, action, data) { 
-    if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
-        logDebug(`[VIDEO] Nelze spojit video přes HTTP Relay.`, 'error', myId); 
-        return; 
-    } 
     const payload = JSON.stringify({ action, data }); 
     const encrypted = await encryptE2E(payload, targetId); 
     routeMessage({ id: generateMsgId(), ttl: 10, type: 'video-signal', sender: myId, target: targetId, payload: encrypted }); 
@@ -848,10 +855,6 @@ async function initVideoPc(peerId, isInitiator) {
 }
 
 window.startVideoCall = async function(targetId) { 
-    if(isHttpRelayMode || knownHttpClients.has(targetId)) { 
-        alert("S tímto uživatelem nelze zahájit videohovor (HTTP Relay)."); 
-        return; 
-    } 
     if (activeCall.pc) { 
         alert("Již máte probíhající hovor."); 
         return; 
@@ -1172,18 +1175,6 @@ function routeMessage(msgObj, sourceChannel = null) {
             } catch(err) {} 
         } 
     });
-
-    if (isHttpRelayMode) { 
-        if (sourceChannel !== 'http' && !isRealtimeGameMsg(msgObj.type)) {
-            addToHttpOutbox('hub', msgObj); 
-        }
-    } else if (isDnsHost) { 
-        knownHttpClients.forEach(clientId => { 
-            if (clientId !== msgObj.sender && clientId !== sourceChannel && !isRealtimeGameMsg(msgObj.type)) { 
-                addToHttpOutbox(clientId, msgObj); 
-            } 
-        }); 
-    }
 }
 
 async function processPayload(msg) {
@@ -1594,7 +1585,29 @@ window.handleFileUpload = async function(event) {
     event.target.value = ''; 
 };
 
-function cleanupConnection(targetId, switchToHttp = false) {
+let p2pRetryTimer = null;
+async function retryHubP2P(reason) {
+    if (isDnsHost) return;
+    if (channels['hub'] && channels['hub'].readyState === 'open') return;
+    if (p2pRetryTimer) return;
+    const alive = await readSignal('host-alive');
+    const fresh = alive && alive.id && alive.id !== myId && (Date.now() - alive.timestamp < 45000);
+    if (!fresh) {
+        logDebug(`[P2P] Master neodpovídá (${reason}). Hledám novou autoritu.`, 'webrtc', myId);
+        checkIsolation();
+        return;
+    }
+    logDebug(`[P2P] Obnovuji přímé spojení (${reason})…`, 'webrtc', myId);
+    if (DOM.uiRole) DOM.uiRole.innerText = 'Obnovuji P2P…';
+    p2pRetryTimer = setTimeout(() => {
+        p2pRetryTimer = null;
+        if (isDnsHost) return;
+        if (channels['hub'] && channels['hub'].readyState === 'open') return;
+        joinViaDns();
+    }, 1200);
+}
+
+function cleanupConnection(targetId) {
     if(channels[targetId]) { 
         channels[targetId].onclose = null; 
         channels[targetId].onerror = null; 
@@ -1608,6 +1621,7 @@ function cleanupConnection(targetId, switchToHttp = false) {
         connections[targetId].ondatachannel = null; 
         connections[targetId].onicegatheringstatechange = null; 
         clearInterval(connections[targetId]._statsDump); 
+        if (connections[targetId]._discTimer) clearTimeout(connections[targetId]._discTimer);
         connections[targetId].close(); 
         delete connections[targetId]; 
     }
@@ -1621,14 +1635,9 @@ function cleanupConnection(targetId, switchToHttp = false) {
             delete knownNodes[targetId]; 
             if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(targetId);
         }
-    } else if (!isDnsHost && targetId === 'hub' && !isHttpRelayMode) {
+    } else if (!isDnsHost && targetId === 'hub') {
         if (joinInterval) clearInterval(joinInterval); 
-        
-        if (switchToHttp) {
-            startHttpRelayMode();
-        } else {
-            checkIsolation();
-        }
+        retryHubP2P('hub-link-lost');
     }
 }
 
@@ -1678,13 +1687,26 @@ async function createP2PNode(targetId, isInitiator, useDns = false, sid = null) 
         const color = (state === 'connected') ? '#2ed573' : ((state === 'failed' || state === 'disconnected') ? '#ff4757' : '#feca57'); 
         logDebug(`[WebRTC] ICE stav pro ${targetId}: <span style="color:${color}; font-weight:bold">${state}</span>`, 'info', myId);
         
-        if (state === 'disconnected' || state === 'failed') {
-            if (targetId === 'hub' && !isDnsHost && !isHttpRelayMode) {
-                logDebug(`[API] WebRTC síť blokuje spojení (${state}). Přecházím na HTTP Relay!`, "log-relay", myId);
-                cleanupConnection(targetId, true);
-            } else { 
-                cleanupConnection(targetId); 
-            }
+        if (state === 'disconnected') {
+            if (pc._discTimer) return;
+            pc._discTimer = setTimeout(() => {
+                pc._discTimer = null;
+                if (connections[targetId] !== pc) return;
+                const again = pc.iceConnectionState;
+                if (again === 'connected' || again === 'completed') return;
+                logDebug(`[P2P] ${targetId} zůstává ${again}. Skládám P2P znovu.`, 'webrtc', myId);
+                cleanupConnection(targetId);
+            }, 4000);
+            return;
+        }
+        if (state === 'connected' || state === 'completed') {
+            if (pc._discTimer) { clearTimeout(pc._discTimer); pc._discTimer = null; }
+            logDebug(`[P2P] ${targetId} je spojen (${state}).`, 'webrtc', myId);
+            return;
+        }
+        if (state === 'failed') {
+            logDebug(`[P2P] ICE failed u ${targetId}. Nový pokus o P2P.`, 'webrtc', myId);
+            cleanupConnection(targetId);
         }
     };
 
@@ -1826,15 +1848,8 @@ setInterval(async () => {
             if (!pc.checkingStartTime) pc.checkingStartTime = Date.now();
             
             if (Date.now() - pc.checkingStartTime > 25000) {
-                logDebug(`[WebRTC] Spojení s ${peerId} zamrzlo (zpoždění kandidátů). Ukončuji.`, 'error', myId);
-                
-                if (peerId === 'hub' && !isDnsHost && !isHttpRelayMode) {
-                    logDebug(`[API] WebRTC ICE timeout. Přecházím na HTTP Relay!`, "log-relay", myId);
-                    cleanupConnection(peerId, true);
-                } else {
-                    if (peerId === 'hub') blacklistedHubTimeout = Date.now() + 30000;
-                    cleanupConnection(peerId);
-                }
+                logDebug(`[P2P] Spojení s ${peerId} se nesestavilo. Zkouším P2P znovu.`, 'webrtc', myId);
+                cleanupConnection(peerId);
                 continue;
             }
         } else { 
@@ -1903,9 +1918,8 @@ setInterval(() => {
         Object.keys(knownNodes).forEach(peerId => { 
             if (peerId !== myId) { 
                 const s = peerStats[peerId] || {}; 
-                let isHttp = knownHttpClients.has(peerId); 
                 const audioOnly = !!(knownNodes[peerId] && knownNodes[peerId].audio) && !(channels[peerId] && channels[peerId].readyState === 'open');
-                edges.push({ id: peerId, ping: s.rtt || knownNodes[peerId].ping || 0, rtt: isHttp ? 0 : (s.rtt || 0), bitrate: s.bitrate || 0, isRelay: isHttp ? true : (s.isRelay || false), protocol: audioOnly ? 'audio' : (isHttp ? 'http' : (s.protocol || 'udp')) }); 
+                edges.push({ id: peerId, ping: s.rtt || knownNodes[peerId].ping || 0, rtt: s.rtt || 0, bitrate: s.bitrate || 0, isRelay: !!s.isRelay, protocol: audioOnly ? 'audio' : (s.protocol || 'udp') }); 
             } 
         }); 
         networkGraph.edges = edges; 
@@ -1926,17 +1940,15 @@ setInterval(() => {
         const node = knownNodes[id]; 
         const isMe = id === myId; 
         const isMaster = (networkGraph.root === id); 
-        const isHttpTarget = knownHttpClients.has(id) || (isMe && isHttpRelayMode); 
         const lastSeenDiff = now - (node.lastSeen || now);
         
         if (!isMe && lastSeenDiff > 45000) { 
             if (isDnsHost) {
                 cleanupConnection(id); 
-            } else if (isMaster && !isHttpRelayMode) {
+            } else if (isMaster) {
                 cleanupConnection('hub'); 
             } else if (lastSeenDiff > 60000) { 
                 logDebug(`[WATCHDOG] Uzel ${id} neodpovídá (>60s), mažu data a zavírám linku.`, 'error', myId); 
-                if(isHttpTarget) knownHttpClients.delete(id); 
                 cleanupConnection(id); 
                 delete knownNodes[id]; 
                 if(typeof window.handlePlayerLeft === 'function') window.handlePlayerLeft(id);
@@ -1944,7 +1956,7 @@ setInterval(() => {
             } 
         }
 
-        const role = isMaster ? 'Master (Hub)' : (isHttpTarget ? 'HTTP Spoke' : 'Spoke'); 
+        const role = isMaster ? 'Master (Hub)' : 'Spoke'; 
         let status = '<span style="color:#2ed573">Aktivní</span>'; 
         if (!isMe && lastSeenDiff > 25000) status = '<span style="color:#ff4757">Mrtvý</span>'; 
         else if (!isMe && lastSeenDiff > 12000) status = '<span style="color:#feca57">Zpoždění</span>';
@@ -1954,10 +1966,7 @@ setInterval(() => {
         let displayBitrate = isMe ? '-' : '0 kbps';
         
         if (!isMe) {
-            if (isHttpTarget || (isMaster && isHttpRelayMode)) { 
-                displayLink = `<span style="color:#9b59b6; font-weight:bold;">Relay (HTTP)</span><br><span style="font-size:0.6rem; color:#888">API Fallback</span>`; 
-                displayRtt = (node.ping ? `~${node.ping} ms` : '?'); 
-            } else {
+            {
                 let activeConnection = isMaster ? connections['hub'] : connections[id]; 
                 let pStats = isMaster ? peerStats['hub'] : peerStats[id];
                 
@@ -1985,7 +1994,7 @@ setInterval(() => {
         }
         
         if(knownNodes[id]) { 
-            let callBtn = (!isMe && !isHttpTarget && !isHttpRelayMode) ? `<button class="btn-call" onclick="window.startVideoCall('${id}')" title="Videohovor">📞</button>` : `<button class="btn-call" disabled title="Video není přes HTTP Relay dostupné.">📞</button>`; 
+            let callBtn = !isMe ? `<button class="btn-call" onclick="window.startVideoCall('${id}')" title="Videohovor">📞</button>` : ''; 
             if(isMe) callBtn = ''; 
             let teleStr = `<div style="font-size:0.65rem; color:#888; margin-top:2px;">${formatTelemetry(isMe ? myTelemetry : node.tele)}</div>`; 
             html += `<tr><td>${escapeHTML(node.name).substr(0,10)} ${isMe ? '(Ty)' : ''} ${callBtn} ${teleStr}</td><td>${role}</td><td>${displayLink}</td><td>${displayRtt}</td><td>${displayBitrate}</td><td>${status}</td></tr>`; 
@@ -2108,7 +2117,6 @@ async function startDnsHostLoop() {
     unlockChat(); 
     
     await writeSignal('queue', []); 
-    await writeSignal('queue-http', []); 
     await writeSignal('host-alive', { id: myId, timestamp: Date.now() }); 
     
     if (dnsInterval) clearInterval(dnsInterval);
@@ -2165,42 +2173,6 @@ async function startDnsHostLoop() {
                 }
             }
         }
-        
-        const httpQueue = await readSignal('queue-http') || [];
-        if(httpQueue.length > 0) { 
-            httpQueue.forEach(clientId => { 
-                if(!knownHttpClients.has(clientId)) { 
-                    knownHttpClients.add(clientId); 
-                    if(!knownNodes[clientId]) {
-                        knownNodes[clientId] = { name: clientId, publicKeyJWK: null, lastSeen: Date.now(), tele: {} };
-                        updateDebugStats('nodes', Object.keys(knownNodes).length);
-                        if (DOM.uiUserCount) DOM.uiUserCount.innerText = Object.keys(knownNodes).length;
-                    }
-                    logDebug(`[HTTP RELAY] Uzel ${clientId} připojen přes API fallback.`, 'log-relay', myId); 
-                } 
-            }); 
-            await writeSignal('queue-http', []); 
-        }
-        
-        knownHttpClients.forEach(async (clientId) => {
-            const incomingArr = await readSignal(`relay-up-${clientId}`);
-            if(incomingArr && Array.isArray(incomingArr)) { 
-                incomingArr.forEach(msg => { 
-                    if(msg.type === '_ping') { 
-                        if(!knownNodes[clientId]) knownNodes[clientId] = { name: clientId, publicKeyJWK: null, lastSeen: Date.now(), tele: {} };
-                        knownNodes[clientId].lastSeen = Date.now(); 
-                        if(msg.tele) knownNodes[clientId].tele = msg.tele; 
-                        addToHttpOutbox(clientId, { type: '_pong', sender: myId, t: msg.t, tele: myTelemetry }); 
-                    } else {
-                        routeMessage(msg, 'http'); 
-                    }
-                }); 
-            }
-            
-            if(httpOutbox[clientId] && httpOutbox[clientId].length > 0) { 
-                await writeSignal(`relay-down-${clientId}`, httpOutbox[clientId]); 
-            }
-        });
     }, 2000);
 }
 
@@ -2216,10 +2188,11 @@ async function joinViaDns() {
     
     joinInterval = setInterval(async () => {
         pokusy++;
-        if (pokusy > 6) { 
+        if (pokusy > 8) { 
             clearInterval(joinInterval); 
-            logDebug(`[API] Spojení přes WebRTC/TURN se nezdařilo. Přecházím na HTTP Relay!`, "log-relay", myId); 
-            cleanupConnection('hub', true); 
+            joinInterval = null;
+            logDebug(`[P2P] Offer zatím nemá answer. Zkouším WebRTC znovu.`, 'webrtc', myId); 
+            cleanupConnection('hub'); 
             return; 
         }
         
@@ -2259,69 +2232,3 @@ async function joinViaDns() {
     }, 3000);
 }
 
-function startHttpRelayMode() {
-    isHttpRelayMode = true; 
-    window.isHttpRelayMode = true;
-    unlockChat(); 
-    if (typeof window.triggerHttpBlock === 'function') window.triggerHttpBlock();
-    
-    setTimeout(async () => { 
-        const myJwk = await crypto.subtle.exportKey("jwk", myKeyPair.publicKey); 
-        routeMessage({ id: generateMsgId(), ttl: 10, type: 'announce', sender: myId, name: myName, jwk: myJwk, tele: myTelemetry }); 
-        
-        setTimeout(() => { 
-            if (Date.now() - lastSyncRequestTime > 30000) {
-                lastSyncRequestTime = Date.now();
-                routeMessage({ id: generateMsgId(), ttl: 10, type: 'request-history', sender: myId }); 
-            }
-        }, 3000); 
-    }, 1000); 
-    
-    if (httpRelayInterval) clearInterval(httpRelayInterval); 
-    
-    let joinSent = false; 
-    let lastHttpPong = Date.now();
-    
-    httpRelayInterval = setInterval(async () => {
-        if(!joinSent) { 
-            let qArr = await readSignal('queue-http') || []; 
-            if(!qArr.includes(myId)) { 
-                qArr.push(myId); 
-                await writeSignal('queue-http', qArr); 
-            } 
-            joinSent = true; 
-        }
-        
-        addToHttpOutbox('hub', { type: '_ping', sender: myId, t: Date.now(), tele: myTelemetry });
-        
-        if(httpOutbox['hub'] && httpOutbox['hub'].length > 0) { 
-            await writeSignal(`relay-up-${myId}`, httpOutbox['hub']); 
-        }
-        
-        const incomingArr = await readSignal(`relay-down-${myId}`);
-        if(incomingArr && Array.isArray(incomingArr) && incomingArr.length > 0) {
-            lastHttpPong = Date.now();
-            incomingArr.forEach(msg => { 
-                if(msg.type === '_pong') { 
-                    if(knownNodes[msg.sender]) { 
-                        knownNodes[msg.sender].ping = Date.now() - msg.t; 
-                        knownNodes[msg.sender].lastSeen = Date.now(); 
-                    } 
-                } else {
-                    routeMessage(msg, 'http'); 
-                }
-            }); 
-        }
-
-        if (Date.now() - lastHttpPong > 25000) {
-            logDebug(`[HTTP RELAY] Hub neodpovídá na API ping. Je pravděpodobně mrtvý. Přebírám kontrolu!`, 'error', myId);
-            clearInterval(httpRelayInterval);
-            httpOutbox = {};
-            blacklistedHubId = globalKnownHubId || 'hub';
-            blacklistedHubTimeout = Date.now() + 60000;
-            isHttpRelayMode = false;
-            window.isHttpRelayMode = false;
-            checkIsolation();
-        }
-    }, 3000);
-}

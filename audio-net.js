@@ -45,7 +45,7 @@
 
     function ensureWorker() {
         if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.1");
+        worker = new Worker("audio-worker.js?v=1.1.2");
         worker.onmessage = function (e) {
             const msg = e.data || {};
             if (!enabled) return;
