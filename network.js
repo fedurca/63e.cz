@@ -570,7 +570,10 @@ function logDebug(msg, type = 'info', sourceId = null) {
     const idStr = sourceId || (typeof myId !== 'undefined' ? myId : 'SYS');
     if (DOM.debugLog) {
         const time = new Date().toLocaleTimeString('cs-CZ', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }); 
-        DOM.debugLog.innerHTML += `<div><span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span></div>`; 
+        const row = document.createElement('div');
+        row.innerHTML = `<span style="color:#555">[${time} | ${idStr}]</span> <span class="log-${type}">${msg}</span>`;
+        DOM.debugLog.appendChild(row);
+        while (DOM.debugLog.childElementCount > 80) DOM.debugLog.removeChild(DOM.debugLog.firstChild);
         DOM.debugLog.scrollTop = DOM.debugLog.scrollHeight; 
     }
     try {
@@ -1586,21 +1589,24 @@ window.handleFileUpload = async function(event) {
 };
 
 let p2pRetryTimer = null;
+let hubRetryPending = false;
 async function retryHubP2P(reason) {
-    if (isDnsHost) return;
+    if (isDnsHost || hubRetryPending) return;
     if (channels['hub'] && channels['hub'].readyState === 'open') return;
-    if (p2pRetryTimer) return;
+    hubRetryPending = true;
     const alive = await readSignal('host-alive');
-    const fresh = alive && alive.id && alive.id !== myId && (Date.now() - alive.timestamp < 45000);
-    if (!fresh) {
+    const freshOther = alive && alive.id && alive.id !== myId && (Date.now() - alive.timestamp < 45000);
+    if (!freshOther) {
         logDebug(`[P2P] Master neodpovídá (${reason}). Hledám novou autoritu.`, 'webrtc', myId);
         checkIsolation();
+        hubRetryPending = false;
         return;
     }
     logDebug(`[P2P] Obnovuji přímé spojení (${reason})…`, 'webrtc', myId);
     if (DOM.uiRole) DOM.uiRole.innerText = 'Obnovuji P2P…';
     p2pRetryTimer = setTimeout(() => {
         p2pRetryTimer = null;
+        hubRetryPending = false;
         if (isDnsHost) return;
         if (channels['hub'] && channels['hub'].readyState === 'open') return;
         joinViaDns();
@@ -2043,8 +2049,9 @@ async function fullResetAndReconnect() {
     
     const hostAlive = await readSignal('host-alive'); 
     const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout; 
+    const hostFresh = hostAlive && hostAlive.id && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted;
     
-    if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
+    if (hostFresh && hostAlive.id !== myId) {
         joinViaDns(); 
     } else {
         startDnsHostLoop();
@@ -2101,10 +2108,12 @@ window.initSystem = async function() {
     
     const hostAlive = await readSignal('host-alive'); 
     const isBlacklisted = hostAlive && hostAlive.id === blacklistedHubId && Date.now() < blacklistedHubTimeout;
-    
+    const hostFresh = hostAlive && hostAlive.id && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted;
+    const foreignHost = hostFresh && hostAlive.id !== myId;
+
     if (typeof window.startGameKaboom === "function") window.startGameKaboom();
 
-    if (hostAlive && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted) {
+    if (foreignHost) {
         joinViaDns(); 
     } else {
         startDnsHostLoop();
