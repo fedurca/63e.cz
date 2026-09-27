@@ -9,7 +9,7 @@
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>63e.cz v1.1.7</title>
+    <title>63e.cz v1.1.8</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
@@ -208,7 +208,7 @@
         .btn-call:hover { background:#005bb5; } 
         .btn-call:disabled { opacity: 0.5; cursor: not-allowed; background:#555;}
         
-        #btn-copy-log { background:#0f0; color:#000; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:12px; min-height:32px; touch-action: manipulation; }
+        #btn-copy-log, #btn-save-wav { background:#0f0; color:#000; border:none; border-radius:4px; padding:6px 10px; cursor:pointer; font-size:12px; min-height:32px; touch-action: manipulation; margin-left: 6px; }
         #debug-log {
             flex: 1 0 140px; min-height: 140px; padding: 8px; overflow-y: auto; font-size: 0.7rem; line-height: 1.4;
             white-space: pre-wrap; word-wrap: break-word; contain: content;
@@ -271,7 +271,7 @@ window.addEventListener('error', function(e) {
     <button type="button" id="fullscreen-toggle" title="Přepnout Fullscreen" aria-pressed="false">📺</button>
     <button type="button" id="audio-toggle" title="Zvuková síť vypnutá" aria-pressed="false">♪</button>
     <div id="audio-debug" hidden></div>
-    <div id="build-tag">v1.1.7</div>
+    <div id="build-tag">v1.1.8</div>
     
     <div id="mobile-controls">
         <div class="ctrl-group">
@@ -357,7 +357,7 @@ window.addEventListener('error', function(e) {
             </div>
             <div class="debug-header">📡 ZDRAVÍ SÍTĚ A SMĚROVÁNÍ</div>
             <div id="net-health-panel"><div id="net-health-list"></div></div>
-            <div class="debug-header">📜 SYSTÉMOVÝ LOG <button type="button" id="btn-copy-log">Kopírovat</button></div>
+            <div class="debug-header">📜 SYSTÉMOVÝ LOG <button type="button" id="btn-copy-log">Kopírovat</button> <button type="button" id="btn-save-wav">WAV 10 s</button></div>
             <div id="debug-log"></div>
         </div>
     </div>
@@ -390,7 +390,7 @@ window.addEventListener('error', function(e) {
 </div>
 
 <script>
-window.__GAME_BUILD = "v1.1.7";
+window.__GAME_BUILD = "v1.1.8";
 (function setupMobileGameUi() {
     var wrap = document.getElementById("game-wrapper");
     var fsBtn = document.getElementById("fullscreen-toggle");
@@ -554,10 +554,10 @@ window.__GAME_BUILD = "v1.1.7";
     window.__mobileUiReady = true;
 })();
 </script>
-<script src="audio-codec.js?v=1.1.7"></script>
-<script src="network.js?v=1.1.7"></script>
-<script src="audio-net.js?v=1.1.7"></script>
-<script type="module" src="game.js?v=1.1.7"></script>
+<script src="audio-codec.js?v=1.1.8"></script>
+<script src="network.js?v=1.1.8"></script>
+<script src="audio-net.js?v=1.1.8"></script>
+<script type="module" src="game.js?v=1.1.8"></script>
 
 </body>
 </html>

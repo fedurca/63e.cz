@@ -1,257 +1,234 @@
-// Quiet acoustic modem. Two devices share a soft perfect fifth (C and G).
-// Pose bits ride on higher partials in separate bands, five frames a second.
+// Single-tone Morse. Lower id transmits at 2000 Hz, higher id at 3222 Hz.
 (function (root) {
     const SR = 44100;
-    const FRAME = 8820;
-    const N = 441;
-    const CP = 100;
-    const STEP = N + CP;
-    const NDATA = 14;
-    const NSYM = NDATA + 2;
-    const BODY = NSYM * STEP;
-    const DATA_AMP = 0.04;
-    const ROOT_AMP = 0.035;
-    const PEAK = 0.16;
-    const ALPH = "0123456789abcdefghijklmnopqrstuvwxyz";
-    const BANKS = [
-        { sync: 8, data: [10, 12, 14, 16, 18], root: 523.25, name: "C" },
-        { sync: 24, data: [26, 28, 30, 32, 34], root: 783.99, name: "G" }
-    ];
+    const FREQ_LOW = 2000;
+    const FREQ_HIGH = 3222;
+    const UNIT = 0.11;
+    const HOP = Math.round(SR * 0.01);
+    const WIN = Math.round(SR * 0.02);
+    const CODE = {
+        A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.", G: "--.", H: "....",
+        I: "..", J: ".---", K: "-.-", L: ".-..", M: "--", N: "-.", O: "---", P: ".--.",
+        Q: "--.-", R: ".-.", S: "...", T: "-", U: "..-", V: "...-", W: ".--", X: "-..-",
+        Y: "-.--", Z: "--..",
+        0: "-----", 1: ".----", 2: "..---", 3: "...--", 4: "....-", 5: ".....",
+        6: "-....", 7: "--...", 8: "---..", 9: "----."
+    };
+    const REV = {};
+    Object.keys(CODE).forEach(function (ch) { REV[CODE[ch]] = ch; });
 
-    function goertzel(samples, offset, bin) {
-        const w = (2 * Math.PI * bin) / N;
+    function plain(text) {
+        return String(text || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    }
+    function idToken(id) {
+        return plain(id).replace(/[^A-Z0-9]/g, "").slice(0, 6).padEnd(4, "X");
+    }
+    function poseMessage(id, pose) {
+        const x = Math.max(0, Math.round((pose && pose.x) || 0));
+        const y = Math.max(0, Math.round((pose && pose.y) || 0));
+        const hp = Math.max(0, Math.round((pose && pose.hp) || 0));
+        const lvl = Math.max(0, Math.round((pose && pose.lvl) || 0));
+        return "VV" + idToken(id) + "P" + x + "X" + y + "H" + hp + "L" + lvl + "K";
+    }
+    function chatMessage(id, text) {
+        const body = plain(text).replace(/[^A-Z0-9 ]/g, " ").replace(/ +/g, " ").trim().slice(0, 40);
+        if (!body) return "";
+        return "VV" + idToken(id) + "C" + body + "K";
+    }
+
+    function toneFor(myId, otherIds) {
+        const ids = [String(myId || "")];
+        (otherIds || []).forEach(function (id) { if (id) ids.push(String(id)); });
+        const uniq = Array.from(new Set(ids)).sort();
+        return uniq[0] === String(myId || "") ? FREQ_LOW : FREQ_HIGH;
+    }
+
+    function encodeMorse(text, freq) {
+        const unit = Math.round(SR * UNIT);
+        const events = [];
+        const src = String(text || "");
+        for (let c = 0; c < src.length; c++) {
+            const ch = src[c];
+            if (ch === " ") {
+                events.push({ on: false, n: unit * 4 });
+                continue;
+            }
+            const pat = CODE[ch];
+            if (!pat) continue;
+            for (let i = 0; i < pat.length; i++) {
+                events.push({ on: true, n: unit * (pat[i] === "-" ? 3 : 1) });
+                events.push({ on: false, n: unit * 2 });
+            }
+            events.push({ on: false, n: unit * 3 });
+        }
+        events.push({ on: false, n: unit * 6 });
+        let total = 0;
+        for (let i = 0; i < events.length; i++) total += events[i].n;
+        const out = new Float32Array(total);
+        let at = 0;
+        const fade = Math.round(SR * 0.004);
+        for (let e = 0; e < events.length; e++) {
+            const ev = events[e];
+            if (ev.on) {
+                for (let i = 0; i < ev.n; i++) {
+                    let g = 0.28;
+                    if (i < fade) g *= i / fade;
+                    if (i > ev.n - fade) g *= (ev.n - i) / fade;
+                    out[at + i] = g * Math.sin(2 * Math.PI * freq * (at + i) / SR);
+                }
+            }
+            at += ev.n;
+        }
+        return out;
+    }
+
+    function goertzel(samples, offset, freq) {
+        const w = 2 * Math.PI * freq / SR;
         const coeff = 2 * Math.cos(w);
         let s0 = 0, s1 = 0, s2 = 0;
-        for (let i = 0; i < N; i++) {
+        for (let i = 0; i < WIN; i++) {
             const x = samples[offset + i] || 0;
             s0 = x + coeff * s1 - s2;
             s2 = s1;
             s1 = s0;
         }
-        return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+        return (s1 * s1 + s2 * s2 - coeff * s1 * s2) / (WIN * WIN);
     }
 
-    function addTone(out, freq, start, amp) {
-        const end = Math.min(out.length, start + STEP);
-        for (let i = start; i < end; i++) {
-            const u = (i - start) / STEP;
-            const e = u < 0.15 ? u / 0.15 : u > 0.85 ? (1 - u) / 0.15 : 1;
-            out[i] += amp * e * Math.sin(2 * Math.PI * freq * i / SR);
-        }
-    }
-
-    function encodeFrame(bankId, symbols, rootPhase) {
-        const bank = BANKS[bankId] || BANKS[0];
-        const out = new Float32Array(FRAME);
-        let phase = rootPhase || 0;
-        const rootW = 2 * Math.PI * bank.root / SR;
-        for (let i = 0; i < FRAME; i++) {
-            phase += rootW;
-            out[i] += ROOT_AMP * Math.sin(phase);
-        }
-        addTone(out, bank.sync * SR / N, 0, DATA_AMP);
-        for (let k = 0; k < bank.data.length; k++) addTone(out, bank.data[k] * SR / N, STEP, DATA_AMP);
-        for (let s = 0; s < NDATA; s++) {
-            const bits = symbols[s] || 0;
-            for (let k = 0; k < 5; k++) {
-                if ((bits >> k) & 1) addTone(out, bank.data[k] * SR / N, (s + 2) * STEP, DATA_AMP);
-            }
-        }
-        let peak = 0;
-        for (let i = 0; i < out.length; i++) peak = Math.max(peak, Math.abs(out[i]));
-        if (peak > PEAK) {
-            const g = PEAK / peak;
-            for (let i = 0; i < out.length; i++) out[i] *= g;
-        }
-        return { pcm: out, rootPhase: phase };
-    }
-
-    function findSync(samples, bin) {
-        let best = -1;
-        let at = 0;
-        const last = Math.max(0, samples.length - STEP);
-        for (let i = 0; i <= last; i += 4) {
-            const e = goertzel(samples, i + CP, bin);
-            if (e > best) { best = e; at = i; }
-        }
-        const a = Math.max(0, at - 8);
-        const b = Math.min(last, at + 8);
-        for (let i = a; i <= b; i++) {
-            const e = goertzel(samples, i + CP, bin);
-            if (e > best) { best = e; at = i; }
-        }
-        return { at: at, energy: best };
-    }
-
-    function decodeBank(samples, bankId) {
-        const bank = BANKS[bankId];
-        const sync = findSync(samples, bank.sync);
-        const ref = bank.data.map(function (bin) { return goertzel(samples, sync.at + STEP + CP, bin); });
-        const symbols = [];
-        for (let n = 0; n < NDATA; n++) {
-            let v = 0;
-            const start = sync.at + (n + 2) * STEP + CP;
-            for (let k = 0; k < 5; k++) {
-                const e = goertzel(samples, start, bank.data[k]);
-                if (ref[k] > sync.energy * 0.003 && e > ref[k] * 0.4) v |= 1 << k;
-            }
-            symbols.push(v);
-        }
-        const refMean = ref.reduce(function (a, b) { return a + b; }, 0) / Math.max(1, ref.length);
-        const confident = sync.energy > 0.015 && refMean > sync.energy * 0.02;
-        return { bank: bankId, name: bank.name, symbols: symbols, energy: sync.energy, at: sync.at, confident: confident };
-    }
-
-    function decodeAll(samples) {
-        let rms = 0;
-        const n = samples ? samples.length : 0;
-        for (let i = 0; i < n; i += 16) rms += samples[i] * samples[i];
-        rms = n ? Math.sqrt(rms / Math.ceil(n / 16)) : 0;
+    function makeSlot() {
         return {
-            rms: rms,
-            banks: [decodeBank(samples, 0), decodeBank(samples, 1)]
+            floor: 1e-8, hot: false, run: 0, morse: "", text: "",
+            packets: [], marks: 0, letters: 0, letterDone: false, spans: []
         };
     }
 
-    function bitsFromSymbols(symbols) {
-        const bits = [];
-        for (let s = 0; s < NDATA; s++) {
-            const v = symbols[s] || 0;
-            for (let b = 0; b < 5; b++) bits.push((v >> b) & 1);
-        }
-        return bits;
+    function finishLetter(slot) {
+        if (!slot.morse) return;
+        const ch = REV[slot.morse] || "";
+        slot.morse = "";
+        if (!ch) return;
+        slot.text += ch;
+        slot.letters++;
+        if (slot.text.length > 120) slot.text = slot.text.slice(-80);
+        pullPackets(slot);
     }
 
-    function symbolsFromBits(bits) {
-        const symbols = [];
-        for (let i = 0; i < NDATA; i++) {
-            let v = 0;
-            for (let b = 0; b < 5; b++) if (bits[i * 5 + b]) v |= 1 << b;
-            symbols.push(v);
+    function pullPackets(slot) {
+        let t = slot.text;
+        let guard = 0;
+        while (guard++ < 4) {
+            const pose = t.match(/VV([A-Z0-9]{4,8})P(\d+)X(\d+)H(\d+)L(\d+)K/);
+            const chat = t.match(/VV([A-Z0-9]{4,8})C([A-Z0-9 ]+?)K/);
+            const found = pose && (!chat || pose.index <= chat.index) ? pose : chat;
+            if (!found) break;
+            if (found === pose) {
+                slot.packets.push({
+                    kind: "pose", id: pose[1].toLowerCase(),
+                    x: +pose[2], y: +pose[3], hp: +pose[4], lvl: +pose[5]
+                });
+            } else {
+                slot.packets.push({ kind: "chat", id: chat[1].toLowerCase(), text: chat[2].trim() });
+            }
+            t = t.slice(found.index + found[0].length);
         }
-        return symbols;
+        slot.text = t;
     }
 
-    function readBits(bits, at, n) {
-        let v = 0;
-        for (let i = 0; i < n; i++) v = (v << 1) | (bits[at + i] ? 1 : 0);
-        return v;
+    function hopSlot(slot, hot) {
+        const unitMs = UNIT * 1000;
+        const ms = slot.run * 10;
+        if (hot === slot.hot) {
+            slot.run++;
+            if (!hot && !slot.letterDone && ms >= unitMs * 3) {
+                finishLetter(slot);
+                slot.letterDone = true;
+            }
+            return;
+        }
+        if (slot.hot) {
+            slot.spans.push(Math.round(ms));
+            if (slot.spans.length > 12) slot.spans.shift();
+            if (ms >= unitMs * 0.45 && ms < unitMs * 2) slot.morse += ".";
+            else if (ms >= unitMs * 2 && ms < unitMs * 5) slot.morse += "-";
+            slot.marks++;
+        } else if (ms > 20) {
+            slot.spans.push(-Math.round(ms));
+            if (slot.spans.length > 12) slot.spans.shift();
+        }
+        slot.hot = hot;
+        slot.run = 1;
+        slot.letterDone = false;
     }
 
-    function writeBits(bits, value, n) {
-        for (let i = n - 1; i >= 0; i--) bits.push((value >>> i) & 1);
-    }
+    function createListener() {
+        let acc = new Float32Array(0);
+        let done = 0;
+        const low = makeSlot();
+        const high = makeSlot();
+        const view = { eLow: 0, eHigh: 0, snrLow: 0, snrHigh: 0 };
 
-    function crc8bits(bits, n) {
-        let c = 0;
-        for (let i = 0; i < n; i++) {
-            c ^= bits[i] ? 0x80 : 0;
-            for (let b = 0; b < 8; b++) c = (c & 0x80) ? ((c << 1) ^ 0x07) & 255 : (c << 1) & 255;
+        function push(samples) {
+            if (!samples || !samples.length) return;
+            const next = new Float32Array(acc.length + samples.length);
+            next.set(acc);
+            next.set(samples, acc.length);
+            acc = next;
+            const cap = SR * 8;
+            if (acc.length > cap) {
+                const drop = acc.length - SR * 6;
+                acc = new Float32Array(acc.subarray(drop));
+                done = Math.max(0, done - drop);
+            }
+            while (done + WIN <= acc.length) {
+                const eL = goertzel(acc, done, FREQ_LOW);
+                const eH = goertzel(acc, done, FREQ_HIGH);
+                const sL = goertzel(acc, done, FREQ_LOW + 180);
+                const sH = goertzel(acc, done, FREQ_HIGH + 180);
+                view.eLow = view.eLow * 0.8 + eL * 0.2;
+                view.eHigh = view.eHigh * 0.8 + eH * 0.2;
+                view.snrLow = eL / (sL + 1e-12);
+                view.snrHigh = eH / (sH + 1e-12);
+                if (!low.hot && view.snrLow < 2.2) low.floor = low.floor * 0.9 + eL * 0.1;
+                if (!high.hot && view.snrHigh < 2.2) high.floor = high.floor * 0.9 + eH * 0.1;
+                const hotL = eL > eH * 0.02 && (low.hot ? (eL > low.floor * 3 && view.snrLow > 2) : (eL > low.floor * 8 && view.snrLow > 4));
+                const hotH = eH > eL * 0.02 && (high.hot ? (eH > high.floor * 3 && view.snrHigh > 2) : (eH > high.floor * 8 && view.snrHigh > 4));
+                hopSlot(low, hotL);
+                hopSlot(high, hotH);
+                done += HOP;
+            }
         }
-        return c;
-    }
 
-    function writeId(bits, id) {
-        const clean = String(id || "").toLowerCase().replace(/[^0-9a-z]/g, "").slice(0, 6).padEnd(6, "0");
-        for (let i = 0; i < 6; i++) writeBits(bits, Math.max(0, ALPH.indexOf(clean[i])), 6);
-    }
-    function readId(bits, at) {
-        let id = "";
-        for (let i = 0; i < 6; i++) {
-            const v = readBits(bits, at + i * 6, 6);
-            if (v < 0 || v >= ALPH.length) return "";
-            id += ALPH[v];
+        function take(slot) {
+            const packets = slot.packets.slice();
+            slot.packets.length = 0;
+            return packets;
         }
-        return id === "000000" ? "" : id;
-    }
-    function seal(bits) {
-        while (bits.length < 62) bits.push(0);
-        const body = bits.slice(0, 62);
-        writeBits(body, crc8bits(body, 62), 8);
-        return symbolsFromBits(body);
-    }
 
-    function packPose(id, pose) {
-        const bits = [];
-        writeBits(bits, 0, 1);
-        writeId(bits, id);
-        const x = Math.max(0, Math.min(511, Math.round((pose && pose.x) || 0) / 10));
-        const y = Math.max(0, Math.min(255, Math.round((pose && pose.y) || 0) / 16));
-        writeBits(bits, x, 9);
-        writeBits(bits, y, 8);
-        writeBits(bits, ((pose && pose.hp) || 0) & 15, 4);
-        writeBits(bits, ((pose && pose.lvl) || 0) & 15, 4);
-        return seal(bits);
-    }
+        function poll() {
+            return {
+                eLow: view.eLow, eHigh: view.eHigh,
+                snrLow: view.snrLow, snrHigh: view.snrHigh,
+                floorLow: low.floor, floorHigh: high.floor,
+                hotLow: low.hot, hotHigh: high.hot,
+                spanLow: low.spans.slice(), spanHigh: high.spans.slice(),
+                morseLow: low.morse, morseHigh: high.morse,
+                textLow: low.text, textHigh: high.text,
+                marksLow: low.marks, marksHigh: high.marks,
+                packetsLow: take(low), packetsHigh: take(high)
+            };
+        }
 
-    function packChat(id, text, seq) {
-        const utf = new TextEncoder().encode(String(text || "").slice(0, 36));
-        if (!utf.length) return [];
-        const head = utf.subarray(0, 1);
-        const rest = utf.subarray(1);
-        const bodies = [];
-        for (let i = 0; i < rest.length; i += 5) bodies.push(rest.subarray(i, i + 5));
-        const count = 1 + bodies.length;
-        if (count > 8) return [];
-        function frame(part, payload, withId) {
-            const bits = [];
-            writeBits(bits, 1, 1);
-            writeBits(bits, seq & 15, 4);
-            writeBits(bits, part & 7, 3);
-            writeBits(bits, (count - 1) & 7, 3);
-            if (withId) writeId(bits, id);
-            writeBits(bits, payload.length & 15, 4);
-            for (let i = 0; i < payload.length; i++) writeBits(bits, payload[i], 8);
-            return seal(bits);
-        }
-        const out = [frame(0, head, true)];
-        for (let i = 0; i < bodies.length; i++) out.push(frame(i + 1, bodies[i], false));
-        return out;
-    }
-
-    function unpackFrame(symbols) {
-        const bits = bitsFromSymbols(symbols);
-        if (bits.length < 70) return null;
-        if (readBits(bits, 62, 8) !== crc8bits(bits, 62)) return null;
-        if (readBits(bits, 0, 1) === 0) {
-            const id = readId(bits, 1);
-            if (!id) return null;
-            let at = 37;
-            const x = readBits(bits, at, 9); at += 9;
-            const y = readBits(bits, at, 8); at += 8;
-            const hp = readBits(bits, at, 4); at += 4;
-            const lvl = readBits(bits, at, 4);
-            return { kind: "pose", id: id, x: x * 10, y: y * 16, hp: hp, lvl: lvl };
-        }
-        const seq = readBits(bits, 1, 4);
-        const part = readBits(bits, 5, 3);
-        const count = readBits(bits, 8, 3) + 1;
-        let at = 11;
-        let id = "";
-        if (part === 0) {
-            id = readId(bits, at);
-            at += 36;
-            if (!id) return null;
-        }
-        const plen = readBits(bits, at, 4); at += 4;
-        const maxLen = part === 0 ? 1 : 5;
-        if (plen > maxLen || at + plen * 8 > 62) return null;
-        const bytes = [];
-        for (let i = 0; i < plen; i++) {
-            bytes.push(readBits(bits, at, 8));
-            at += 8;
-        }
-        return { kind: "chat", seq: seq, part: part, count: count, id: id, bytes: bytes };
+        return { push: push, poll: poll };
     }
 
     root.AudioCodec = {
         SR: SR,
-        FRAME: FRAME,
-        BANKS: BANKS,
-        encodeFrame: encodeFrame,
-        decodeAll: decodeAll,
-        packPose: packPose,
-        packChat: packChat,
-        unpackFrame: unpackFrame
+        FREQ_LOW: FREQ_LOW,
+        FREQ_HIGH: FREQ_HIGH,
+        toneFor: toneFor,
+        poseMessage: poseMessage,
+        chatMessage: chatMessage,
+        encodeMorse: encodeMorse,
+        createListener: createListener
     };
 })(typeof self !== "undefined" ? self : this);
