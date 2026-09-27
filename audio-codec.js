@@ -6,8 +6,8 @@
         659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00
     ];
     const PREAMBLE = [0, 15, 0, 15, 1, 14];
-    const SYMBOL = Math.round(SR * 0.064);
-    const GAP = Math.round(SR * 0.012);
+    const SYMBOL = Math.round(SR * 0.028);
+    const GAP = Math.round(SR * 0.006);
     const STEP = SYMBOL + GAP;
     const FILLER = [4, 6, 5, 7, 5, 4];
     const COEFFS = NOTES.map(freq => {
@@ -186,7 +186,28 @@
             }
             return { type: "enemies", lvl: lvl, enemies: enemies };
         }
+        if (bytes[0] === 3 && bytes.length >= 8) {
+            let id = "";
+            for (let i = 1; i <= 6; i++) id += String.fromCharCode(bytes[i]);
+            const n = bytes[7];
+            const slice = bytes.subarray(8, 8 + n);
+            let text = "";
+            try { text = new TextDecoder().decode(slice); } catch (e) { text = ""; }
+            return { type: "chat", id: id.trim(), text: text };
+        }
         return null;
+    }
+
+    function buildChat(id, text) {
+        const raw = String(text || "").slice(0, 42);
+        const utf = new TextEncoder().encode(raw);
+        const bytes = [3];
+        const idr = String(id || "").slice(0, 6).padEnd(6, " ");
+        for (let i = 0; i < 6; i++) bytes.push(idr.charCodeAt(i) & 127);
+        const n = Math.min(utf.length, 42);
+        bytes.push(n);
+        for (let i = 0; i < n; i++) bytes.push(utf[i]);
+        return bytes;
     }
 
     root.AudioCodec = {
@@ -194,6 +215,7 @@
         decodeAll: decodeAll,
         parsePacket: parsePacket,
         buildBeacon: buildBeacon,
-        buildEnemies: buildEnemies
+        buildEnemies: buildEnemies,
+        buildChat: buildChat
     };
 })(typeof self !== "undefined" ? self : this);

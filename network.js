@@ -1525,6 +1525,17 @@ window.setPlayerNick = async function(raw) {
     } catch (e) {}
 };
 
+window.onAudioChat = function (id, text) {
+    const clean = String(text || "").slice(0, 80);
+    if (!clean) return;
+    const author = (knownNodes[id] && knownNodes[id].name) || id;
+    const msgId = "audio-" + id + "-" + clean + "-" + Math.floor(Date.now() / 4000);
+    if (saveMessage({ id: msgId, author: author, text: clean, time: Date.now() })) {
+        renderMessage(author, clean, "other", Date.now(), true, null, false, msgId);
+    }
+    logDebug("[AUDIO] chat od " + id + ": " + clean, "webrtc", myId);
+};
+
 window.sendMsg = async function() { 
     const text = DOM.chatInput.value.trim(); 
     if (!text) return;
@@ -1550,8 +1561,9 @@ window.sendMsg = async function() {
     
     saveMessage({ id: msgId, author: myName, text: text, time: timeNow }); 
     renderMessage('Ty', text, 'self', timeNow, true, null, false, msgId); 
-    routeMessage(msgObj); 
-    DOM.chatInput.value = ''; 
+    routeMessage(msgObj);
+    if (typeof window.queueAudioChat === "function") window.queueAudioChat(text);
+    DOM.chatInput.value = '';
 };
 
 window.handleFileUpload = async function(event) { 

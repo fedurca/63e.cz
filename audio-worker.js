@@ -1,4 +1,4 @@
-importScripts("audio-codec.js?v=1.1.4");
+importScripts("audio-codec.js?v=1.1.5");
 
 let acc = new Float32Array(0);
 let lastScan = 0;
@@ -26,9 +26,9 @@ onmessage = function (e) {
     next.set(acc);
     next.set(chunk, acc.length);
     acc = next;
-    const cap = Math.round(44100 * 1.2);
+    const cap = Math.round(44100 * 3.2);
     if (acc.length > cap) {
-        const drop = acc.length - Math.round(44100 * 0.9);
+        const drop = acc.length - Math.round(44100 * 2.6);
         acc = new Float32Array(acc.subarray(drop));
         lastScan = Math.max(0, lastScan - drop);
     }
