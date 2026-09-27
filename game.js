@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=1.1.9";
+import { LVL } from "./maps.js?v=1.1.10";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,8 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-// build v1.1.9 — faster Morse, retune as soon as the other id is known
-window.__GAME_BUILD = "v1.1.9";
+// build v1.1.10 — Morse tone from the first character of the id, all 36 tones listened to
+window.__GAME_BUILD = "v1.1.10";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {

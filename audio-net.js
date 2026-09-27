@@ -1,4 +1,4 @@
-// Soft fifth, both devices at once, pose five times a second.
+// Morse. Transmit on the tone of our id's first character and scan every tone.
 (function () {
     const SR = 44100;
     let enabled = false;
@@ -30,7 +30,7 @@
     let heardMe = null;
     const ui = {
         mic: 0, e0: 0, e1: 0, tx: "—", rx: "čekám", peer: "", err: "",
-        chatIn: 0, chatOut: 0, dir: "vypnuto"
+        chatIn: 0, chatOut: 0, dir: "vypnuto", bands: [], cancel: ""
     };
 
     function myId() {
@@ -59,7 +59,7 @@
         const name = (ui.freq || myFreq()) + " Hz";
         const lines = [
             enabled ? "Akustika " + name + " · " + ui.dir : "Zvuková síť vypnutá",
-            "Mic " + ui.mic.toFixed(3) + "  C " + ui.e0.toExponential(1) + "  G " + ui.e1.toExponential(1),
+            "Mic " + ui.mic.toFixed(3) + "  " + (ui.cancel || "odečet 0") + "  " + bandLine(),
             "TX " + ui.tx,
             "RX " + (ui.peer || "nikdo"),
             "Chat → " + ui.chatOut + "  ← " + ui.chatIn,
@@ -96,7 +96,7 @@
         setText("ah-out", fresh ? (fresh.hearsMe ? "ano" : "ne") : "neznámo");
         setText("ah-chat-out", String(ui.chatOut));
         setText("ah-chat-in", String(ui.chatIn));
-        setText("ah-bands", "2000 " + ui.e0.toExponential(1) + " · 3222 " + ui.e1.toExponential(1));
+        setText("ah-bands", bandLine() || "ticho");
     }
 
     function acceptPose(pose) {
@@ -136,21 +136,24 @@
         return String(myId() || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 6);
     }
 
+    function bandLine() {
+        const rows = ui.bands || [];
+        if (!rows.length) return "ticho";
+        return rows.slice(0, 4).map(function (b) {
+            const bit = b.ch + " " + Math.round(b.freq) + " " + (b.e || 0).toExponential(1);
+            const txt = ((b.text || "") + (b.morse || "")).slice(-10);
+            return b.hot && txt ? bit + " «" + txt + "»" : bit;
+        }).join(" · ");
+    }
+
     function onMorse(r) {
-        ui.e0 = r.eLow || 0;
-        ui.e1 = r.eHigh || 0;
-        ui.snrL = r.snrLow || 0;
-        ui.snrH = r.snrHigh || 0;
-        ui.hotL = !!r.hotLow;
-        ui.hotH = !!r.hotHigh;
-        ui.lowText = (r.textLow || "") + (r.morseLow || "");
-        ui.highText = (r.textHigh || "") + (r.morseHigh || "");
-        ui.partial = (ui.lowText + " | " + ui.highText).slice(-48);
-        const lists = [r.packetsLow || [], r.packetsHigh || []];
-        for (let p = 0; p < lists.length; p++) {
-            for (let i = 0; i < lists[p].length; i++) {
-                const pkt = lists[p][i];
-                if (!pkt || !pkt.id || pkt.id.slice(0, 6) === mineToken()) continue;
+        ui.bands = r.bands || [];
+        ui.partial = ui.bands.map(function (b) { return (b.text || "") + (b.morse || ""); }).join(" ").slice(-48);
+        const list = r.packets || [];
+        for (let i = 0; i < list.length; i++) {
+            const pkt = list[i];
+            if (!pkt || !pkt.id || pkt.id.slice(0, 6) === mineToken()) continue;
+            if (pkt.ch && pkt.id.charAt(0) !== pkt.ch) continue;
                 if (remembered.indexOf(pkt.id) < 0) remembered.push(pkt.id);
                 if (pkt.kind === "chat") {
                     const mark = pkt.id + ":" + pkt.text;
@@ -162,14 +165,13 @@
                     ui.peer = pkt.id;
                     if (typeof window.onAudioChat === "function") window.onAudioChat(pkt.id, pkt.text);
                 } else acceptPose(pkt);
-            }
         }
         renderDebug();
     }
 
     function ensureWorker() {
         if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.9");
+        worker = new Worker("audio-worker.js?v=1.1.10");
         worker.onmessage = function (e) {
             if (!enabled) return;
             const msg = e.data || {};
@@ -183,6 +185,11 @@
     let playingUntil = 0;
     let playingFreq = 0;
     let liveSrc = null;
+    let txRec = null;
+    let cancelInfo = { gain: 0, lag: 0 };
+    let cancelLock = false;
+    let histMic = new Float32Array(0);
+    let histOrigin = 0;
     const wav = new Float32Array(SR * 10);
     let wavAt = 0;
     let wavN = 0;
@@ -194,7 +201,10 @@
         return ids;
     }
     function myFreq() {
-        return codec() ? codec().toneFor(myId(), otherIds()) : 2000;
+        return codec() ? codec().freqForId(myId()) : 400;
+    }
+    function myChar() {
+        return String(myId() || "").toLowerCase().replace(/[^0-9a-z]/g, "").charAt(0) || "?";
     }
     function pushWav(samples) {
         for (let i = 0; i < samples.length; i++) {
@@ -217,6 +227,10 @@
             liveSrc = null;
         }
         playingUntil = audioCtx ? audioCtx.currentTime : 0;
+        txRec = null;
+        histMic = new Float32Array(0);
+        cancelLock = false;
+        cancelInfo = { gain: 0, lag: 0 };
     }
 
     function playPcm(pcm, freq) {
@@ -231,6 +245,10 @@
         liveSrc = src;
         playingFreq = freq;
         playingUntil = t + pcm.length / SR;
+        txRec = { pcm: pcm, t0: t };
+        histMic = new Float32Array(0);
+        cancelLock = false;
+        cancelInfo = { gain: 0, lag: 0 };
     }
 
     function pump() {
@@ -292,7 +310,48 @@
         }
         micHold = [];
         micHoldLen = 0;
-        worker.postMessage({ type: "mic", samples: merged.buffer }, [merged.buffer]);
+        const heard = subtractOwn(merged);
+        worker.postMessage({ type: "mic", samples: heard.buffer }, [heard.buffer]);
+    }
+
+    function subtractOwn(mic) {
+        const C = codec();
+        if (!C || !txRec || !audioCtx || !txRec.pcm) return mic;
+        const idx = Math.round((audioCtx.currentTime - mic.length / SR - txRec.t0) * SR);
+        if (idx > txRec.pcm.length + SR) {
+            histMic = new Float32Array(0);
+            return mic;
+        }
+        if (!histMic.length) histOrigin = idx;
+        const joined = new Float32Array(histMic.length + mic.length);
+        joined.set(histMic);
+        joined.set(mic, histMic.length);
+        const cap = Math.round(SR * 1.2);
+        histMic = joined.length > cap ? joined.subarray(joined.length - cap) : joined;
+        if (joined.length > cap) histOrigin += joined.length - cap;
+        if (!cancelLock && histMic.length > SR * 0.7) {
+            const tx = new Float32Array(histMic.length);
+            for (let i = 0; i < tx.length; i++) {
+                const s = histOrigin + i;
+                if (s >= 0 && s < txRec.pcm.length) tx[i] = txRec.pcm[s];
+            }
+            const sub = C.cancelOwn(histMic, tx, null);
+            if (sub.gain > 0.04) {
+                cancelInfo = { gain: sub.gain * 0.9, lag: sub.lag || 0 };
+                cancelLock = true;
+            }
+        }
+        ui.cancel = cancelLock
+            ? ("odečet " + cancelInfo.gain.toFixed(2) + " / " + Math.round(cancelInfo.lag / SR * 1000) + " ms")
+            : "odečet měřím";
+        if (!cancelLock) return new Float32Array(mic.length);
+        const out = new Float32Array(mic.length);
+        out.set(mic);
+        for (let i = 0; i < out.length; i++) {
+            const s = idx + i - cancelInfo.lag;
+            if (s >= 0 && s < txRec.pcm.length) out[i] -= cancelInfo.gain * txRec.pcm[s];
+        }
+        return out;
     }
 
     async function enable() {
@@ -347,29 +406,19 @@
             rateTx = txThisSec;
             rateRx = rxThisSec;
             const freq = myFreq();
-            const foreignE = freq === 2000 ? ui.e1 : ui.e0;
-            const ownE = freq === 2000 ? ui.e0 : ui.e1;
-            const foreignSnr = freq === 2000 ? ui.snrH : ui.snrL;
-            const foreignHot = freq === 2000 ? ui.hotH : ui.hotL;
+            const loud = (ui.bands || [])[0];
             snap.freq = freq;
-            snap.foreignE = foreignE;
-            snap.ownE = ownE;
-            snap.foreignSnr = foreignSnr;
+            snap.foreignE = loud ? loud.e : 0;
+            snap.ownE = 0;
+            snap.foreignSnr = loud ? loud.snr : 0;
             snap.partial = ui.partial || "";
             if (typeof window.publishAudioTune === "function") window.publishAudioTune(snap);
             const back = remote && Date.now() - remote.at < 4000 ? remote : null;
-            const listen = freq === 2000 ? 3222 : 2000;
-            const heardTxt = (freq === 2000 ? (ui.highText || "") : (ui.lowText || "")).slice(-24);
-            let why = "cizí " + listen + " Hz pod prahem";
-            if (rxThisSec) why = "paket přijat";
-            else if (foreignHot) why = "nosná " + listen + " Hz «" + (heardTxt || "…") + "»";
-            else if ((foreignSnr || 0) > 2) why = "slabý cizí tón snr " + foreignSnr.toFixed(1);
+            const why = rxThisSec ? "paket přijat" : (bandLine() || "ticho");
             audioLog(
-                "TX " + freq + " Hz " + ui.tx
-                + " | poslouchám " + listen + " Hz e " + foreignE.toExponential(1)
-                + " snr " + (foreignSnr || 0).toFixed(1)
-                + " | vlastní " + freq + " e " + ownE.toExponential(1)
+                "TX " + Math.round(freq) + " Hz (" + myChar() + ") " + ui.tx
                 + " | " + why
+                + " | " + (ui.cancel || "odečet 0")
                 + " | " + ui.dir
                 + " | on mě " + (back ? (back.hearsMe ? "slyší" : "neslyší") : "neznámo")
                 + " | chat →" + ui.chatOut + " ←" + ui.chatIn
@@ -377,7 +426,7 @@
             txThisSec = 0;
             rxThisSec = 0;
         }, 1000);
-        audioLog("zapnuto morse " + myFreq() + " Hz, mikrofon " + Math.round(audioCtx.sampleRate) + " Hz");
+        audioLog("zapnuto morse " + Math.round(myFreq()) + " Hz (" + myChar() + "), poslouchám " + (codec().FREQS.length) + " tónů, mikrofon " + Math.round(audioCtx.sampleRate) + " Hz");
         return true;
     }
 
@@ -496,11 +545,11 @@
     window.AudioLink = {
         selfTest: function () {
             const C = codec();
-            const pcm = C.encodeMorse(C.poseMessage("richd7", { x: 400, y: 880, hp: 6, lvl: 1 }), C.FREQ_HIGH);
+            const pcm = C.encodeMorse(C.poseMessage("richd7", { x: 400, y: 880, hp: 6, lvl: 1 }), C.freqForId("richd7"));
             const ear = C.createListener();
             ear.push(pcm);
             ear.push(new Float32Array(C.SR));
-            const got = ear.poll().packetsHigh[0];
+            const got = (ear.poll().packets || [])[0];
             const ok = !!(got && got.id === "richd7" && got.x === 400 && got.y === 880);
             return { ok: ok, pose: got };
         }

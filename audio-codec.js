@@ -1,11 +1,13 @@
-// Single-tone Morse. Lower id transmits at 2000 Hz, higher id at 3222 Hz.
+// Morse. Each id's first character picks one of 36 tones. The receiver scans all of them.
 (function (root) {
     const SR = 44100;
-    const FREQ_LOW = 2000;
-    const FREQ_HIGH = 3222;
-    const UNIT = 0.011;
+    const CHARS = "0123456789abcdefghijklmnopqrstuvwxyz";
+    const WIN = Math.round(SR / 110);
+    const DF = SR / WIN;
+    const FREQS = [];
+    for (let i = 0; i < CHARS.length; i++) FREQS.push(400 + i * DF);
+    const UNIT = 0.015;
     const HOP = Math.round(SR * 0.002);
-    const WIN = Math.round(SR * 0.006);
     const HOP_MS = HOP / SR * 1000;
     const CODE = {
         A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.", G: "--.", H: "....",
@@ -37,11 +39,19 @@
         return "VV" + idToken(id) + "C" + body + "K";
     }
 
-    function toneFor(myId, otherIds) {
-        const ids = [String(myId || "")];
-        (otherIds || []).forEach(function (id) { if (id) ids.push(String(id)); });
-        const uniq = Array.from(new Set(ids)).sort();
-        return uniq[0] === String(myId || "") ? FREQ_LOW : FREQ_HIGH;
+    function freqForId(id) {
+        const ch = String(id || "").toLowerCase().replace(/[^0-9a-z]/g, "").charAt(0) || "0";
+        const i = Math.max(0, CHARS.indexOf(ch));
+        return FREQS[i];
+    }
+    function charForFreq(freq) {
+        let best = 0;
+        let err = 1e9;
+        for (let i = 0; i < FREQS.length; i++) {
+            const d = Math.abs(FREQS[i] - freq);
+            if (d < err) { err = d; best = i; }
+        }
+        return CHARS.charAt(best);
     }
 
     function encodeMorse(text, freq) {
@@ -157,7 +167,7 @@
         if (slot.hot) {
             slot.spans.push(Math.round(ms));
             if (slot.spans.length > 12) slot.spans.shift();
-            if (ms >= unitMs * 0.45 && ms < unitMs * 2) slot.morse += ".";
+            if (ms >= unitMs * 0.25 && ms < unitMs * 2) slot.morse += ".";
             else if (ms >= unitMs * 2 && ms < unitMs * 5) slot.morse += "-";
             slot.marks++;
         } else if (ms > 20) {
@@ -169,12 +179,80 @@
         slot.letterDone = false;
     }
 
+    function cancelOwn(mic, tx, hint) {
+        if (!mic || !tx || mic.length < 32 || tx.length < 32) return { out: mic, lag: 0, gain: 0 };
+        const wide = Math.min(Math.round(SR * 0.08), Math.floor(tx.length / 2), mic.length - 1);
+        const tight = Math.round(SR * 0.004);
+        const minL = hint == null ? -wide : Math.max(-wide, hint - tight);
+        const maxL = hint == null ? wide : Math.min(wide, hint + tight);
+        const maxLag = Math.max(Math.abs(minL), Math.abs(maxL));
+        const span = Math.min(mic.length - maxLag, tx.length - maxLag, Math.round(SR * 0.06));
+        if (span < 32) return { out: mic, lag: 0, gain: 0 };
+        let best = 0;
+        let lag = hint || 0;
+        for (let L = minL; L <= maxL; L += 4) {
+            let c = 0;
+            const mic0 = L >= 0 ? L : 0;
+            const tx0 = L >= 0 ? 0 : -L;
+            for (let i = 0; i < span; i += 4) c += mic[mic0 + i] * tx[tx0 + i];
+            if (c > best) { best = c; lag = L; }
+        }
+        const from = Math.max(minL, lag - 3);
+        const to = Math.min(maxL, lag + 3);
+        for (let L = from; L <= to; L++) {
+            let c = 0;
+            const mic0 = L >= 0 ? L : 0;
+            const tx0 = L >= 0 ? 0 : -L;
+            for (let i = 0; i < span; i += 2) c += mic[mic0 + i] * tx[tx0 + i];
+            if (c > best) { best = c; lag = L; }
+        }
+        const mic0 = lag >= 0 ? lag : 0;
+        const tx0 = lag >= 0 ? 0 : -lag;
+        const n = Math.min(mic.length - mic0, tx.length - tx0);
+        let dot = 0;
+        let te = 0;
+        for (let i = 0; i < n; i += 2) {
+            dot += mic[mic0 + i] * tx[tx0 + i];
+            te += tx[tx0 + i] * tx[tx0 + i];
+        }
+        const gain = te > 1e-10 ? Math.max(0, Math.min(1.8, dot / te)) : 0;
+        if (gain < 0.03) return { out: mic, lag: lag, gain: 0 };
+        const out = new Float32Array(mic.length);
+        out.set(mic);
+        for (let i = 0; i < n; i++) out[mic0 + i] -= gain * tx[tx0 + i];
+        let before = 0;
+        let after = 0;
+        for (let i = 0; i < n; i += 4) {
+            before += mic[mic0 + i] * mic[mic0 + i];
+            after += out[mic0 + i] * out[mic0 + i];
+        }
+        if (after > before * 0.72) return { out: mic, lag: lag, gain: 0 };
+        return { out: out, lag: lag, gain: gain };
+    }
+
     function createListener() {
         let acc = new Float32Array(0);
         let done = 0;
-        const low = makeSlot();
-        const high = makeSlot();
-        const view = { eLow: 0, eHigh: 0, snrLow: 0, snrHigh: 0 };
+        const slots = FREQS.map(function (freq, i) {
+            const slot = makeSlot();
+            slot.freq = freq;
+            slot.ch = CHARS.charAt(i);
+            slot.e = 0;
+            slot.snr = 0;
+            return slot;
+        });
+        const coeffs = FREQS.map(function (freq) { return 2 * Math.cos(2 * Math.PI * freq / SR); });
+
+        function energy(offset, coeff) {
+            let s0 = 0, s1 = 0, s2 = 0;
+            for (let i = 0; i < WIN; i++) {
+                const x = acc[offset + i] || 0;
+                s0 = x + coeff * s1 - s2;
+                s2 = s1;
+                s1 = s0;
+            }
+            return (s1 * s1 + s2 * s2 - coeff * s1 * s2) / (WIN * WIN);
+        }
 
         function push(samples) {
             if (!samples || !samples.length) return;
@@ -182,59 +260,67 @@
             next.set(acc);
             next.set(samples, acc.length);
             acc = next;
-            const cap = SR * 8;
+            const cap = SR * 6;
             if (acc.length > cap) {
-                const drop = acc.length - SR * 6;
+                const drop = acc.length - Math.round(SR * 4);
                 acc = new Float32Array(acc.subarray(drop));
                 done = Math.max(0, done - drop);
             }
+            const e = new Float32Array(FREQS.length);
             while (done + WIN <= acc.length) {
-                const eL = goertzel(acc, done, FREQ_LOW);
-                const eH = goertzel(acc, done, FREQ_HIGH);
-                const sL = goertzel(acc, done, FREQ_LOW + 180);
-                const sH = goertzel(acc, done, FREQ_HIGH + 180);
-                view.eLow = view.eLow * 0.8 + eL * 0.2;
-                view.eHigh = view.eHigh * 0.8 + eH * 0.2;
-                view.snrLow = eL / (sL + 1e-12);
-                view.snrHigh = eH / (sH + 1e-12);
-                if (!low.hot && view.snrLow < 2.2) low.floor = low.floor * 0.9 + eL * 0.1;
-                if (!high.hot && view.snrHigh < 2.2) high.floor = high.floor * 0.9 + eH * 0.1;
-                const hotL = eL > eH * 0.02 && (low.hot ? (eL > low.floor * 3 && view.snrLow > 2) : (eL > low.floor * 8 && view.snrLow > 4));
-                const hotH = eH > eL * 0.02 && (high.hot ? (eH > high.floor * 3 && view.snrHigh > 2) : (eH > high.floor * 8 && view.snrHigh > 4));
-                hopSlot(low, hotL);
-                hopSlot(high, hotH);
+                for (let i = 0; i < FREQS.length; i++) e[i] = energy(done, coeffs[i]);
+                for (let i = 0; i < FREQS.length; i++) {
+                    const slot = slots[i];
+                    const left = i > 0 ? e[i - 1] : 0;
+                    const right = i < FREQS.length - 1 ? e[i + 1] : 0;
+                    const side = Math.max(left, right, 1e-12);
+                    slot.e = slot.e * 0.75 + e[i] * 0.25;
+                    slot.snr = e[i] / side;
+                    if (!slot.hot && slot.snr < 3) slot.floor = slot.floor * 0.9 + e[i] * 0.1;
+                    const minE = 2e-6;
+                    const hot = e[i] > minE && (slot.hot
+                        ? (e[i] > slot.floor * 3 && slot.snr > 3)
+                        : (e[i] > slot.floor * 6 && slot.snr > 8));
+                    hopSlot(slot, hot);
+                }
                 done += HOP;
             }
         }
 
-        function take(slot) {
-            const packets = slot.packets.slice();
-            slot.packets.length = 0;
-            return packets;
-        }
-
         function forget(freq) {
-            const slot = freq === FREQ_LOW ? low : high;
-            slot.morse = "";
-            slot.text = "";
-            slot.hot = false;
-            slot.run = 0;
-            slot.letterDone = false;
-            slot.packets = [];
+            for (let i = 0; i < slots.length; i++) {
+                if (Math.abs(slots[i].freq - freq) > 20) continue;
+                const slot = slots[i];
+                slot.morse = "";
+                slot.text = "";
+                slot.hot = false;
+                slot.run = 0;
+                slot.letterDone = false;
+                slot.packets = [];
+            }
         }
 
         function poll() {
-            return {
-                eLow: view.eLow, eHigh: view.eHigh,
-                snrLow: view.snrLow, snrHigh: view.snrHigh,
-                floorLow: low.floor, floorHigh: high.floor,
-                hotLow: low.hot, hotHigh: high.hot,
-                spanLow: low.spans.slice(), spanHigh: high.spans.slice(),
-                morseLow: low.morse, morseHigh: high.morse,
-                textLow: low.text, textHigh: high.text,
-                marksLow: low.marks, marksHigh: high.marks,
-                packetsLow: take(low), packetsHigh: take(high)
-            };
+            const packets = [];
+            const bands = [];
+            for (let i = 0; i < slots.length; i++) {
+                const slot = slots[i];
+                for (let p = 0; p < slot.packets.length; p++) {
+                    const pkt = slot.packets[p];
+                    pkt.freq = slot.freq;
+                    pkt.ch = slot.ch;
+                    packets.push(pkt);
+                }
+                slot.packets = [];
+                if (slot.hot || slot.text || slot.morse || slot.e > 5e-6) {
+                    bands.push({
+                        ch: slot.ch, freq: slot.freq, e: slot.e, snr: slot.snr,
+                        hot: slot.hot, text: slot.text, morse: slot.morse
+                    });
+                }
+            }
+            bands.sort(function (a, b) { return b.e - a.e; });
+            return { packets: packets, bands: bands.slice(0, 6) };
         }
 
         return { push: push, poll: poll, forget: forget };
@@ -242,12 +328,14 @@
 
     root.AudioCodec = {
         SR: SR,
-        FREQ_LOW: FREQ_LOW,
-        FREQ_HIGH: FREQ_HIGH,
-        toneFor: toneFor,
+        CHARS: CHARS,
+        FREQS: FREQS,
+        freqForId: freqForId,
+        charForFreq: charForFreq,
         poseMessage: poseMessage,
         chatMessage: chatMessage,
         encodeMorse: encodeMorse,
-        createListener: createListener
+        createListener: createListener,
+        cancelOwn: cancelOwn
     };
 })(typeof self !== "undefined" ? self : this);
