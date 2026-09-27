@@ -3,9 +3,10 @@
     const SR = 44100;
     const FREQ_LOW = 2000;
     const FREQ_HIGH = 3222;
-    const UNIT = 0.11;
-    const HOP = Math.round(SR * 0.01);
-    const WIN = Math.round(SR * 0.02);
+    const UNIT = 0.011;
+    const HOP = Math.round(SR * 0.002);
+    const WIN = Math.round(SR * 0.006);
+    const HOP_MS = HOP / SR * 1000;
     const CODE = {
         A: ".-", B: "-...", C: "-.-.", D: "-..", E: ".", F: "..-.", G: "--.", H: "....",
         I: "..", J: ".---", K: "-.-", L: ".-..", M: "--", N: "-.", O: "---", P: ".--.",
@@ -66,12 +67,12 @@
         for (let i = 0; i < events.length; i++) total += events[i].n;
         const out = new Float32Array(total);
         let at = 0;
-        const fade = Math.round(SR * 0.004);
+        const fade = Math.max(8, Math.round(SR * 0.0015));
         for (let e = 0; e < events.length; e++) {
             const ev = events[e];
             if (ev.on) {
                 for (let i = 0; i < ev.n; i++) {
-                    let g = 0.28;
+                    let g = 0.42;
                     if (i < fade) g *= i / fade;
                     if (i > ev.n - fade) g *= (ev.n - i) / fade;
                     out[at + i] = g * Math.sin(2 * Math.PI * freq * (at + i) / SR);
@@ -109,34 +110,42 @@
         if (!ch) return;
         slot.text += ch;
         slot.letters++;
-        if (slot.text.length > 120) slot.text = slot.text.slice(-80);
+        const vv = slot.text.lastIndexOf("VV");
+        if (vv > 0) slot.text = slot.text.slice(vv);
+        else if (slot.text.length > 48) slot.text = "";
         pullPackets(slot);
     }
 
+    function lastMatch(re, text) {
+        const flags = re.flags.indexOf("g") >= 0 ? re.flags : re.flags + "g";
+        const all = text.matchAll(new RegExp(re.source, flags));
+        let found = null;
+        for (const m of all) found = m;
+        return found;
+    }
+
     function pullPackets(slot) {
-        let t = slot.text;
-        let guard = 0;
-        while (guard++ < 4) {
-            const pose = t.match(/VV([A-Z0-9]{4,8})P(\d+)X(\d+)H(\d+)L(\d+)K/);
-            const chat = t.match(/VV([A-Z0-9]{4,8})C([A-Z0-9 ]+?)K/);
-            const found = pose && (!chat || pose.index <= chat.index) ? pose : chat;
-            if (!found) break;
-            if (found === pose) {
-                slot.packets.push({
-                    kind: "pose", id: pose[1].toLowerCase(),
-                    x: +pose[2], y: +pose[3], hp: +pose[4], lvl: +pose[5]
-                });
-            } else {
-                slot.packets.push({ kind: "chat", id: chat[1].toLowerCase(), text: chat[2].trim() });
-            }
-            t = t.slice(found.index + found[0].length);
+        const t = slot.text;
+        const pose = lastMatch(/VV([A-Z0-9]{4,8})P(\d+)X(\d+)H(\d+)L(\d+)K/, t);
+        const chat = lastMatch(/([A-Z0-9]{6})C([A-Z0-9 ]{1,40})K/, t);
+        let end = 0;
+        if (pose) {
+            slot.packets.push({
+                kind: "pose", id: pose[1].toLowerCase(),
+                x: +pose[2], y: +pose[3], hp: +pose[4], lvl: +pose[5]
+            });
+            end = Math.max(end, pose.index + pose[0].length);
         }
-        slot.text = t;
+        if (chat && (!pose || chat.index >= pose.index)) {
+            slot.packets.push({ kind: "chat", id: chat[1].toLowerCase(), text: chat[2].trim() });
+            end = Math.max(end, chat.index + chat[0].length);
+        }
+        if (end) slot.text = t.slice(end);
     }
 
     function hopSlot(slot, hot) {
         const unitMs = UNIT * 1000;
-        const ms = slot.run * 10;
+        const ms = slot.run * HOP_MS;
         if (hot === slot.hot) {
             slot.run++;
             if (!hot && !slot.letterDone && ms >= unitMs * 3) {
@@ -204,6 +213,16 @@
             return packets;
         }
 
+        function forget(freq) {
+            const slot = freq === FREQ_LOW ? low : high;
+            slot.morse = "";
+            slot.text = "";
+            slot.hot = false;
+            slot.run = 0;
+            slot.letterDone = false;
+            slot.packets = [];
+        }
+
         function poll() {
             return {
                 eLow: view.eLow, eHigh: view.eHigh,
@@ -218,7 +237,7 @@
             };
         }
 
-        return { push: push, poll: poll };
+        return { push: push, poll: poll, forget: forget };
     }
 
     root.AudioCodec = {

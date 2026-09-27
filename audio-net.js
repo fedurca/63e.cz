@@ -143,7 +143,9 @@
         ui.snrH = r.snrHigh || 0;
         ui.hotL = !!r.hotLow;
         ui.hotH = !!r.hotHigh;
-        ui.partial = ((r.textLow || "") + (r.morseLow || "") + " | " + (r.textHigh || "") + (r.morseHigh || "")).slice(-48);
+        ui.lowText = (r.textLow || "") + (r.morseLow || "");
+        ui.highText = (r.textHigh || "") + (r.morseHigh || "");
+        ui.partial = (ui.lowText + " | " + ui.highText).slice(-48);
         const lists = [r.packetsLow || [], r.packetsHigh || []];
         for (let p = 0; p < lists.length; p++) {
             for (let i = 0; i < lists[p].length; i++) {
@@ -167,7 +169,7 @@
 
     function ensureWorker() {
         if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.8");
+        worker = new Worker("audio-worker.js?v=1.1.9");
         worker.onmessage = function (e) {
             if (!enabled) return;
             const msg = e.data || {};
@@ -179,6 +181,8 @@
 
     const remembered = [];
     let playingUntil = 0;
+    let playingFreq = 0;
+    let liveSrc = null;
     const wav = new Float32Array(SR * 10);
     let wavAt = 0;
     let wavN = 0;
@@ -207,31 +211,48 @@
         return out;
     }
 
-    function playPcm(pcm) {
+    function stopTone() {
+        if (liveSrc) {
+            try { liveSrc.stop(); } catch (e) {}
+            liveSrc = null;
+        }
+        playingUntil = audioCtx ? audioCtx.currentTime : 0;
+    }
+
+    function playPcm(pcm, freq) {
         if (!audioCtx || !playGain || !pcm) return;
         const buf = audioCtx.createBuffer(1, pcm.length, SR);
         buf.getChannelData(0).set(pcm);
         const src = audioCtx.createBufferSource();
         src.buffer = buf;
         src.connect(playGain);
-        const t = Math.max(audioCtx.currentTime + 0.06, playingUntil);
+        const t = Math.max(audioCtx.currentTime + 0.05, playingUntil);
         src.start(t);
+        liveSrc = src;
+        playingFreq = freq;
         playingUntil = t + pcm.length / SR;
     }
 
     function pump() {
         if (!enabled || !audioCtx || !codec()) return;
-        if (audioCtx.currentTime + 0.15 < playingUntil) return;
         const C = codec();
         const freq = myFreq();
         ui.freq = freq;
+        if (playingFreq && freq !== playingFreq && audioCtx.currentTime < playingUntil) {
+            const left = playingFreq;
+            stopTone();
+            if (worker) worker.postMessage({ type: "forget", freq: left });
+            audioLog("přelaďuji z " + left + " Hz na " + freq + " Hz");
+        }
+        if (audioCtx.currentTime + 0.12 < playingUntil) return;
         const pose = window.__audioPose || { x: 0, y: 0, hp: 6, lvl: 0 };
         let text = "";
         if (chatQ.length) text = C.chatMessage(myId(), chatQ.shift());
         if (!text) text = C.poseMessage(myId(), pose);
-        playPcm(C.encodeMorse(text, freq));
+        if (!text) return;
+        playPcm(C.encodeMorse(text + " " + text, freq), freq);
         txThisSec++;
-        ui.tx = freq + " Hz " + text;
+        ui.tx = text;
     }
 
     function resample(input, fromRate) {
@@ -337,14 +358,17 @@
             snap.partial = ui.partial || "";
             if (typeof window.publishAudioTune === "function") window.publishAudioTune(snap);
             const back = remote && Date.now() - remote.at < 4000 ? remote : null;
-            let why = "cizí tón pod prahem";
+            const listen = freq === 2000 ? 3222 : 2000;
+            const heardTxt = (freq === 2000 ? (ui.highText || "") : (ui.lowText || "")).slice(-24);
+            let why = "cizí " + listen + " Hz pod prahem";
             if (rxThisSec) why = "paket přijat";
-            else if (foreignHot) why = "nosná, rozpracováno " + (ui.partial || "…");
-            else if ((foreignSnr || 0) > 2) why = "slabý cizí tón, snr " + foreignSnr.toFixed(1);
+            else if (foreignHot) why = "nosná " + listen + " Hz «" + (heardTxt || "…") + "»";
+            else if ((foreignSnr || 0) > 2) why = "slabý cizí tón snr " + foreignSnr.toFixed(1);
             audioLog(
-                "morse TX " + freq + " Hz " + ui.tx
-                + " | cizí e " + foreignE.toExponential(1) + " snr " + (foreignSnr || 0).toFixed(1)
-                + " | vlastní e " + ownE.toExponential(1)
+                "TX " + freq + " Hz " + ui.tx
+                + " | poslouchám " + listen + " Hz e " + foreignE.toExponential(1)
+                + " snr " + (foreignSnr || 0).toFixed(1)
+                + " | vlastní " + freq + " e " + ownE.toExponential(1)
                 + " | " + why
                 + " | " + ui.dir
                 + " | on mě " + (back ? (back.hearsMe ? "slyší" : "neslyší") : "neznámo")
@@ -410,6 +434,7 @@
             renderDebug();
             return;
         }
+        if (id && remembered.indexOf(id) < 0) remembered.push(id);
         const mine = myId().toLowerCase().replace(/[^0-9a-z]/g, "").slice(0, 6);
         const hearsMe = !!(tune.heard && String(tune.heard).toLowerCase().indexOf(mine) >= 0);
         if (heardMe !== hearsMe) {
