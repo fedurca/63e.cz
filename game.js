@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=1.0.1";
+import { LVL } from "./maps.js?v=1.1.0";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,8 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-// build v1.0.1 — enemies keep moving, heart skip, nick in chat, tilt opt-in
-window.__GAME_BUILD = "v1.0.1";
+// build v1.1.0 — acoustic link and per-tab topology ids
+window.__GAME_BUILD = "v1.1.0";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {
@@ -711,6 +711,35 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             data.loot = allOf("loot").map(l => l.lId);
         }
         if (typeof window.broadcastWorldSnapshot === "function") window.broadcastWorldSnapshot(data);
+        window.__audioPose = {
+            lvl: lvlIdx,
+            x: player.pos.x,
+            y: player.pos.y,
+            hp: hp,
+            host: getIsHost()
+        };
+        if (getIsHost()) {
+            window.__audioEnemies = allOf("enemy").slice(0, 5).map(e => {
+                const parts = String(e.eId || "").split("_");
+                return { i: Number(parts[parts.length - 1]) || 0, x: e.pos.x, y: e.pos.y };
+            });
+        }
+    };
+
+    window.ingestAudioPeer = (id, peer) => {
+        if (!peer || id === localId || peer.lvl !== lvlIdx) return;
+        window.handleGameSync(id, peer);
+    };
+
+    window.ingestAudioEnemies = (syncLvl, list) => {
+        if (getIsHost() || syncLvl !== lvlIdx || !Array.isArray(list)) return;
+        window.__lastEnemySnapAt = time();
+        list.forEach(item => {
+            const id = `e_${lvlIdx}_${item.i}`;
+            const en = allOf("enemy").find(e => e.eId === id);
+            if (!en) return;
+            en.targetPos = vec2(item.x, item.y);
+        });
     };
     
     onUpdate(() => {

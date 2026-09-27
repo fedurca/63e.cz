@@ -248,11 +248,51 @@ function getStableNodeId() {
     return id; 
 }
 
+function claimInstanceId() {
+    const base = getStableNodeId();
+    let token = "";
+    try { token = sessionStorage.getItem("p2p_tab_token") || ""; } catch (e) { token = ""; }
+    if (!token) {
+        token = Math.random().toString(36).slice(2, 8);
+        try { sessionStorage.setItem("p2p_tab_token", token); } catch (e) {}
+    }
+    const key = "p2p_live_tabs";
+    const now = Date.now();
+    let tabs = [];
+    try { tabs = JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { tabs = []; }
+    if (!Array.isArray(tabs)) tabs = [];
+    tabs = tabs.filter(t => t && t.token && now - t.seen < 12000);
+    const mine = tabs.find(t => t.token === token);
+    if (mine) mine.seen = now;
+    else tabs.push({ token: token, seen: now });
+    tabs.sort((a, b) => (a.seen - b.seen) || (a.token < b.token ? -1 : a.token > b.token ? 1 : 0));
+    try { localStorage.setItem(key, JSON.stringify(tabs)); } catch (e) {}
+    const n = Math.max(0, tabs.findIndex(t => t.token === token));
+    setInterval(() => {
+        const t = Date.now();
+        let live = [];
+        try { live = JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { live = []; }
+        if (!Array.isArray(live)) live = [];
+        live = live.filter(row => row && row.token && (row.token === token || t - row.seen < 12000));
+        let found = false;
+        live.forEach(row => { if (row.token === token) { row.seen = t; found = true; } });
+        if (!found) live.push({ token: token, seen: t });
+        try { localStorage.setItem(key, JSON.stringify(live)); } catch (e) {}
+    }, 4000);
+    window.addEventListener("pagehide", () => {
+        try {
+            const live = JSON.parse(localStorage.getItem(key) || "[]").filter(row => row && row.token !== token);
+            localStorage.setItem(key, JSON.stringify(live));
+        } catch (e) {}
+    });
+    return n === 0 ? base : (base + n.toString(36));
+}
+
 function generateMsgId() { 
     return Date.now().toString(36) + Math.random().toString(36).substr(2, 6); 
 }
 
-let myId = getStableNodeId(); 
+let myId = claimInstanceId(); 
 window.chat_myId = myId; 
 let myName = ""; 
 let isDnsHost = false; 
@@ -261,6 +301,7 @@ window.chat_isHost = () => isDnsHost;
 let connections = {}; 
 let channels = {}; 
 let networkGraph = { root: myId, edges: [] }; 
+window.networkGraph = networkGraph; 
 let seenMessages = new Set(); 
 let knownNodes = {}; 
 window.chat_knownNodes = knownNodes; 
@@ -1351,7 +1392,14 @@ async function processPayload(msg) {
         }
     } 
     else if (msg.type === 'topo-sync') {
-        networkGraph = msg.graph;
+        const audioEdges = (networkGraph.edges || []).filter(e => e && e.protocol === 'audio');
+        networkGraph = msg.graph || { root: networkGraph.root, edges: [] };
+        if (!Array.isArray(networkGraph.edges)) networkGraph.edges = [];
+        const seen = new Set(networkGraph.edges.map(e => e && (e.id || e)));
+        audioEdges.forEach(edge => {
+            if (edge && edge.id && !seen.has(edge.id)) networkGraph.edges.push(edge);
+        });
+        window.networkGraph = networkGraph;
         if (!isDnsHost) { 
             const now = Date.now(); 
             if (msg.graph.root && knownNodes[msg.graph.root]) {
@@ -1416,7 +1464,7 @@ function drawTopology() {
         ctx.beginPath(); 
         ctx.moveTo(rootX, rootY); 
         ctx.lineTo(nodeX, nodeY); 
-        ctx.strokeStyle = edge.isRelay ? (edge.protocol === 'http' ? '#9b59b6' : '#feca57') : '#2ed573'; 
+        ctx.strokeStyle = edge.protocol === 'audio' ? '#5dade2' : (edge.isRelay ? (edge.protocol === 'http' ? '#9b59b6' : '#feca57') : '#2ed573'); 
         ctx.lineWidth = 2; 
         ctx.stroke(); 
         
@@ -1432,6 +1480,32 @@ function drawTopology() {
         ctx.fillText(nodeName.substring(0, 6), nodeX, nodeY + 25);
     });
 }
+
+window.noteAudioPeer = function(id) {
+    if (!id || id === myId) return;
+    if (!knownNodes[id]) {
+        knownNodes[id] = { name: id, lastSeen: Date.now(), tele: {}, audio: true };
+    } else {
+        knownNodes[id].lastSeen = Date.now();
+        knownNodes[id].audio = true;
+        if (!knownNodes[id].name) knownNodes[id].name = id;
+    }
+    window.chat_knownNodes = knownNodes;
+    if (!networkGraph.root) networkGraph.root = myId;
+    const edges = Array.isArray(networkGraph.edges) ? networkGraph.edges.slice() : [];
+    const existing = edges.find(e => e && e.id === id);
+    const webrtc = channels[id] && channels[id].readyState === "open";
+    if (existing) {
+        if (!webrtc) existing.protocol = "audio";
+    } else {
+        edges.push({ id: id, protocol: "audio", isRelay: false, rtt: 0, bitrate: 0, ping: 0 });
+    }
+    networkGraph.edges = edges;
+    window.networkGraph = networkGraph;
+    updateDebugStats("nodes", Object.keys(knownNodes).length);
+    if (DOM.uiUserCount) DOM.uiUserCount.innerText = String(Object.keys(knownNodes).length);
+    drawTopology();
+};
 
 window.chat_displayName = function() {
     const custom = (localStorage.getItem('chat_nick_custom') || '').trim();
@@ -1830,10 +1904,12 @@ setInterval(() => {
             if (peerId !== myId) { 
                 const s = peerStats[peerId] || {}; 
                 let isHttp = knownHttpClients.has(peerId); 
-                edges.push({ id: peerId, ping: s.rtt || knownNodes[peerId].ping || 0, rtt: isHttp ? 0 : (s.rtt || 0), bitrate: s.bitrate || 0, isRelay: isHttp ? true : (s.isRelay || false), protocol: isHttp ? 'http' : (s.protocol || 'udp') }); 
+                const audioOnly = !!(knownNodes[peerId] && knownNodes[peerId].audio) && !(channels[peerId] && channels[peerId].readyState === 'open');
+                edges.push({ id: peerId, ping: s.rtt || knownNodes[peerId].ping || 0, rtt: isHttp ? 0 : (s.rtt || 0), bitrate: s.bitrate || 0, isRelay: isHttp ? true : (s.isRelay || false), protocol: audioOnly ? 'audio' : (isHttp ? 'http' : (s.protocol || 'udp')) }); 
             } 
         }); 
         networkGraph.edges = edges; 
+        window.networkGraph = networkGraph;
         routeMessage({ id: generateMsgId(), ttl: 10, type: 'topo-sync', sender: myId, graph: networkGraph }); 
         drawTopology(); 
     } 
