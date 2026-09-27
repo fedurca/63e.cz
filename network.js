@@ -1039,10 +1039,40 @@ window.broadcastLootSync = (activeLootIds) => {
     routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
 };
 
-function routeMessage(msgObj, sourceChannel = null) {
-    if ((msgObj.type === 'game-sync' || msgObj.type === 'enemy-sync' || msgObj.type === 'map-sync' || msgObj.type === 'game-shoot' || msgObj.type === 'game-hit' || msgObj.type === 'enemy-hit' || msgObj.type === 'game-next' || msgObj.type === 'loot-pickup' || msgObj.type === 'loot-sync') && sourceChannel === 'http') return; 
+function hasOpenGameChannel() {
+    return Object.values(channels).some(ch => ch && ch.readyState === 'open');
+}
 
-    if (msgObj.type !== 'sync-batch' && msgObj.type !== 'sync-ack' && msgObj.type !== 'request-history' && msgObj.type !== 'file-chunk' && msgObj.type !== 'video-signal' && msgObj.type !== 'game-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+window.broadcastWorldSnapshot = (data) => {
+    if (!data) return;
+    if (Object.keys(knownNodes).length === 0 && !hasOpenGameChannel()) return;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'world-snapshot', sender: myId, payload: JSON.stringify(data) });
+};
+
+window.requestEnemySnapshot = () => {
+    if (Object.keys(knownNodes).length === 0 && !hasOpenGameChannel()) return;
+    const now = Date.now();
+    if (now - (window.__enemyReqSentAt || 0) < 4000) return;
+    window.__enemyReqSentAt = now;
+    routeMessage({ id: generateMsgId(), ttl: 2, type: 'request-snapshot', sender: myId });
+};
+
+function isRealtimeGameMsg(type) {
+    return type === 'game-sync' || type === 'enemy-sync' || type === 'map-sync'
+        || type === 'game-shoot' || type === 'game-hit' || type === 'enemy-hit'
+        || type === 'game-next' || type === 'loot-pickup' || type === 'loot-sync'
+        || type === 'world-snapshot' || type === 'request-snapshot';
+}
+
+function isDroppableSnapshot(type) {
+    return type === 'world-snapshot' || type === 'game-sync' || type === 'enemy-sync' || type === 'map-sync' || type === 'loot-sync';
+}
+
+function routeMessage(msgObj, sourceChannel = null) {
+    if (isRealtimeGameMsg(msgObj.type) && sourceChannel === 'http') return;
+
+    const skipDedupe = msgObj.type === 'sync-batch' || msgObj.type === 'sync-ack' || msgObj.type === 'request-history' || msgObj.type === 'file-chunk' || msgObj.type === 'video-signal' || (isRealtimeGameMsg(msgObj.type) && msgObj.type !== 'request-snapshot');
+    if (!skipDedupe) {
         if (seenMessages.has(msgObj.id)) return; 
         seenMessages.add(msgObj.id); 
         if (seenMessages.size > 1000) seenMessages.delete(seenMessages.values().next().value); 
@@ -1058,23 +1088,24 @@ function routeMessage(msgObj, sourceChannel = null) {
 
     Object.values(channels).forEach(ch => { 
         if (ch && ch.readyState === 'open' && ch !== sourceChannel) { 
-            try { 
-                const str = JSON.stringify(msgObj); 
-                if (ch.bufferedAmount > 65535 && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync') {
-                    logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId); 
+            try {
+                if (isDroppableSnapshot(msgObj.type) && ch.bufferedAmount > 16384) return;
+                const str = JSON.stringify(msgObj);
+                if (ch.bufferedAmount > 65535 && !isDroppableSnapshot(msgObj.type)) {
+                    logDebug(`[P2P WARN] Kanál je plný (${Math.round(ch.bufferedAmount/1024)} KB)!`, 'error', myId);
                 }
-                ch.send(str); 
+                ch.send(str);
             } catch(err) {} 
         } 
     });
 
     if (isHttpRelayMode) { 
-        if (sourceChannel !== 'http' && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') {
+        if (sourceChannel !== 'http' && !isRealtimeGameMsg(msgObj.type)) {
             addToHttpOutbox('hub', msgObj); 
         }
     } else if (isDnsHost) { 
         knownHttpClients.forEach(clientId => { 
-            if (clientId !== msgObj.sender && clientId !== sourceChannel && msgObj.type !== 'game-sync' && msgObj.type !== 'enemy-sync' && msgObj.type !== 'map-sync' && msgObj.type !== 'game-shoot' && msgObj.type !== 'game-hit' && msgObj.type !== 'enemy-hit' && msgObj.type !== 'game-next' && msgObj.type !== 'loot-pickup' && msgObj.type !== 'loot-sync') { 
+            if (clientId !== msgObj.sender && clientId !== sourceChannel && !isRealtimeGameMsg(msgObj.type)) { 
                 addToHttpOutbox(clientId, msgObj); 
             } 
         }); 
@@ -1115,6 +1146,29 @@ async function processPayload(msg) {
         if (msg.sender !== myId && typeof window.handleGameSync === 'function') {
             try { window.handleGameSync(msg.sender, JSON.parse(msg.payload)); } catch(e){}
         }
+    }
+    else if (msg.type === 'world-snapshot') {
+        if (msg.sender === myId) return;
+        let data = null;
+        try { data = JSON.parse(msg.payload); } catch (e) { return; }
+        if (!data || typeof data !== 'object') return;
+        try { if (typeof window.handleGameSync === 'function') window.handleGameSync(msg.sender, data); } catch (e) {}
+        try {
+            if (Array.isArray(data.enemies) && data.enemies.length > 0 && typeof window.handleEnemySync === 'function') {
+                window.handleEnemySync(data.enemies, data.lvl);
+            }
+        } catch (e) {}
+        try {
+            if (Array.isArray(data.loot) && typeof window.handleLootSync === 'function') window.handleLootSync(data.loot);
+        } catch (e) {}
+    }
+    else if (msg.type === 'request-snapshot') {
+        if (msg.sender === myId) return;
+        if (typeof window.chat_isHost !== 'function' || !window.chat_isHost()) return;
+        const now = Date.now();
+        if (now - (window.__snapshotReplyAt || 0) < 2000) return;
+        window.__snapshotReplyAt = now;
+        if (typeof window.flushWorldSnapshot === 'function') window.flushWorldSnapshot();
     }
     else if (msg.type === 'game-shoot') {
         if (msg.sender !== myId && typeof window.handleGameShoot === 'function') {

@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=20260520-webfix";
+import { LVL } from "./maps.js?v=1.0.0";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,7 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-window.__GAME_BUILD = "p2p-v23-webfix-20260520";
+// build v1.0.0 — mobile fullscreen, touch controls, throttled world snapshots
+window.__GAME_BUILD = "v1.0.0";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {
@@ -480,12 +481,13 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     onKeyPress("w", doJump);
 
     window.handleGameSync = (senderId, data) => {
-        if (data.lvl !== lvlIdx) return;
-        if (!window.chat_knownNodes || (!window.chat_knownNodes[senderId] && senderId !== localId)) return;
+        if (!data || data.lvl !== lvlIdx || !senderId) return;
 
         playerStats[senderId] = { name: data.name || senderId, hp: data.hp || 0, score: data.score || 0, kills: data.kills || 0, deaths: data.deaths || 0 };
         
         let rp = get(senderId)[0];
+        if (senderId === localId) return;
+
         if (!rp) {
             rp = add([
                 sprite("player"),
@@ -497,8 +499,9 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                 senderId,
                 { id: senderId }
             ]);
+            rp.targetPos = vec2(data.x, data.y);
             rp.add([
-                text(senderId.substring(0,6), {size: 10}),
+                text(String(data.name || senderId).substring(0, 10), {size: 10}),
                 pos(0, -30),
                 anchor("center"),
                 color(255,255,255)
@@ -506,17 +509,18 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         } else {
             rp.targetPos = vec2(data.x, data.y);
             rp.flipX = data.flipX;
-            if (rp.curAnim() !== data.anim) rp.play(data.anim);
+            if (data.anim && rp.curAnim() !== data.anim) rp.play(data.anim);
         }
     };
 
     onUpdate("remote_player", (rp) => {
         if (rp.targetPos) {
-            if (rp.pos.dist(rp.targetPos) > 200) {
+            if (rp.pos.dist(rp.targetPos) > 220) {
                 rp.pos = rp.targetPos.clone();
             } else {
-                rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, 25 * dt()); 
-                rp.pos.y = lerp(rp.pos.y, rp.targetPos.y, 25 * dt());
+                const follow = Math.min(1, 8 * dt());
+                rp.pos.x = lerp(rp.pos.x, rp.targetPos.x, follow);
+                rp.pos.y = lerp(rp.pos.y, rp.targetPos.y, follow);
             }
         }
     });
@@ -550,21 +554,32 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         }
     };
 
-    window.handleEnemySync = (enemiesData) => {
+    window.handleEnemySync = (enemiesData, syncLvl) => {
         if (getIsHost()) return;
-        const masterIds = new Set(enemiesData.map(ed => ed.id));
+        if (typeof syncLvl === "number" && syncLvl !== lvlIdx) return;
+        // Prázdný snapshot (enemyCount 0 před první reálnou dávkou, nebo výpadek) nesmí smazat lokální nepřátele.
+        if (!Array.isArray(enemiesData) || enemiesData.length === 0) return;
+        window.__lastEnemySnapAt = time();
+        const masterIds = new Set(enemiesData.map(ed => ed && ed.id).filter(Boolean));
+        if (masterIds.size === 0) return;
         get("enemy").forEach(e => {
-            if (!masterIds.has(e.eId)) destroy(e);
+            if (e.eId && !masterIds.has(e.eId)) destroy(e);
         });
         enemiesData.forEach(ed => {
+            if (!ed || !ed.id) return;
             const en = get(ed.id)[0];
-            if (en) {
-                en.targetPos = vec2(ed.x, ed.y);
-                if (!en.pos || en.pos.dist(en.targetPos) > 150) en.pos = en.targetPos.clone();
+            if (!en || !en.exists()) return;
+            en.targetPos = vec2(ed.x, ed.y);
+            if (!en.pos || en.pos.dist(en.targetPos) > 180) en.pos = en.targetPos.clone();
+            if (typeof ed.hp === "number") {
                 if (en.hp > ed.hp) en.stunTimer = 0.2;
                 en.hp = Math.min(en.hp, ed.hp);
-                en.flipX = ed.flipX;
+                if (en.hp <= 0) {
+                    destroy(en);
+                    return;
+                }
             }
+            if (typeof ed.flipX === "boolean") en.flipX = ed.flipX;
         });
     };
 
@@ -605,15 +620,41 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     
     window.handleLootSync = (activeLootIds) => {
         if (getIsHost()) return;
+        if (!Array.isArray(activeLootIds)) return;
         const idSet = new Set(activeLootIds);
         get("loot").forEach(l => {
             if (!idSet.has(l.lId)) destroy(l);
         });
     };
 
-    let lastSyncTime = 0;
-    let lastMapSyncTime = 0;
+    let lastSnapTime = 0;
+    let lastEnemyReqAt = 0;
+    window.__lastEnemySnapAt = 0;
+    const SNAPSHOT_DT = 0.3;
     let camTarget = vec2(player.pos.x, player.pos.y);
+
+    window.flushWorldSnapshot = () => {
+        if (!player.exists() || playerDead) return;
+        const data = {
+            lvl: lvlIdx,
+            x: player.pos.x,
+            y: player.pos.y,
+            flipX: player.flipX,
+            anim: player.curAnim(),
+            hp: hp,
+            score: score,
+            kills: myKills,
+            deaths: myDeaths,
+            name: localStorage.getItem('chat_nickname') || localId
+        };
+        if (getIsHost()) {
+            data.enemies = get("enemy").map(e => ({
+                id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: !!e.flipX
+            }));
+            data.loot = get("loot").map(l => l.lId);
+        }
+        if (typeof window.broadcastWorldSnapshot === "function") window.broadcastWorldSnapshot(data);
+    };
     
     onUpdate(() => {
         if (!player.exists() || playerDead) return;
@@ -628,34 +669,17 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
         chargeFg.width = (tripleCharge / 10) * 150;
         chargeFg.color = tripleCharge >= 10 ? rgb(0,255,0) : rgb(0,255,255);
 
-        let syncRate = (typeof window.isHttpRelayMode !== 'undefined' && window.isHttpRelayMode) ? 0.2 : 0.06;
-        if (time() - lastSyncTime > syncRate) {
-            lastSyncTime = time();
-            if (typeof window.broadcastGameSync === 'function') {
-                window.broadcastGameSync({
-                    lvl: lvlIdx,
-                    x: player.pos.x,
-                    y: player.pos.y,
-                    flipX: player.flipX,
-                    anim: player.curAnim(),
-                    hp: hp,
-                    score: score,
-                    kills: myKills,
-                    deaths: myDeaths,
-                    name: localStorage.getItem('chat_nickname') || localId
-                });
-            }
+        if (time() - lastSnapTime > SNAPSHOT_DT) {
+            lastSnapTime = time();
+            window.flushWorldSnapshot();
         }
-
-        if (getIsHost() && time() - lastMapSyncTime > 0.1) {
-            lastMapSyncTime = time();
-            const enemiesData = get("enemy").map(e => ({
-                id: e.eId, x: e.pos.x, y: e.pos.y, hp: e.hp, flipX: e.flipX || false
-            }));
-            if (typeof window.broadcastEnemySync === 'function') window.broadcastEnemySync(enemiesData);
-            
-            const lootData = get("loot").map(l => l.lId);
-            if (typeof window.broadcastLootSync === 'function') window.broadcastLootSync(lootData);
+        if (!getIsHost() && time() > 1.5 && time() - lastEnemyReqAt > 5) {
+            const seenAt = window.__lastEnemySnapAt || 0;
+            const age = seenAt > 0 ? (time() - seenAt) : 999;
+            if (age > 3) {
+                lastEnemyReqAt = time();
+                if (typeof window.requestEnemySnapshot === "function") window.requestEnemySnapshot();
+            }
         }
         
         if (light && player.pos) light.pos = player.pos;
@@ -742,7 +766,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                            `${TEXTS.debugStun(player.stun)}\n${TEXTS.debugGravity(lvl.g)}\n` +
                            `${TEXTS.debugEnemies(get("enemy").length)} -> ${enemyDbg}\n${TEXTS.debugCoins(get("coin").length)}\n` +
                            `${TEXTS.debugFPS(Math.round(1/dt()))}\n${TEXTS.debugTime(time())}\n` +
-                           `Peers: ${remoteIdsStr}`;
+                           `Peers: ${remoteIdsStr}\nBuild: ${window.__GAME_BUILD || ""}`;
             document.getElementById("debug-content").innerText = dbgTxt;
         }
     });
@@ -754,8 +778,9 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             e.gravityScale = 0;
             if (e.vel) { e.vel.x = 0; e.vel.y = 0; } 
             if (e.targetPos) {
-                e.pos.x = lerp(e.pos.x, e.targetPos.x, 20 * dt());
-                e.pos.y = lerp(e.pos.y, e.targetPos.y, 20 * dt());
+                const follow = Math.min(1, 8 * dt());
+                e.pos.x = lerp(e.pos.x, e.targetPos.x, follow);
+                e.pos.y = lerp(e.pos.y, e.targetPos.y, follow);
             }
         } else {
             if (e.gravityScale === 0) e.gravityScale = 1;
