@@ -35,6 +35,9 @@ document.addEventListener("DOMContentLoaded", () => {
         incomingName: document.getElementById('incoming-name')
     };
 
+    const sessionBtn = document.getElementById("btn-session-log");
+    if (sessionBtn) sessionBtn.addEventListener("click", () => window.downloadSessionLog());
+
     if (DOM.username) {
         DOM.username.addEventListener('input', (e) => localStorage.setItem('chat_nick_custom', e.target.value.trim()));
     }
@@ -520,10 +523,15 @@ setInterval(() => {
     
     if(DOM.statusTimer) DOM.statusTimer.innerText = `${m}:${s}`; 
     
-    if (delta > 10000) { 
-        logDebug(`[WATCHDOG] Detekováno uspání tabu/systému. Resetuji síť...`, "error", myId); 
-        appSessionTime = 0; 
-        fullResetAndReconnect(); 
+    if (delta > 10000) {
+        const live = Object.keys(channels).some((id) => channels[id] && channels[id].readyState === "open");
+        if (live || delta < 60000) {
+            logDebug(`[WATCHDOG] Tab spal ${Math.round(delta / 1000)} s. Spojení nechávám.`, "info", myId);
+        } else {
+            logDebug(`[WATCHDOG] Tab spal ${Math.round(delta / 1000)} s a kanál je mrtvý. Resetuji síť...`, "error", myId);
+            appSessionTime = 0;
+            fullResetAndReconnect();
+        }
     } 
     watchdogTick = now; 
 }, 1000); 
@@ -531,11 +539,16 @@ setInterval(() => {
 document.addEventListener('visibilitychange', () => { 
     if (document.visibilityState === 'visible') { 
         const delta = Date.now() - watchdogTick; 
-        if (delta > 10000) { 
-            logDebug(`[WATCHDOG] Návrat na tab po uspání. Vynucuji reset...`, "error", myId); 
-            appSessionTime = 0; 
-            fullResetAndReconnect(); 
-            watchdogTick = Date.now(); 
+        if (delta > 60000) {
+            const live = Object.keys(channels).some((id) => channels[id] && channels[id].readyState === "open");
+            if (!live) {
+                logDebug(`[WATCHDOG] Návrat na tab po ${Math.round(delta / 1000)} s bez kanálu. Resetuji síť...`, "error", myId);
+                appSessionTime = 0;
+                fullResetAndReconnect();
+            } else {
+                logDebug(`[WATCHDOG] Návrat na tab, spojení drží.`, "info", myId);
+            }
+            watchdogTick = Date.now();
         } 
     } 
 });
@@ -642,9 +655,29 @@ function logDebug(msg, type = 'info', sourceId = null) {
         const logData = { id: idStr, name: typeof myName !== 'undefined' && myName ? myName : 'Unknown', role: currentRole, type: type, message: msg, time: new Date().toISOString() };
         const prefix = `[${logData.role.toUpperCase()} LOG | IP: Client]`;
         logBuffer.push({ message: [prefix, logData], type: type, time: Date.now() });
+        if (!window.__sessionLog) window.__sessionLog = [];
+        window.__sessionLog.push({ t: logData.time, id: idStr, type: type, message: String(msg).replace(/<[^>]+>/g, "") });
+        if (window.__sessionLog.length > 800) window.__sessionLog.shift();
         if (logBuffer.length >= 20) flushLogs();
     } catch(e) { }
 }
+
+window.downloadSessionLog = function () {
+    const rows = window.__sessionLog || [];
+    const text = rows.map((e) => `[${e.t}] [${e.type}] ${e.id} ${e.message}`).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+    a.download = "63e-session.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+};
+document.addEventListener("keydown", (e) => {
+    if (e.key === "F4") {
+        e.preventDefault();
+        window.downloadSessionLog();
+    }
+});
 
 window.publishAudioTune = function (tune) {
     const send = (payload) => {
@@ -1159,9 +1192,10 @@ async function sendFileChunks(fileId, base64Data, fileMeta, targetId) {
 }
 
 // NETWORK BROADCAST HOOKS
+const GAME_TTL = 5;
 window.broadcastGameSync = (data) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'game-sync', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.broadcastGameShoot = (data) => {
@@ -1171,7 +1205,7 @@ window.broadcastGameShoot = (data) => {
 
 window.broadcastEnemySync = (enemiesData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'enemy-sync', sender: myId, payload: JSON.stringify(enemiesData) });
 };
 
 window.broadcastEnemyHit = (eId, dmg) => {
@@ -1181,7 +1215,7 @@ window.broadcastEnemyHit = (eId, dmg) => {
 
 window.broadcastMapSync = (mapData) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'map-sync', sender: myId, payload: JSON.stringify(mapData) });
 };
 
 window.broadcastPlayerHit = (targetId, shooterId, isFatal) => {
@@ -1201,7 +1235,7 @@ window.broadcastLootPickup = (lId) => {
 
 window.broadcastLootSync = (activeLootIds) => {
     if (Object.keys(knownNodes).length === 0) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'loot-sync', sender: myId, payload: JSON.stringify(activeLootIds) });
 };
 
 function hasOpenGameChannel() {
@@ -1211,7 +1245,7 @@ function hasOpenGameChannel() {
 window.broadcastWorldSnapshot = (data) => {
     if (!data) return;
     if (Object.keys(knownNodes).length === 0 && !hasOpenGameChannel()) return;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'world-snapshot', sender: myId, payload: JSON.stringify(data) });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'world-snapshot', sender: myId, payload: JSON.stringify(data) });
 };
 
 window.requestEnemySnapshot = () => {
@@ -1219,7 +1253,7 @@ window.requestEnemySnapshot = () => {
     const now = Date.now();
     if (now - (window.__enemyReqSentAt || 0) < 4000) return;
     window.__enemyReqSentAt = now;
-    routeMessage({ id: generateMsgId(), ttl: 2, type: 'request-snapshot', sender: myId });
+    routeMessage({ id: generateMsgId(), ttl: GAME_TTL, type: 'request-snapshot', sender: myId });
 };
 
 function isRealtimeGameMsg(type) {
@@ -2120,7 +2154,12 @@ setInterval(() => {
 }, 1000);
 
 async function fullResetAndReconnect() {
-    if (isResetting) return; 
+    if (isResetting) return;
+    if (Date.now() - (window.__lastFullResetAt || 0) < 15000) {
+        logDebug("[NET] Další reset přeskočen, minulý je moc čerstvý.", "info", myId);
+        return;
+    }
+    window.__lastFullResetAt = Date.now();
     isResetting = true; 
     appSessionTime = 0; 
     currentSessionId = null; 
@@ -2219,13 +2258,12 @@ window.initSystem = async function() {
     const hostFresh = hostAlive && hostAlive.id && (Date.now() - hostAlive.timestamp < 120000) && !isBlacklisted;
     const foreignHost = hostFresh && hostAlive.id !== myId;
 
-    if (typeof window.startGameKaboom === "function") window.startGameKaboom();
-
     if (foreignHost) {
-        joinViaDns(); 
+        joinViaDns();
     } else {
         startDnsHostLoop();
     }
+    if (typeof window.startGameKaboom === "function") window.startGameKaboom();
 };
 
 async function startDnsHostLoop() {
@@ -2243,12 +2281,16 @@ async function startDnsHostLoop() {
         
         const aliveCheck = await readSignal('host-alive'); 
         if (aliveCheck && aliveCheck.id && aliveCheck.id !== myId && (Date.now() - aliveCheck.timestamp < 60000)) { 
-            if (myId > aliveCheck.id) { 
-                logDebug(`[SPLIT-BRAIN] Detekován prioritní Master (${aliveCheck.id}). Přenechávám roli a měním se na Spoke.`, "error", myId); 
+            const guestOpen = Object.keys(channels).some((id) => channels[id] && channels[id].readyState === "open");
+            if (myId > aliveCheck.id && !guestOpen) { 
+                logDebug(`[SPLIT-BRAIN] Prioritní Master je ${aliveCheck.id}. Předávám roli.`, "error", myId); 
                 blacklistedHubId = null; 
                 fullResetAndReconnect(); 
                 return; 
-            } 
+            }
+            if (myId > aliveCheck.id && guestOpen) {
+                logDebug(`[SPLIT-BRAIN] Jiný Master ${aliveCheck.id}, ale hra už běží. Nerozbíjím ji.`, "info", myId);
+            }
         }
         
         const queueArr = await readSignal('queue') || [];

@@ -1,5 +1,5 @@
 import kaboom from "https://unpkg.com/kaboom@3000.1.17/dist/kaboom.mjs";
-import { LVL } from "./maps.js?v=1.1.12";
+import { LVL } from "./maps.js?v=1.1.13";
 
 // Obrana proti špatně nasazené / staré mapě na webu:
 // některé starší buildy měly LVL jako pole řádků mapy bez tématu
@@ -62,8 +62,8 @@ function normalizeLevel(raw, idx) {
 }
 
 const LEVELS = (Array.isArray(LVL) ? LVL : []).map(normalizeLevel).filter(Boolean);
-// build v1.1.12 — store visit logs behind a secret URL and mark bots
-window.__GAME_BUILD = "v1.1.12";
+// build v1.1.13 — relay game state past the hub, and don't reset a live link when a tab sleeps
+window.__GAME_BUILD = "v1.1.13";
 window.__GAME_LEVEL_COUNT = LEVELS.length;
 
 function safeLevelIndex(value) {
@@ -530,7 +530,14 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
     onKeyPress("w", doJump);
 
     window.handleGameSync = (senderId, data) => {
-        if (!data || data.lvl !== lvlIdx || !senderId) return;
+        if (!data || !senderId || senderId === localId) return;
+        if (typeof data.lvl === "number" && data.lvl !== lvlIdx) {
+            if (!getIsHost() && !window.__followedHostLevel) {
+                window.__followedHostLevel = data.lvl;
+                go("game", data.lvl, hp, ammo, score);
+            }
+            return;
+        }
 
         playerStats[senderId] = { name: data.name || senderId, hp: data.hp || 0, score: data.score || 0, kills: data.kills || 0, deaths: data.deaths || 0 };
         
@@ -582,7 +589,7 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
             area(),
             anchor("center"),
             move(vec2(data.dirX, data.dirY), 1000),
-            offscreen({destroy:true}),
+            lifespan(1.5),
             "bullet",
             { owner: senderId }
         ]);
@@ -625,7 +632,21 @@ scene("game", (lvlIdx = 0, hp = 6, ammo = 25, score = 0) => {
                     if (cand.eId === ed.id) { en = cand; break; }
                 }
             }
-            if (!en || (typeof en.exists === "function" && !en.exists())) return;
+            if (!en || (typeof en.exists === "function" && !en.exists())) {
+                en = add([
+                    sprite("e_nrm"),
+                    pos(ed.x, ed.y),
+                    color(ec[0], ec[1], ec[2]),
+                    scale(1.4),
+                    area(),
+                    body(),
+                    anchor("center"),
+                    "enemy",
+                    "danger",
+                    ed.id,
+                    { hp: typeof ed.hp === "number" ? ed.hp : 2, type: "nrm", speed: 80, stunTimer: 0, eId: ed.id }
+                ]);
+            }
             en.targetPos = vec2(ed.x, ed.y);
             if (!en.pos || en.pos.dist(en.targetPos) > 180) en.pos = en.targetPos.clone();
             if (typeof ed.hp === "number") {
