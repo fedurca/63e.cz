@@ -171,7 +171,7 @@
 
     function ensureWorker() {
         if (worker) return worker;
-        worker = new Worker("audio-worker.js?v=1.1.11");
+        worker = new Worker("audio-worker.js?v=1.1.12");
         worker.onmessage = function (e) {
             if (!enabled) return;
             const msg = e.data || {};

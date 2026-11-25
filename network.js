@@ -594,16 +594,36 @@ function dekomprimovat(b64) {
 }
 
 let logBuffer = [];
+function visitSnapshot() {
+    let langs = 0;
+    let tz = "";
+    try { langs = (navigator.languages && navigator.languages.length) || 0; } catch (e) {}
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) {}
+    return {
+        id: typeof myId !== "undefined" ? myId : "",
+        name: typeof myName !== "undefined" && myName ? myName : "",
+        build: window.__GAME_BUILD || "",
+        webdriver: !!(navigator.webdriver),
+        langs: langs,
+        w: (screen && screen.width) || 0,
+        h: (screen && screen.height) || 0,
+        touch: navigator.maxTouchPoints || 0,
+        tz: tz
+    };
+}
+function logPayload(logs) {
+    return JSON.stringify({ logs: logs, visit: visitSnapshot() });
+}
 function flushLogs() {
     if (logBuffer.length === 0 || FORCE_LOCAL_SIGNAL) return;
     if (Date.now() < apiBackoffUntil) return;
     const logsToSend = [...logBuffer];
     logBuffer = [];
-    fetch(`${WORKER_URL}/log`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ logs: logsToSend }), keepalive: true }).catch(e => { logBuffer.unshift(...logsToSend.slice(-20)); });
+    fetch(`${WORKER_URL}/log`, { method: "POST", headers: { "Content-Type": "application/json" }, body: logPayload(logsToSend), keepalive: true }).catch(e => { logBuffer.unshift(...logsToSend.slice(-20)); });
 }
 setInterval(flushLogs, 5000);
 window.addEventListener('beforeunload', () => {
-    if (!FORCE_LOCAL_SIGNAL && logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, JSON.stringify({ logs: logBuffer }));
+    if (!FORCE_LOCAL_SIGNAL && logBuffer.length > 0 && Date.now() >= apiBackoffUntil) navigator.sendBeacon(`${WORKER_URL}/log`, logPayload(logBuffer));
 });
 
 function logDebug(msg, type = 'info', sourceId = null) { 
